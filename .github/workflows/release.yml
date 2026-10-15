@@ -1,21 +1,47 @@
 name: Release
+
 on:
   workflow_dispatch:
   push:
     tags:
       - 'v*'
+
 permissions:
   contents: write
+
 jobs:
-  build:
-    runs-on: windows-latest
+  release:
+    name: Build & Release (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
-      - name: Build and publish
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      # Windows 打包发布 (NSIS 安装包 + Portable 便携单文件)
+      - name: Build and Publish (Windows)
+        if: matrix.os == 'windows-latest'
         run: npx electron-builder --win nsis portable --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Linux 打包发布 (AppImage + DEB + tar.gz)
+      - name: Build and Publish (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: npx electron-builder --linux AppImage deb tar.gz --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
