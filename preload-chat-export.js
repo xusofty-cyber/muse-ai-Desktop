@@ -22,50 +22,172 @@ function injectThemeStyles() {
   const style = document.createElement('style');
   style.id = 'muse-theme-autohide-styles';
   style.textContent = `
-    /* Floating Controls Transition & Auto-Hide */
-    #muse-automation-widget, #muse-export-btn {
-      transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    /* Left-Bottom Integrated Settings Popover & Controls */
+    #muse-settings-popover {
+      position: fixed;
+      left: 56px;
+      bottom: 35px;
+      z-index: 2147483646;
+      width: 295px;
+      background: rgba(24, 26, 33, 0.96);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      color: #e8eaf0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 12.5px;
+      user-select: none;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      animation: musePopoverFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    .muse-floating-hidden {
-      opacity: 0.08 !important;
-      pointer-events: none !important;
-      transform: scale(0.96) !important;
+    @keyframes musePopoverFadeIn {
+      from { opacity: 0; transform: translateY(8px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
-    .muse-floating-visible {
-      opacity: 1 !important;
-      pointer-events: auto !important;
-      transform: scale(1) !important;
+    .muse-popover-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 8px;
+    }
+    .muse-popover-title {
+      font-weight: 700;
+      font-size: 13.5px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .muse-popover-close {
+      background: none;
+      border: none;
+      color: #8a909d;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .muse-popover-close:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+    .muse-pop-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 12px;
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    .muse-pop-badge.on {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+    .muse-pop-badge.paused {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+    .muse-pop-badge.off {
+      background: rgba(107, 114, 128, 0.15);
+      color: #9ca3af;
+      border-color: rgba(107, 114, 128, 0.3);
+    }
+    .muse-pop-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+    }
+    .muse-pop-row label {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .muse-pop-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    .muse-pop-btn {
+      width: 100%;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #e5e7eb;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .muse-pop-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.2);
+      color: #fff;
+    }
+    .muse-pop-btn.primary {
+      background: #3b5bfd;
+      border-color: #3b5bfd;
+      color: #fff;
+    }
+    .muse-pop-btn.primary:hover {
+      background: #2b49e0;
     }
 
     /* Light Mode Theme Overrides */
-    [data-muse-theme="light"] #muse-automation-widget #muse-automation-badge {
-      background: #ffffff !important;
+    [data-muse-theme="light"] #muse-settings-popover {
+      background: rgba(255, 255, 255, 0.98) !important;
       color: #1e293b !important;
-      border-color: #cbd5e1 !important;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+      border-color: rgba(0, 0, 0, 0.14) !important;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05) !important;
     }
-    [data-muse-theme="light"] #muse-automation-panel {
-      background: #ffffff !important;
-      color: #1e293b !important;
-      border-color: #cbd5e1 !important;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12) !important;
+    [data-muse-theme="light"] .muse-popover-header {
+      border-bottom-color: rgba(0, 0, 0, 0.08) !important;
     }
-    [data-muse-theme="light"] #muse-automation-panel span {
+    [data-muse-theme="light"] .muse-popover-title {
+      color: #0f172a !important;
+    }
+    [data-muse-theme="light"] .muse-popover-close {
+      color: #64748b !important;
+    }
+    [data-muse-theme="light"] .muse-popover-close:hover {
+      background: rgba(0, 0, 0, 0.06) !important;
+      color: #0f172a !important;
+    }
+    [data-muse-theme="light"] .muse-pop-card {
+      background: #f8fafc !important;
+      border-color: #e2e8f0 !important;
+    }
+    [data-muse-theme="light"] .muse-pop-row label {
       color: #334155 !important;
     }
-    [data-muse-theme="light"] #muse-automation-panel button {
+    [data-muse-theme="light"] .muse-pop-btn {
       background: #f1f5f9 !important;
-      color: #1e293b !important;
       border-color: #cbd5e1 !important;
-    }
-    [data-muse-theme="light"] #muse-export-btn {
-      background: rgba(255, 255, 255, 0.95) !important;
       color: #1e293b !important;
-      border-color: rgba(0, 0, 0, 0.12) !important;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1) !important;
     }
-    [data-muse-theme="light"] #muse-export-btn:hover {
-      background: #f8fafc !important;
+    [data-muse-theme="light"] .muse-pop-btn:hover {
+      background: #e2e8f0 !important;
+      color: #0f172a !important;
     }
     [data-muse-theme="light"] #muse-account-dock {
       background: rgba(255, 255, 255, 0.94) !important;
@@ -143,105 +265,7 @@ ipcRenderer.on('theme:changed', (e, theme) => {
   applyTheme(theme);
 });
 
-// ---- Auto-Hide Floating Controls Controller ----
-(function initAutoHideFloating() {
-  let isHovering = false;
-  let isMouseNearCorner = false;
-  let hideTimer = null;
-  let autoHideEnabled = true;
-
-  function updateAutoHideState(ui) {
-    autoHideEnabled = !!(ui && ui.autoHideButtons);
-    if (!autoHideEnabled) {
-      showButtons();
-    } else {
-      triggerAutoHideCountdown();
-    }
-  }
-
-  function getFloatingElements() {
-    return [
-      document.getElementById('muse-automation-widget'),
-      document.getElementById('muse-export-btn')
-    ].filter(Boolean);
-  }
-
-  function showButtons() {
-    clearTimeout(hideTimer);
-    getFloatingElements().forEach((el) => {
-      el.classList.remove('muse-floating-hidden');
-      el.classList.add('muse-floating-visible');
-    });
-  }
-
-  function hideButtons() {
-    if (!autoHideEnabled) return;
-    if (isHovering || isMouseNearCorner) return;
-
-    // 面板展开时绝对不隐藏
-    const panel = document.getElementById('muse-automation-panel');
-    if (panel && panel.style.display !== 'none' && panel.style.display !== '') {
-      return;
-    }
-
-    getFloatingElements().forEach((el) => {
-      el.classList.remove('muse-floating-visible');
-      el.classList.add('muse-floating-hidden');
-    });
-  }
-
-  function triggerAutoHideCountdown() {
-    if (!autoHideEnabled) return;
-    clearTimeout(hideTimer);
-    hideTimer = setTimeout(hideButtons, 2200);
-  }
-
-  window.addEventListener('mousemove', (e) => {
-    const x = e.clientX;
-    const y = e.clientY;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-
-    // 检测是否进入右上角（宽 240px，高 90px）或右下角（宽 200px，高 85px）
-    const nearTopRight = (x > w - 240 && y < 90);
-    const nearBottomRight = (x > w - 200 && y > h - 85);
-
-    if (nearTopRight || nearBottomRight) {
-      isMouseNearCorner = true;
-      showButtons();
-      clearTimeout(hideTimer);
-    } else {
-      isMouseNearCorner = false;
-      showButtons();
-      triggerAutoHideCountdown();
-    }
-  }, { passive: true });
-
-  function bindHoverListeners() {
-    getFloatingElements().forEach((el) => {
-      if (el.__museHoverBound) return;
-      el.__museHoverBound = true;
-      el.addEventListener('mouseenter', () => {
-        isHovering = true;
-        showButtons();
-      });
-      el.addEventListener('mouseleave', () => {
-        isHovering = false;
-        triggerAutoHideCountdown();
-      });
-    });
-  }
-
-  ipcRenderer.invoke('ui-settings-get').then((ui) => {
-    updateAutoHideState(ui);
-  }).catch(() => {});
-
-  ipcRenderer.on('ui-settings:changed', (e, ui) => {
-    updateAutoHideState(ui);
-  });
-
-  setInterval(bindHoverListeners, 1000);
-})();
+// Floating widgets have been relocated to the unified left-bottom settings center.
 
 // ---- light HTML -> Markdown ------------------------------------------------
 function nodeToMarkdown(node) {
@@ -585,209 +609,193 @@ contextBridge.exposeInMainWorld('automationAPI', {
     }, 3000);
   }
 
-  function createWidget() {
-    if (widgetContainer) return;
-    if (!document.body) {
-      window.addEventListener('DOMContentLoaded', createWidget);
-      return;
-    }
+  // --- Integrated Settings & Auto-Allow Center ---
+  let popoverContainer = null;
 
-    widgetContainer = document.createElement('div');
-    widgetContainer.id = 'muse-automation-widget';
-    Object.assign(widgetContainer.style, {
-      position: 'fixed',
-      top: '12px',
-      right: '12px',
-      zIndex: '999998',
-      fontFamily: '"Segoe UI", system-ui, sans-serif',
-      fontSize: '12px',
-      userSelect: 'none',
-    });
+  function ensureSettingsPopover() {
+    if (popoverContainer && popoverContainer.parentNode) return popoverContainer;
+    const parent = document.body || document.documentElement;
+    if (!parent) return null;
 
-    const badge = document.createElement('button');
-    badge.id = 'muse-automation-badge';
-    Object.assign(badge.style, {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '6px',
-      padding: '6px 12px',
-      borderRadius: '20px',
-      border: '1px solid #3a3f4b',
-      background: '#16181d',
-      color: '#e8eaf0',
-      cursor: 'pointer',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-      transition: 'all 0.2s ease',
-      fontWeight: '600',
-    });
-
-    badge.addEventListener('click', (e) => {
-      e.stopPropagation();
-      togglePanel();
-    });
-
-    widgetContainer.appendChild(badge);
-
-    // Dropdown Panel
-    panelContainer = document.createElement('div');
-    panelContainer.id = 'muse-automation-panel';
-    Object.assign(panelContainer.style, {
-      display: 'none',
-      position: 'absolute',
-      top: '36px',
-      right: '0',
-      width: '260px',
-      backgroundColor: '#1b1e24',
-      border: '1px solid #3a3f4b',
-      borderRadius: '10px',
-      padding: '12px',
-      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-      color: '#e8eaf0',
-      flexDirection: 'column',
-      gap: '10px',
-    });
-
-    widgetContainer.appendChild(panelContainer);
-    document.body.appendChild(widgetContainer);
+    popoverContainer = document.createElement('div');
+    popoverContainer.id = 'muse-settings-popover';
+    parent.appendChild(popoverContainer);
 
     document.addEventListener('click', (e) => {
-      if (widgetContainer && !widgetContainer.contains(e.target)) {
-        panelContainer.style.display = 'none';
+      const settingsBtn = document.getElementById('muse-dock-settings-btn');
+      if (popoverContainer && !popoverContainer.contains(e.target) && (!settingsBtn || !settingsBtn.contains(e.target))) {
+        popoverContainer.style.display = 'none';
       }
     });
 
-    updateWidgetUI();
+    return popoverContainer;
   }
 
-  function togglePanel() {
-    if (!panelContainer) return;
-    panelContainer.style.display = panelContainer.style.display === 'none' ? 'flex' : 'none';
+  function toggleSettingsPopover() {
+    const pop = ensureSettingsPopover();
+    if (!pop) return;
+    if (pop.style.display === 'flex') {
+      pop.style.display = 'none';
+    } else {
+      renderSettingsPopoverContent();
+      pop.style.display = 'flex';
+    }
   }
 
-  function renderPanelContent() {
-    if (!panelContainer) return;
-    const hostname = location.hostname;
+  // Expose toggle to dock button
+  window.__museToggleSettingsPopover = toggleSettingsPopover;
+
+  function getAutoBadgeMeta() {
+    if (!autoState.enabled) {
+      return { cls: 'off', text: '⚡ Auto Allow: OFF', borderColor: '#6b7280' };
+    }
+    if (autoState.autoAllowAll) {
+      return { cls: 'on', text: '⚡ Auto Allow: ALL', borderColor: '#3b82f6' };
+    }
+    if (isCurrentSiteAllowed()) {
+      return { cls: 'on', text: '⚡ Auto Allow: ON', borderColor: '#10b981' };
+    }
+    return { cls: 'paused', text: '⚡ Auto Allow: PAUSED', borderColor: '#f59e0b' };
+  }
+
+  function renderSettingsPopoverContent() {
+    const pop = ensureSettingsPopover();
+    if (!pop) return;
+    const hostname = location.hostname || '当前网站';
     const siteAllowed = isCurrentSiteAllowed();
+    const meta = getAutoBadgeMeta();
 
-    panelContainer.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #2d323e; padding-bottom:8px;">
-        <span style="font-weight:700; font-size:13px; color:#fff;">⚡ Automation Controls</span>
-        <button id="muse-panel-close" style="background:none; border:none; color:#8a909d; cursor:pointer; font-size:14px;">✕</button>
+    pop.innerHTML = `
+      <div class="muse-popover-header">
+        <div class="muse-popover-title">
+          <span>⚙ 控制中心 & 自动化</span>
+        </div>
+        <button class="muse-popover-close" id="muse-pop-close-btn" title="关闭">✕</button>
       </div>
 
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:12.5px;">Master Switch</span>
-        <input type="checkbox" id="muse-chk-master" ${autoState.enabled ? 'checked' : ''} style="cursor:pointer;">
+      <!-- 自动化审批区块 -->
+      <div class="muse-pop-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-weight:600; font-size:12px;">自动审批授权 (Auto-Allow)</span>
+          <span class="muse-pop-badge ${meta.cls}">${meta.text}</span>
+        </div>
+
+        <div class="muse-pop-row">
+          <label>
+            <input type="checkbox" id="muse-pop-chk-master" ${autoState.enabled ? 'checked' : ''}>
+            <span>启用自动同意 (Master Switch)</span>
+          </label>
+        </div>
+
+        <div class="muse-pop-row">
+          <label>
+            <input type="checkbox" id="muse-pop-chk-allowall" ${autoState.autoAllowAll ? 'checked' : ''}>
+            <span>一键允许所有行为 (Allow All)</span>
+          </label>
+        </div>
+
+        <div class="muse-pop-row">
+          <label>
+            <input type="checkbox" id="muse-pop-chk-site" ${siteAllowed ? 'checked' : ''}>
+            <span>在此网站启用 (${hostname})</span>
+          </label>
+        </div>
+
+        <!-- 细分行为授权 -->
+        <div style="margin-top:6px; padding-top:6px; border-top:1px dashed rgba(255,255,255,0.1); display:flex; flex-direction:column; gap:4px;">
+          <div style="font-size:11px; color:#8a909d; font-weight:600;">细分动作允许范围：</div>
+          <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
+            <input type="checkbox" id="muse-pop-act-connectors" ${isActionAllowed('connectors') ? 'checked' : ''}>
+            <span>应用集成 / 插件授权 (Connectors)</span>
+          </label>
+          <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
+            <input type="checkbox" id="muse-pop-act-file" ${isActionAllowed('file_access') ? 'checked' : ''}>
+            <span>文件与数据访问 (File Access)</span>
+          </label>
+          <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
+            <input type="checkbox" id="muse-pop-act-links" ${isActionAllowed('external_links') ? 'checked' : ''}>
+            <span>外部链接与窗口跳转 (External Links)</span>
+          </label>
+          <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
+            <input type="checkbox" id="muse-pop-act-code" ${isActionAllowed('code_execution') ? 'checked' : ''}>
+            <span>代码执行与脚本运行 (Code Execution)</span>
+          </label>
+        </div>
       </div>
 
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:12.5px;">Auto Allow All</span>
-        <input type="checkbox" id="muse-chk-allowall" ${autoState.autoAllowAll ? 'checked' : ''} style="cursor:pointer;">
+      <!-- 外观与快捷入口区块 -->
+      <div style="display:flex; gap:6px;">
+        <button class="muse-pop-btn" id="muse-pop-theme-btn" style="flex:1;">
+          <span>${currentTheme === 'light' ? '☀️ 浅色' : '🌙 深色'}</span>
+        </button>
+        <button class="muse-pop-btn" id="muse-pop-proxy-btn" style="flex:1;">
+          <span>🌐 网络代理</span>
+        </button>
       </div>
 
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:12px; color:#a0a6b5;">Allow on ${hostname}</span>
-        <input type="checkbox" id="muse-chk-site" ${siteAllowed ? 'checked' : ''} style="cursor:pointer;">
-      </div>
-
-      <div style="border-top:1px solid #2d323e; padding-top:8px; display:flex; flex-direction:column; gap:6px;">
-        <span style="font-size:11px; font-weight:600; color:#8a909d; text-transform:uppercase;">Actions & Connectors</span>
-
-        <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
-          <span>Connectors & Plugins</span>
-          <input type="checkbox" id="muse-chk-act-connectors" ${isActionAllowed('connectors') ? 'checked' : ''}>
-        </label>
-
-        <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
-          <span>File & Data Access</span>
-          <input type="checkbox" id="muse-chk-act-file" ${isActionAllowed('file_access') ? 'checked' : ''}>
-        </label>
-
-        <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
-          <span>External Links</span>
-          <input type="checkbox" id="muse-chk-act-links" ${isActionAllowed('external_links') ? 'checked' : ''}>
-        </label>
-
-        <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
-          <span>Code Execution</span>
-          <input type="checkbox" id="muse-chk-act-code" ${isActionAllowed('code_execution') ? 'checked' : ''}>
-        </label>
-
-        <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
-          <span>Media & Mic</span>
-          <input type="checkbox" id="muse-chk-act-media" ${isActionAllowed('media_permissions') ? 'checked' : ''}>
-        </label>
-      </div>
-
-      <button id="muse-panel-settings" style="margin-top:4px; padding:6px; font-size:11.5px; background:#2a2e39; border:1px solid #3a3f4b; color:#d1d5db; border-radius:6px; cursor:pointer;">Full Settings & Hotkeys…</button>
+      <!-- 打开完整设置 -->
+      <button class="muse-pop-btn primary" id="muse-pop-full-settings">
+        <span>⚙ 打开完整设置与快捷键…</span>
+      </button>
     `;
 
-    panelContainer.querySelector('#muse-panel-close').onclick = () => { panelContainer.style.display = 'none'; };
+    // 绑定事件
+    pop.querySelector('#muse-pop-close-btn').onclick = () => { pop.style.display = 'none'; };
 
-    panelContainer.querySelector('#muse-chk-master').onchange = (e) => {
+    pop.querySelector('#muse-pop-chk-master').onchange = (e) => {
       ipcRenderer.invoke('automation-set', { enabled: e.target.checked });
     };
 
-    panelContainer.querySelector('#muse-chk-allowall').onchange = (e) => {
+    pop.querySelector('#muse-pop-chk-allowall').onchange = (e) => {
       ipcRenderer.invoke('automation-set', { autoAllowAll: e.target.checked });
     };
 
-    panelContainer.querySelector('#muse-chk-site').onchange = (e) => {
+    pop.querySelector('#muse-pop-chk-site').onchange = (e) => {
       ipcRenderer.invoke('automation-toggle-site', hostname, e.target.checked);
     };
 
-    panelContainer.querySelector('#muse-chk-act-connectors').onchange = (e) => {
+    pop.querySelector('#muse-pop-act-connectors').onchange = (e) => {
       ipcRenderer.invoke('automation-set-site-action', hostname, 'connectors', e.target.checked);
     };
-    panelContainer.querySelector('#muse-chk-act-file').onchange = (e) => {
+    pop.querySelector('#muse-pop-act-file').onchange = (e) => {
       ipcRenderer.invoke('automation-set-site-action', hostname, 'file_access', e.target.checked);
     };
-    panelContainer.querySelector('#muse-chk-act-links').onchange = (e) => {
+    pop.querySelector('#muse-pop-act-links').onchange = (e) => {
       ipcRenderer.invoke('automation-set-site-action', hostname, 'external_links', e.target.checked);
     };
-    panelContainer.querySelector('#muse-chk-act-code').onchange = (e) => {
+    pop.querySelector('#muse-pop-act-code').onchange = (e) => {
       ipcRenderer.invoke('automation-set-site-action', hostname, 'code_execution', e.target.checked);
     };
-    panelContainer.querySelector('#muse-chk-act-media').onchange = (e) => {
-      ipcRenderer.invoke('automation-set-site-action', hostname, 'media_permissions', e.target.checked);
+
+    pop.querySelector('#muse-pop-theme-btn').onclick = () => {
+      const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
+      ipcRenderer.invoke('theme-set', nextTheme).catch(() => {});
+      pop.style.display = 'none';
     };
 
-    panelContainer.querySelector('#muse-panel-settings').onclick = () => {
+    pop.querySelector('#muse-pop-proxy-btn').onclick = () => {
+      ipcRenderer.invoke('open-settings', 'tab-proxy');
+      pop.style.display = 'none';
+    };
+
+    pop.querySelector('#muse-pop-full-settings').onclick = () => {
       ipcRenderer.invoke('open-settings');
-      panelContainer.style.display = 'none';
+      pop.style.display = 'none';
     };
   }
 
   function updateWidgetUI() {
-    if (!widgetContainer) createWidget();
-    if (!widgetContainer) return;
-
-    if (!autoState.showOnScreenWidget) {
-      widgetContainer.style.display = 'none';
-      return;
+    // 同步 Dock 上设置按钮的指示点
+    const dot = document.getElementById('muse-dock-settings-dot');
+    if (dot) {
+      const meta = getAutoBadgeMeta();
+      dot.style.background = meta.borderColor;
+      dot.title = meta.text;
     }
-    widgetContainer.style.display = 'block';
-
-    const badge = widgetContainer.querySelector('#muse-automation-badge');
-    if (!badge) return;
-
-    if (autoState.enabled) {
-      if (autoState.autoAllowAll) {
-        badge.innerHTML = `<span style="color:#7ee2a8;">⚡</span> Auto Allow: ALL`;
-        badge.style.borderColor = '#3b82f6';
-      } else if (isCurrentSiteAllowed()) {
-        badge.innerHTML = `<span style="color:#7ee2a8;">⚡</span> Auto Allow: ON`;
-        badge.style.borderColor = '#10b981';
-      } else {
-        badge.innerHTML = `<span style="color:#f59e0b;">⚡</span> Auto Allow: PAUSED`;
-        badge.style.borderColor = '#f59e0b';
-      }
-    } else {
-      badge.innerHTML = `<span style="color:#8a909d;">⚡</span> Auto Allow: OFF`;
-      badge.style.borderColor = '#3a3f4b';
+    // 如果 Popover 处于打开状态，同步更新内容
+    if (popoverContainer && popoverContainer.style.display === 'flex') {
+      renderSettingsPopoverContent();
     }
-
-    renderPanelContent();
   }
 
   // --- DOM Auto-Approval Observer ---
@@ -881,7 +889,6 @@ contextBridge.exposeInMainWorld('automationAPI', {
   });
 
   function startObserver() {
-    createWidget();
     if (document.body) {
       observer.observe(document.body, { childList: true, subtree: true });
       checkAndAutoApprove();
@@ -894,32 +901,9 @@ contextBridge.exposeInMainWorld('automationAPI', {
     startObserver();
   }
 })();
-// ---- floating export button -------------------------------------------------
-function injectExportButton() {
-  if (document.getElementById('muse-export-btn')) return;
-  const btn = document.createElement('button');
-  btn.id = 'muse-export-btn';
-  btn.type = 'button';
-  btn.textContent = '\u2913 Export chat';
-  btn.title = 'Export this chat to a file';
-  btn.style.cssText = [
-    'position:fixed', 'right:18px', 'bottom:18px', 'z-index:2147483647',
-    'padding:9px 14px', 'border-radius:999px', 'border:1px solid rgba(255,255,255,0.18)',
-    'background:rgba(20,20,24,0.92)', 'color:#fff',
-    'font:500 13px/1.2 system-ui,-apple-system,sans-serif', 'cursor:pointer',
-    'box-shadow:0 4px 16px rgba(0,0,0,0.35)',
-  ].join(';');
-  btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(52,52,60,0.95)'; });
-  btn.addEventListener('mouseleave', () => { btn.style.background = 'rgba(20,20,24,0.92)'; });
-  btn.addEventListener('click', (e) => { e.preventDefault(); ipcRenderer.send('muse-export-request'); });
-  (document.body || document.documentElement).appendChild(btn);
-}
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', injectExportButton);
-} else {
-  injectExportButton();
-}
+// Floating export button removed per user request to free up page space.
+function injectExportButton() {}
 
 // ---- Multi-Account Quick Dock -----------------------------------------------
 (function initAccountDock() {
@@ -1463,6 +1447,42 @@ if (document.readyState === 'loading') {
       ipcRenderer.invoke('theme-set', nextTheme).catch(() => {});
     };
     dockContainer.appendChild(themeBtn);
+
+    // ⚙ 配置与自动化控制中心按钮 (Settings & Auto-Allow Center)
+    const settingsBtn = document.createElement('button');
+    settingsBtn.id = 'muse-dock-settings-btn';
+    settingsBtn.className = 'muse-dock-add-btn';
+    settingsBtn.type = 'button';
+    settingsBtn.style.marginTop = '4px';
+    settingsBtn.style.position = 'relative';
+    settingsBtn.style.fontSize = '14px';
+    settingsBtn.innerHTML = '⚙';
+    settingsBtn.title = '设置与自动化控制中心 (Auto-Allow & Settings)';
+
+    // 右下角微型自动化状态指示圆点
+    const dot = document.createElement('span');
+    dot.id = 'muse-dock-settings-dot';
+    Object.assign(dot.style, {
+      position: 'absolute',
+      right: '1px',
+      bottom: '1px',
+      width: '7px',
+      height: '7px',
+      borderRadius: '50%',
+      backgroundColor: '#10b981',
+      border: '1.5px solid rgba(18, 18, 22, 0.9)',
+      pointerEvents: 'none',
+      transition: 'background-color 0.2s ease',
+    });
+    settingsBtn.appendChild(dot);
+
+    settingsBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (typeof window.__museToggleSettingsPopover === 'function') {
+        window.__museToggleSettingsPopover();
+      }
+    };
+    dockContainer.appendChild(settingsBtn);
   }
 
   // 全局点击关闭上下文菜单
