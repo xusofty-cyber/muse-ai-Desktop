@@ -3,6 +3,12 @@
   "build": {
     "appId": "ai.muse.desktop",
     "compression": "maximum",
+    "electronLanguages": [
+      "zh-CN",
+      "en-US",
+      "zh-TW"
+    ],
+    "afterPack": "scripts/cleanup-locales.js",
     "directories": {
       "output": "dist"
     },
@@ -11,6 +17,7 @@
       "preload-chat-export.js",
       "preload-settings.js",
       "hotkeys.html",
+      "offline.html",
       "assets/**/*",
       "package.json"
     ],
