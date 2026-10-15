@@ -197,14 +197,14 @@ async function applyProxyToSession(targetSession) {
       const proxyRules = `${type}://${host}:${port}`;
       const proxyBypassRules = p.bypass || '<local>;localhost;127.0.0.1';
       await targetSession.setProxy({ proxyRules, proxyBypassRules });
-      console.log(`[Proxy] Applied custom proxy: ${proxyRules}`);
+      console.log(`[Proxy] Applied custom proxy to session: ${proxyRules}`);
     } else if (p.mode === 'direct') {
       await targetSession.setProxy({ mode: 'direct' });
-      console.log('[Proxy] Applied direct connection mode');
+      console.log('[Proxy] Applied direct connection mode to session');
     } else {
       // 默认自适应系统网络与TUN虚拟网卡（开箱即用，支持多机部署）
       await targetSession.setProxy({ mode: 'system' });
-      console.log('[Proxy] Applied adaptive system/TUN proxy mode');
+      console.log('[Proxy] Applied adaptive system/TUN proxy mode to session');
     }
   } catch (err) {
     console.error('[Proxy] Failed to apply proxy to session:', err);
@@ -244,6 +244,10 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     return win;
   }
 
+  // 确保新窗口的 Session 立即继承全局统一的网络代理配置
+  const ses = session.fromPartition(partitionFor(profileId));
+  applyProxyToSession(ses);
+
   const saved = targetBounds || state.window || {};
   win = new BrowserWindow({
     width: saved.width || 1200,
@@ -267,18 +271,17 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     broadcastAccountChange();
   });
 
-  // 网络错误自愈诊断页
+  // 网络错误处理：加载离线诊断页并自动弹出网络配置界面
   win.webContents.on('did-fail-load', async (event, errorCode, errorDescription, validatedURL) => {
     if (errorCode === -3) return; // ERR_ABORTED 忽略
     console.warn(`[Network] Failed to load ${validatedURL}: [${errorCode}] ${errorDescription}`);
     if (validatedURL && validatedURL.includes('offline.html')) return;
 
-    if (errorCode === -130 && state.proxy && state.proxy.mode === 'custom') {
-      console.log('[Self-Heal] Auto resetting proxy to adaptive system mode...');
-      state.proxy.mode = 'system';
-      state.proxy.enabled = false;
-      saveState();
-      await applyProxySettings();
+    // 若发生连接失败且为严重网络阻断（代理故障/连接被拒/超时），主动唤出网络配置界面引导修复
+    const isConnFailure = errorCode === -130 || errorCode === -100 || errorCode === -102 || errorCode === -7 || errorCode === -105;
+    if (isConnFailure) {
+      console.log(`[Network] Connection failed with [${errorCode}] ${errorDescription}, popping up proxy settings...`);
+      openHotkeySettings('tab-proxy');
     }
 
     win.loadFile(path.join(__dirname, 'offline.html'), {
@@ -891,8 +894,14 @@ ipcMain.handle('proxy-set', async (e, config) => {
   };
   saveState();
   await applyProxySettings();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.reload();
+  // 全局刷新所有已实例化的账号标签窗口，确保代理立即在所有账号中生效
+  for (const win of profileWindows.values()) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.reload();
+    }
+  }
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    quickWindow.webContents.reload();
   }
   return { ok: true };
 });
