@@ -47,10 +47,20 @@
         "portable",
         "nsis"
       ]
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "category": "Network;Chat;Utility",
+      "maintainer": "Gc <xusofty-cyber>",
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ]
     }
   },
   "dependencies": {},
-  "description": "Muse for Windows: your personal AI agent in a desktop app",
+  "description": "Muse for Windows & Linux: your personal AI agent in a desktop app",
   "devDependencies": {
     "electron": "^44.6.0",
     "electron-builder": "^26.15.3"
@@ -62,6 +72,9 @@
   "productName": "Muse",
   "scripts": {
     "dist": "electron-builder --win portable nsis",
+    "dist:win": "electron-builder --win portable nsis",
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "dist:linux:tar": "electron-builder --linux tar.gz",
     "start": "electron ."
   },
   "version": "1.4.1"
