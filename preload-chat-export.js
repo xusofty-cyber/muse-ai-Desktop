@@ -26,7 +26,7 @@ function injectThemeStyles() {
     #muse-settings-popover {
       position: fixed;
       left: 56px;
-      bottom: 35px;
+      bottom: 14px;
       z-index: 2147483646;
       width: 295px;
       background: rgba(24, 26, 33, 0.96);
@@ -955,7 +955,7 @@ function injectExportButton() {}
       #muse-account-dock {
         position: fixed;
         left: 10px;
-        bottom: 80px;
+        bottom: 14px;
         z-index: 2147483640;
         display: flex;
         flex-direction: column;

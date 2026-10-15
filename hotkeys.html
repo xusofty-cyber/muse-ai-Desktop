@@ -728,20 +728,22 @@ radThemeDark.onchange = () => selectTheme('dark');
 radThemeLight.onchange = () => selectTheme('light');
 radThemeSystem.onchange = () => selectTheme('system');
 
-chkAutoHide.onchange = async (e) => {
-  const enabled = e.target.checked;
-  if (!uiApi) return;
-  try {
-    const res = await uiApi.set({ autoHideButtons: enabled });
-    if (res && res.ok) {
-      themeMsg.style.color = '#7ee2a8';
-      themeMsg.textContent = enabled ? '已开启悬浮按钮自动隐藏（闲置2秒淡化，靠近平滑浮现）' : '已关闭悬浮按钮自动隐藏（常驻显示）';
-      setTimeout(() => { themeMsg.textContent = ''; }, 3000);
+if (chkAutoHide) {
+  chkAutoHide.onchange = async (e) => {
+    const enabled = e.target.checked;
+    if (!uiApi) return;
+    try {
+      const res = await uiApi.set({ autoHideButtons: enabled });
+      if (res && res.ok) {
+        themeMsg.style.color = '#7ee2a8';
+        themeMsg.textContent = enabled ? '已开启悬浮按钮自动隐藏' : '已关闭悬浮按钮自动隐藏';
+        setTimeout(() => { themeMsg.textContent = ''; }, 3000);
+      }
+    } catch (err) {
+      console.error('Failed to set UI setting:', err);
     }
-  } catch (err) {
-    console.error('Failed to set UI setting:', err);
-  }
-};
+  };
+}
 
 async function loadThemeAndUI() {
   if (themeApi) {
@@ -752,7 +754,7 @@ async function loadThemeAndUI() {
       console.error(e);
     }
   }
-  if (uiApi) {
+  if (uiApi && chkAutoHide) {
     try {
       const u = await uiApi.get();
       chkAutoHide.checked = (u && typeof u.autoHideButtons === 'boolean') ? u.autoHideButtons : true;
@@ -769,7 +771,7 @@ if (themeApi && themeApi.onChanged) {
 }
 if (uiApi && uiApi.onChanged) {
   uiApi.onChanged((newUi) => {
-    if (newUi && typeof newUi.autoHideButtons === 'boolean') {
+    if (chkAutoHide && newUi && typeof newUi.autoHideButtons === 'boolean') {
       chkAutoHide.checked = newUi.autoHideButtons;
     }
   });
@@ -894,17 +896,21 @@ if (window.settingsTabAPI) {
 (async () => {
   try {
     const data = await api.get();
-    labels = data.labels;
-    defaults = data.defaults;
-    saved = { ...data.bindings };
-    pending = { ...data.bindings };
-    render();
-    refreshAutoState();
-    loadThemeAndUI();
-    loadProxySettings();
+    if (data) {
+      labels = data.labels || {};
+      defaults = data.defaults || {};
+      saved = { ...(data.bindings || {}) };
+      pending = { ...(data.bindings || {}) };
+      render();
+    }
   } catch (err) {
+    console.error('Could not load hotkeys:', err);
     setMsg('Could not load hotkeys: ' + err, 'err');
   }
+
+  try { await refreshAutoState(); } catch (e) { console.error(e); }
+  try { await loadThemeAndUI(); } catch (e) { console.error(e); }
+  try { await loadProxySettings(); } catch (e) { console.error(e); }
 })();
 </script>
 </body>
