@@ -149,6 +149,19 @@ npm run dist:mac
 
 ---
 
+## 🙏 Acknowledgments & Upstream
+
+This project originated as a fork of [whxjwksjs/muse-windows](https://github.com/whxjwksjs/muse-windows). Special thanks to [@whxjwksjs](https://github.com/whxjwksjs) for the initial prototype and inspiration.
+
+Building upon the original foundation, **Muse Desktop** (`muse-ai-Desktop`) has evolved into a comprehensive cross-platform client with significant additions:
+- **Full Cross-Platform Support**: Native packaging & CI/CD workflows for Windows, Linux, and macOS.
+- **Bilingual Internationalization (i18n)**: Seamless hot-switching between English and 简体中文.
+- **Advanced Multi-Account Login**: Chromium partition-based session isolation with an instant-switch Dock.
+- **UI & Control Center Redesign**: Distraction-free screen layout with dynamic theme switching (Dark/Light/System).
+- **Extreme Footprint Optimization**: Aggressive locale stripping and LZMA deep compression.
+
+---
+
 ## 🤝 Contributing & License
 
 Contributions, issue reports, and pull requests are warmly welcomed!

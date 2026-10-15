@@ -149,6 +149,19 @@ npm run dist:mac
 
 ---
 
+## 🙏 致谢与上游声明
+
+本项目最初 Fork 自 [whxjwksjs/muse-windows](https://github.com/whxjwksjs/muse-windows)。衷心感谢原作者 [@whxjwksjs](https://github.com/whxjwksjs) 提供的优秀原型与开源启发！
+
+在此基础上，**Muse Desktop**（`muse-ai-Desktop`）进行了全面的架构扩展与功能演进：
+- **全平台原生支持**：新增覆盖 Windows、Linux (AppImage/deb/tar.gz) 与 macOS (dmg/zip) 的全平台构建与 GitHub Actions 自动化发布流水线；
+- **全链路中英双语国际化 (i18n)**：托盘、左下角控制中心、Dock 栏与设置面板的即时免重启热切换；
+- **多账号并发与深度会话隔离**：基于 Chromium 原生 `persist:partition` 的多账号并行登录与左侧快捷 Dock 栏；
+- **界面与交互重构**：移除遮挡页面的悬浮窗，打造左下角极简控制中心，支持深色/浅色/系统自适应风格热切换；
+- **深度瘦身与体积优化**：剔除 60+ 冗余语言包与 LZMA 最大化压缩。
+
+---
+
 ## 🤝 贡献与开源协议
 
 欢迎提交 Issue 反馈问题或发起 Pull Request！
