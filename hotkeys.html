@@ -159,8 +159,8 @@
   </div>
 
   <div class="tab-content active" id="tab-hotkeys">
-    <h2>Global Hotkeys</h2>
-    <p class="hint">Click a hotkey, then press the new combination. Esc cancels.</p>
+    <h2 id="h2-hotkeys">Global Hotkeys</h2>
+    <p class="hint" id="hint-hotkeys">Click a hotkey, then press the new combination. Esc cancels.</p>
     <div id="rows"></div>
     <div class="actions">
       <button class="action" id="reset">Reset defaults</button>
@@ -170,10 +170,10 @@
   </div>
 
   <div class="tab-content" id="tab-appearance">
-    <h2>Appearance & Display</h2>
-    <p class="hint">Customize theme colors and floating control visibility.</p>
+    <h2 id="h2-appearance">Appearance & Display</h2>
+    <p class="hint" id="hint-appearance">Customize theme colors, interface language, and controls.</p>
 
-    <div class="section-title">Color Theme (主题风格)</div>
+    <div class="section-title" id="sec-title-theme">Color Theme (主题风格)</div>
 
     <!-- Theme 1: Dark -->
     <div class="theme-mode-card selected" id="card-theme-dark">
@@ -206,20 +206,47 @@
       <div class="theme-mode-header">
         <div class="theme-mode-title">
           <input type="radio" name="theme-choice" id="rad-theme-system" value="system">
-          <label for="rad-theme-system" style="cursor:pointer;">💻 Follow System (跟随系统)</label>
+          <label for="rad-theme-system" style="cursor:pointer;" id="lbl-theme-system">💻 Follow System (跟随系统)</label>
         </div>
       </div>
-      <div class="theme-mode-desc">
-        跟随 Windows 系统的深浅色模式自动切换。
+      <div class="theme-mode-desc" id="desc-theme-system">
+        跟随系统的深浅色模式自动切换。
       </div>
     </div>
 
-    <div class="section-title">Layout & Controls (界面布局与交互)</div>
+    <div class="section-title" id="sec-title-lang">Language (界面语言)</div>
+    <!-- Language 1: English -->
+    <div class="theme-mode-card" id="card-lang-en">
+      <div class="theme-mode-header">
+        <div class="theme-mode-title">
+          <input type="radio" name="lang-choice" id="rad-lang-en" value="en">
+          <label for="rad-lang-en" style="cursor:pointer;">🇺🇸 English (US)</label>
+        </div>
+      </div>
+      <div class="theme-mode-desc" id="desc-lang-en">
+        Set application interface language to English.
+      </div>
+    </div>
+
+    <!-- Language 2: 简体中文 -->
+    <div class="theme-mode-card" id="card-lang-zh">
+      <div class="theme-mode-header">
+        <div class="theme-mode-title">
+          <input type="radio" name="lang-choice" id="rad-lang-zh" value="zh-CN">
+          <label for="rad-lang-zh" style="cursor:pointer;">🇨🇳 简体中文 (Chinese)</label>
+        </div>
+      </div>
+      <div class="theme-mode-desc" id="desc-lang-zh">
+        设置应用程序界面语言为简体中文。
+      </div>
+    </div>
+
+    <div class="section-title" id="sec-title-layout">Layout & Controls (界面布局与交互)</div>
     <div class="auto-card">
       <div class="auto-row">
         <div>
-          <span>左下角集成控制中心 (Left-Bottom Unified Center)</span>
-          <span class="sub">右上角及右下角悬浮按钮已彻底移除以最大化释放网页可视空间；所有自动化授权、网络代理与外观设置均已聚合至左下角 ⚙ 按钮，点击即可随时唤出控制面板。</span>
+          <span id="txt-layout-title">左下角集成控制中心 (Left-Bottom Unified Center)</span>
+          <span class="sub" id="txt-layout-sub">右上角及右下角悬浮按钮已彻底移除以最大化释放网页可视空间；所有自动化授权、网络代理与外观设置均已聚合至左下角 ⚙ 按钮，点击即可随时唤出控制面板。</span>
         </div>
       </div>
     </div>
@@ -227,60 +254,60 @@
   </div>
 
   <div class="tab-content" id="tab-auto">
-    <h2>Automation & Auto-Allow</h2>
-    <p class="hint">Automatically approve supported permission and action prompts. These controls only affect prompts Muse can detect on the current page. They do not grant new account or provider permissions.</p>
+    <h2 id="h2-auto">Automation & Auto-Allow</h2>
+    <p class="hint" id="hint-auto">Automatically approve supported permission and action prompts. These controls only affect prompts Muse can detect on the current page. They do not grant new account or provider permissions.</p>
 
     <div class="auto-card">
       <div class="auto-row">
         <div>
-          <span>Enable Auto-Approval</span>
-          <span class="sub">Turns automatic approval prompts on or off. Off means Muse will not click approval buttons.</span>
+          <span id="lbl-auto-master">Enable Auto-Approval</span>
+          <span class="sub" id="desc-auto-master">Turns automatic approval prompts on or off. Off means Muse will not click approval buttons.</span>
         </div>
         <input type="checkbox" id="chk-auto-master" class="toggle-switch">
       </div>
       <div class="auto-row">
         <div>
-          <span>Allow All Actions</span>
-          <span class="sub">Approve every detected action on an allowed site, ignoring the individual action filters.</span>
+          <span id="lbl-auto-allowall">Allow All Actions</span>
+          <span class="sub" id="desc-auto-allowall">Approve every detected action on an allowed site, ignoring the individual action filters.</span>
         </div>
         <input type="checkbox" id="chk-auto-allowall" class="toggle-switch">
       </div>
       <div class="auto-row">
         <div>
-          <span>On-Screen Controls</span>
-          <span class="sub">Show the Auto-Approval badge and quick controls on supported pages.</span>
+          <span id="lbl-auto-widget">On-Screen Controls</span>
+          <span class="sub" id="desc-auto-widget">Show the Auto-Approval badge and quick controls on supported pages.</span>
         </div>
         <input type="checkbox" id="chk-auto-widget" class="toggle-switch">
       </div>
     </div>
 
-    <div class="section-title">Global Action Permissions</div>
+    <div class="section-title" id="sec-title-act">Global Action Permissions</div>
     <div class="auto-card">
       <div class="auto-row">
-        <div><span>App / Connector Actions</span><span class="sub">Connection, authorization, integration, and plugin approval prompts.</span></div>
+        <div><span id="lbl-act-connectors">App / Connector Actions</span><span class="sub" id="desc-act-connectors">Connection, authorization, integration, and plugin approval prompts.</span></div>
         <input type="checkbox" id="chk-act-connectors" class="toggle-switch">
       </div>
       <div class="auto-row">
-        <div><span>File and Data Access</span><span class="sub">Prompts to access, upload, download, read, or write files and documents.</span></div>
+        <div><span id="lbl-act-file">File and Data Access</span><span class="sub" id="desc-act-file">Prompts to access, upload, download, read, or write files and documents.</span></div>
         <input type="checkbox" id="chk-act-file" class="toggle-switch">
       </div>
       <div class="auto-row">
-        <div><span>External Navigation</span><span class="sub">Prompts to open links, URLs, websites, tabs, or windows outside the chat.</span></div>
+        <div><span id="lbl-act-links">External Navigation</span><span class="sub" id="desc-act-links">Prompts to open links, URLs, websites, tabs, or windows outside the chat.</span></div>
         <input type="checkbox" id="chk-act-links" class="toggle-switch">
       </div>
       <div class="auto-row">
-        <div><span>Code Execution</span><span class="sub">Prompts to run code, scripts, shell commands, or terminal actions.</span></div>
+        <div><span id="lbl-act-code">Code Execution</span><span class="sub" id="desc-act-code">Prompts to run code, scripts, shell commands, or terminal actions.</span></div>
         <input type="checkbox" id="chk-act-code" class="toggle-switch">
       </div>
       <div class="auto-row">
-        <div><span>Microphone and Media</span><span class="sub">Microphone, camera, audio, and other media permission prompts.</span></div>
+        <div><span id="lbl-act-media">Microphone and Media</span><span class="sub" id="desc-act-media">Microphone, camera, audio, and other media permission prompts.</span></div>
         <input type="checkbox" id="chk-act-media" class="toggle-switch">
       </div>
     </div>
 
-    <div class="section-title">Per-Website Rules</div>
+    <div class="section-title" id="sec-title-sites">Per-Website Rules</div>
     <div class="auto-card">
-      <div style="font-size:11.5px;color:#8a909d;margin-bottom:8px;">A website rule overrides the global action setting for that website. “Always allow” enables automatic approvals there; individual action switches narrow what can be approved.</div>
+      <div style="font-size:11.5px;color:#8a909d;margin-bottom:8px;" id="desc-sites-rules">A website rule overrides the global action setting for that website. “Always allow” enables automatic approvals there; individual action switches narrow what can be approved.</div>
       <div id="site-rules-list"></div>
       <div class="site-input-group">
         <input type="text" id="site-add-input" class="site-input" placeholder="example.com">
@@ -290,21 +317,21 @@
   </div>
 
   <div class="tab-content" id="tab-proxy">
-    <h2>Network & Proxy Settings</h2>
-    <p class="hint">选择网络代理策略。默认开启自适应模式，自动兼容 TUN 虚拟网卡与系统代理，多设备免配置直接联网。</p>
+    <h2 id="h2-proxy">Network & Proxy Settings</h2>
+    <p class="hint" id="hint-proxy">选择网络代理策略。默认开启自适应模式，自动兼容 TUN 虚拟网卡与系统代理，多设备免配置直接联网。</p>
 
-    <div class="section-title">连接模式 (Connection Mode)</div>
+    <div class="section-title" id="sec-title-proxy-mode">连接模式 (Connection Mode)</div>
 
     <!-- 模式 1: 自适应系统网络与TUN网卡 (默认推荐) -->
     <div class="proxy-mode-card selected" id="card-mode-system">
       <div class="proxy-mode-header">
         <div class="proxy-mode-title">
           <input type="radio" name="proxy-mode" id="rad-mode-system" value="system" checked>
-          <label for="rad-mode-system" style="cursor:pointer;">自适应系统代理 / TUN 虚拟网卡</label>
+          <label for="rad-mode-system" style="cursor:pointer;" id="lbl-mode-system">自适应系统代理 / TUN 虚拟网卡</label>
         </div>
-        <span class="proxy-badge rec">推荐 · 默认开箱即用</span>
+        <span class="proxy-badge rec" id="badge-mode-system">推荐 · 默认开箱即用</span>
       </div>
-      <div class="proxy-mode-desc">
+      <div class="proxy-mode-desc" id="desc-mode-system">
         自动继承 Windows 系统网络代理、VPN 与 Clash Verge 的 TUN 虚拟网卡模式。部署到新电脑无需任何手动设置，免配置畅通联网。
       </div>
     </div>
@@ -314,17 +341,17 @@
       <div class="proxy-mode-header">
         <div class="proxy-mode-title">
           <input type="radio" name="proxy-mode" id="rad-mode-custom" value="custom">
-          <label for="rad-mode-custom" style="cursor:pointer;">手动指定本地/局域网代理 (覆盖模式)</label>
+          <label for="rad-mode-custom" style="cursor:pointer;" id="lbl-mode-custom">手动指定本地/局域网代理 (覆盖模式)</label>
         </div>
       </div>
-      <div class="proxy-mode-desc">
+      <div class="proxy-mode-desc" id="desc-mode-custom">
         强制所有账号流量经过指定的本地或局域网代理端口（如 Clash HTTP/SOCKS 7897 端口）。
       </div>
 
       <!-- 手动配置项展开区 -->
       <div id="custom-proxy-panel" style="margin-top:10px; padding-top:10px; border-top:1px solid #2d323e; display:none;">
         <div class="auto-row">
-          <div><span>代理协议 (Type)</span><span class="sub">HTTP / SOCKS5</span></div>
+          <div><span id="lbl-proxy-type">代理协议 (Type)</span><span class="sub" id="sub-proxy-type">HTTP / SOCKS5</span></div>
           <select id="sel-proxy-type" style="background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 8px; border-radius:6px; font-size:12px;">
             <option value="http">HTTP</option>
             <option value="socks5">SOCKS5</option>
@@ -332,12 +359,12 @@
         </div>
 
         <div class="auto-row" style="margin-top: 6px;">
-          <div><span>代理服务器 (Host)</span><span class="sub">默认本地 127.0.0.1</span></div>
+          <div><span id="lbl-proxy-host">代理服务器 (Host)</span><span class="sub" id="sub-proxy-host">默认本地 127.0.0.1</span></div>
           <input type="text" id="txt-proxy-host" value="127.0.0.1" style="width:130px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 8px; border-radius:6px; font-size:12px;">
         </div>
 
         <div class="auto-row" style="margin-top: 6px;">
-          <div><span>代理端口 (Port)</span><span class="sub">例如 Clash Verge 默认 7897</span></div>
+          <div><span id="lbl-proxy-port">代理端口 (Port)</span><span class="sub" id="sub-proxy-port">例如 Clash Verge 默认 7897</span></div>
           <input type="number" id="txt-proxy-port" value="7897" style="width:90px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 8px; border-radius:6px; font-size:12px;">
         </div>
 
@@ -352,10 +379,10 @@
       <div class="proxy-mode-header">
         <div class="proxy-mode-title">
           <input type="radio" name="proxy-mode" id="rad-mode-direct" value="direct">
-          <label for="rad-mode-direct" style="cursor:pointer;">直接连接 (Direct)</label>
+          <label for="rad-mode-direct" style="cursor:pointer;" id="lbl-mode-direct">直接连接 (Direct)</label>
         </div>
       </div>
-      <div class="proxy-mode-desc">
+      <div class="proxy-mode-desc" id="desc-mode-direct">
         不经过任何本地或系统代理，直连互联网。
       </div>
     </div>
@@ -367,6 +394,268 @@
   </div>
 
 <script>
+const I18N_SETTINGS = {
+  en: {
+    tabHotkeys: 'Hotkeys',
+    tabAppearance: 'Appearance & UI',
+    tabAuto: 'Automation & Rules',
+    tabProxy: 'Network & Proxy',
+    hotkeysTitle: 'Global Hotkeys',
+    hotkeysHint: 'Click a hotkey, then press the new combination. Esc cancels.',
+    resetDefaults: 'Reset defaults',
+    save: 'Save',
+    appearanceTitle: 'Appearance & Display',
+    appearanceHint: 'Customize theme colors, interface language, and controls.',
+    colorThemeTitle: 'Color Theme',
+    darkThemeTitle: '🌙 Dark Theme',
+    darkThemeDesc: 'Immersive dark theme to protect vision in low-light environments.',
+    lightThemeTitle: '☀️ Light Theme',
+    lightThemeDesc: 'High-contrast bright theme, crisp text for daytime office work.',
+    systemThemeTitle: '💻 Follow System',
+    systemThemeDesc: 'Automatically switch based on operating system theme preference.',
+    langSectionTitle: 'Language (界面语言)',
+    langEnTitle: '🇺🇸 English (US)',
+    langEnDesc: 'Set application interface language to English.',
+    langZhTitle: '🇨🇳 简体中文 (Chinese)',
+    langZhDesc: '设置应用程序界面语言为简体中文。',
+    layoutTitle: 'Layout & Controls',
+    layoutCenterTitle: 'Left-Bottom Unified Control Center',
+    layoutCenterDesc: 'Floating widgets have been consolidated into the left-bottom ⚙ button to maximize browsing space.',
+    autoTitle: 'Automation & Auto-Allow',
+    autoHint: 'Automatically approve supported permission and action prompts on allowed websites.',
+    autoMasterTitle: 'Enable Auto-Approval',
+    autoMasterDesc: 'Turns automatic approval prompts on or off. Off means Muse will not click approval buttons.',
+    autoAllowAllTitle: 'Allow All Actions',
+    autoAllowAllDesc: 'Approve every detected action on an allowed site, ignoring individual action filters.',
+    autoWidgetTitle: 'On-Screen Controls',
+    autoWidgetDesc: 'Show the Auto-Approval status and quick controls on supported pages.',
+    globalActionPermsTitle: 'Global Action Permissions',
+    actConnectorsTitle: 'App / Connector Actions',
+    actConnectorsDesc: 'Connection, authorization, integration, and plugin approval prompts.',
+    actFileTitle: 'File and Data Access',
+    actFileDesc: 'Prompts to access, upload, download, read, or write files and documents.',
+    actLinksTitle: 'External Navigation',
+    actLinksDesc: 'Prompts to open links, URLs, websites, tabs, or windows outside the chat.',
+    actCodeTitle: 'Code Execution',
+    actCodeDesc: 'Prompts to run code, scripts, shell commands, or terminal actions.',
+    actMediaTitle: 'Microphone and Media',
+    actMediaDesc: 'Microphone, camera, audio, and other media permission prompts.',
+    perSiteRulesTitle: 'Per-Website Rules',
+    perSiteRulesDesc: 'A website rule overrides the global action setting for that website.',
+    addBtn: 'Add',
+    proxyTitle: 'Network & Proxy Settings',
+    proxyHint: 'Choose a network proxy policy. Adaptive system mode is enabled by default.',
+    connModeTitle: 'Connection Mode',
+    modeSystemTitle: 'Adaptive System Proxy / TUN Virtual Card (Default Recommended)',
+    modeSystemDesc: 'Automatically detects Clash/V2Ray/Surge TUN virtual cards and Windows system proxy settings.',
+    modeCustomTitle: 'Custom Proxy Override (Specify Address & Port)',
+    modeCustomDesc: 'Directly forward traffic to a specified local/LAN proxy server.',
+    modeDirectTitle: 'Direct Connection (No Proxy)',
+    modeDirectDesc: 'Bypass any proxy settings and connect directly to the destination site.',
+    recommendedBadge: 'Recommended',
+    proxyTypeLabel: 'Type:',
+    proxyHostLabel: 'Host:',
+    proxyPortLabel: 'Port:',
+    proxySaveBtn: 'Save & Apply Proxy Settings',
+  },
+  'zh-CN': {
+    tabHotkeys: '快捷键',
+    tabAppearance: '外观与语言',
+    tabAuto: '自动化规则',
+    tabProxy: '网络与代理',
+    hotkeysTitle: '全局快捷键',
+    hotkeysHint: '点击快捷键输入框，直接按下新的键盘按键组合；按 Esc 键可取消。',
+    resetDefaults: '恢复默认值',
+    save: '保存修改',
+    appearanceTitle: '外观与界面设置',
+    appearanceHint: '定制颜色主题、界面显示语言与控件显示规则。',
+    colorThemeTitle: '主题风格 (Color Theme)',
+    darkThemeTitle: '🌙 深色模式 (Dark Theme)',
+    darkThemeDesc: '沉浸式暗黑调配色，保护视力，适合夜间或低光照环境下专注使用。',
+    lightThemeTitle: '☀️ 浅色模式 (Light Theme)',
+    lightThemeDesc: '高清晰明亮雅致配色，文字锐利清晰，适合日光环境和明亮办公场景。',
+    systemThemeTitle: '💻 跟随系统 (Follow System)',
+    systemThemeDesc: '跟随操作系统的深浅色模式自动切换。',
+    langSectionTitle: '界面语言 (Language)',
+    langEnTitle: '🇺🇸 English (US)',
+    langEnDesc: 'Set application interface language to English.',
+    langZhTitle: '🇨🇳 简体中文 (Chinese)',
+    langZhDesc: '设置应用程序界面语言为简体中文。',
+    layoutTitle: '界面布局与交互',
+    layoutCenterTitle: '左下角集成控制中心 (Left-Bottom Unified Center)',
+    layoutCenterDesc: '右上角及右下角悬浮按钮已彻底移除以最大化释放网页可视空间；所有自动化授权、网络代理与外观设置均已聚合至左下角 ⚙ 按钮。',
+    autoTitle: '自动化审批与行为控制',
+    autoHint: '自动同意支持的权限和操作提示。这些控制仅在当前网页上生效，不授予外部账户权限。',
+    autoMasterTitle: '启用自动同意总控 (Master Switch)',
+    autoMasterDesc: '开启或关闭自动审批提示。关闭后 Muse 将不再自动点击同意按钮。',
+    autoAllowAllTitle: '一键允许所有行为 (Allow All)',
+    autoAllowAllDesc: '在允许的网站上自动批准所有检测到的操作，忽略细分动作过滤。',
+    autoWidgetTitle: '屏幕状态与指示',
+    autoWidgetDesc: '在支持的页面左下角显示自动审批状态徽章与快捷控制。',
+    globalActionPermsTitle: '全局动作授权范围',
+    actConnectorsTitle: '应用集成 / 插件授权 (Connectors)',
+    actConnectorsDesc: '连接、第三方授权、插件与集成应用相关审批提示。',
+    actFileTitle: '文件与数据访问 (File Access)',
+    actFileDesc: '访问、上传、下载、读取或写入本地文件与文档的提示。',
+    actLinksTitle: '外部链接与窗口跳转 (External Links)',
+    actLinksDesc: '在会话外部打开链接、跳转网址、新标签页或弹窗的提示。',
+    actCodeTitle: '代码执行与脚本运行 (Code Execution)',
+    actCodeDesc: '运行代码、脚本、Shell 命令或终端操作的相关提示。',
+    actMediaTitle: '麦克风与媒体访问 (Media Permissions)',
+    actMediaDesc: '麦克风、摄像头、音频与其他多媒体权限申请提示。',
+    perSiteRulesTitle: '分网站独立规则',
+    perSiteRulesDesc: '网站专属规则将覆盖全局设置。“始终允许”将在此网站启用自动审批。',
+    addBtn: '添加',
+    proxyTitle: '网络代理配置',
+    proxyHint: '选择网络代理策略。默认开启自适应模式，自动兼容 TUN 虚拟网卡与系统代理，多设备免配置直接联网。',
+    connModeTitle: '连接模式 (Connection Mode)',
+    modeSystemTitle: '自适应系统网络与 TUN 虚拟网卡 (默认推荐)',
+    modeSystemDesc: '自动探测系统全局代理与 Clash/V2Ray/Surge/Sing-box 等 TUN 虚拟网卡网关，开箱即用免配置。',
+    modeCustomTitle: '手动代理覆盖 (指定本地/局域网代理地址)',
+    modeCustomDesc: '强制指定 HTTP / SOCKS5 代理地址与端口（如本机 7897/7890 端口）。',
+    modeDirectTitle: '直接连接 (Direct Connection)',
+    modeDirectDesc: '绕过任何系统代理或 VPN，客户端直接发起网络请求。',
+    recommendedBadge: '推荐 · 默认开箱即用',
+    proxyTypeLabel: '代理协议 (Type)',
+    proxyHostLabel: '代理服务器 (Host)',
+    proxyPortLabel: '代理端口 (Port)',
+    proxySaveBtn: '保存并立即生效',
+  }
+};
+
+function applySettingsLocale(loc) {
+  const lang = (loc === 'zh-CN') ? 'zh-CN' : 'en';
+  const t = I18N_SETTINGS[lang];
+  if (!t) return;
+
+  const tabHotkeysBtn = document.getElementById('tab-hotkeys-btn');
+  const tabAppearanceBtn = document.getElementById('tab-appearance-btn');
+  const tabAutoBtn = document.getElementById('tab-auto-btn');
+  const tabProxyBtn = document.getElementById('tab-proxy-btn');
+  if (tabHotkeysBtn) tabHotkeysBtn.textContent = t.tabHotkeys;
+  if (tabAppearanceBtn) tabAppearanceBtn.textContent = t.tabAppearance;
+  if (tabAutoBtn) tabAutoBtn.textContent = t.tabAuto;
+  if (tabProxyBtn) tabProxyBtn.textContent = t.tabProxy;
+
+  const h2Hotkeys = document.getElementById('h2-hotkeys');
+  if (h2Hotkeys) h2Hotkeys.textContent = t.hotkeysTitle;
+  const hintHotkeys = document.getElementById('hint-hotkeys');
+  if (hintHotkeys) hintHotkeys.textContent = t.hotkeysHint;
+  const resetBtn = document.getElementById('reset');
+  if (resetBtn) resetBtn.textContent = t.resetDefaults;
+  const saveBtn = document.getElementById('save');
+  if (saveBtn) saveBtn.textContent = t.save;
+
+  const h2App = document.getElementById('h2-appearance');
+  if (h2App) h2App.textContent = t.appearanceTitle;
+  const hintApp = document.getElementById('hint-appearance');
+  if (hintApp) hintApp.textContent = t.appearanceHint;
+  const secTheme = document.getElementById('sec-title-theme');
+  if (secTheme) secTheme.textContent = t.colorThemeTitle;
+  const lblDark = document.querySelector('label[for="rad-theme-dark"]');
+  if (lblDark) lblDark.textContent = t.darkThemeTitle;
+  const descDark = document.querySelector('#card-theme-dark .theme-mode-desc');
+  if (descDark) descDark.textContent = t.darkThemeDesc;
+  const lblLight = document.querySelector('label[for="rad-theme-light"]');
+  if (lblLight) lblLight.textContent = t.lightThemeTitle;
+  const descLight = document.querySelector('#card-theme-light .theme-mode-desc');
+  if (descLight) descLight.textContent = t.lightThemeDesc;
+  const lblSys = document.getElementById('lbl-theme-system');
+  if (lblSys) lblSys.textContent = t.systemThemeTitle;
+  const descSys = document.getElementById('desc-theme-system');
+  if (descSys) descSys.textContent = t.systemThemeDesc;
+
+  const secLang = document.getElementById('sec-title-lang');
+  if (secLang) secLang.textContent = t.langSectionTitle;
+  const descLangEn = document.getElementById('desc-lang-en');
+  if (descLangEn) descLangEn.textContent = t.langEnDesc;
+  const descLangZh = document.getElementById('desc-lang-zh');
+  if (descLangZh) descLangZh.textContent = t.langZhDesc;
+
+  const secLayout = document.getElementById('sec-title-layout');
+  if (secLayout) secLayout.textContent = t.layoutTitle;
+  const txtLayoutTitle = document.getElementById('txt-layout-title');
+  if (txtLayoutTitle) txtLayoutTitle.textContent = t.layoutCenterTitle;
+  const txtLayoutSub = document.getElementById('txt-layout-sub');
+  if (txtLayoutSub) txtLayoutSub.textContent = t.layoutCenterDesc;
+
+  const h2Auto = document.getElementById('h2-auto');
+  if (h2Auto) h2Auto.textContent = t.autoTitle;
+  const hintAuto = document.getElementById('hint-auto');
+  if (hintAuto) hintAuto.textContent = t.autoHint;
+  const lblAutoMaster = document.getElementById('lbl-auto-master');
+  if (lblAutoMaster) lblAutoMaster.textContent = t.autoMasterTitle;
+  const descAutoMaster = document.getElementById('desc-auto-master');
+  if (descAutoMaster) descAutoMaster.textContent = t.autoMasterDesc;
+  const lblAutoAll = document.getElementById('lbl-auto-allowall');
+  if (lblAutoAll) lblAutoAll.textContent = t.autoAllowAllTitle;
+  const descAutoAll = document.getElementById('desc-auto-allowall');
+  if (descAutoAll) descAutoAll.textContent = t.autoAllowAllDesc;
+  const lblAutoWidget = document.getElementById('lbl-auto-widget');
+  if (lblAutoWidget) lblAutoWidget.textContent = t.autoWidgetTitle;
+  const descAutoWidget = document.getElementById('desc-auto-widget');
+  if (descAutoWidget) descAutoWidget.textContent = t.autoWidgetDesc;
+
+  const secAct = document.getElementById('sec-title-act');
+  if (secAct) secAct.textContent = t.globalActionPermsTitle;
+  const lblActConn = document.getElementById('lbl-act-connectors');
+  if (lblActConn) lblActConn.textContent = t.actConnectorsTitle;
+  const descActConn = document.getElementById('desc-act-connectors');
+  if (descActConn) descActConn.textContent = t.actConnectorsDesc;
+  const lblActFile = document.getElementById('lbl-act-file');
+  if (lblActFile) lblActFile.textContent = t.actFileTitle;
+  const descActFile = document.getElementById('desc-act-file');
+  if (descActFile) descActFile.textContent = t.actFileDesc;
+  const lblActLinks = document.getElementById('lbl-act-links');
+  if (lblActLinks) lblActLinks.textContent = t.actLinksTitle;
+  const descActLinks = document.getElementById('desc-act-links');
+  if (descActLinks) descActLinks.textContent = t.actLinksDesc;
+  const lblActCode = document.getElementById('lbl-act-code');
+  if (lblActCode) lblActCode.textContent = t.actCodeTitle;
+  const descActCode = document.getElementById('desc-act-code');
+  if (descActCode) descActCode.textContent = t.actCodeDesc;
+  const lblActMedia = document.getElementById('lbl-act-media');
+  if (lblActMedia) lblActMedia.textContent = t.actMediaTitle;
+  const descActMedia = document.getElementById('desc-act-media');
+  if (descActMedia) descActMedia.textContent = t.actMediaDesc;
+
+  const secSites = document.getElementById('sec-title-sites');
+  if (secSites) secSites.textContent = t.perSiteRulesTitle;
+  const descSites = document.getElementById('desc-sites-rules');
+  if (descSites) descSites.textContent = t.perSiteRulesDesc;
+  const addBtn = document.getElementById('site-add-btn');
+  if (addBtn) addBtn.textContent = t.addBtn;
+
+  const h2Proxy = document.getElementById('h2-proxy');
+  if (h2Proxy) h2Proxy.textContent = t.proxyTitle;
+  const hintProxy = document.getElementById('hint-proxy');
+  if (hintProxy) hintProxy.textContent = t.proxyHint;
+  const secProxyMode = document.getElementById('sec-title-proxy-mode');
+  if (secProxyMode) secProxyMode.textContent = t.connModeTitle;
+  const lblModeSys = document.getElementById('lbl-mode-system');
+  if (lblModeSys) lblModeSys.textContent = t.modeSystemTitle;
+  const badgeSys = document.getElementById('badge-mode-system');
+  if (badgeSys) badgeSys.textContent = t.recommendedBadge;
+  const descModeSys = document.getElementById('desc-mode-system');
+  if (descModeSys) descModeSys.textContent = t.modeSystemDesc;
+  const lblModeCustom = document.getElementById('lbl-mode-custom');
+  if (lblModeCustom) lblModeCustom.textContent = t.modeCustomTitle;
+  const descModeCustom = document.getElementById('desc-mode-custom');
+  if (descModeCustom) descModeCustom.textContent = t.modeCustomDesc;
+  const lblModeDirect = document.getElementById('lbl-mode-direct');
+  if (lblModeDirect) lblModeDirect.textContent = t.modeDirectTitle;
+  const descModeDirect = document.getElementById('desc-mode-direct');
+  if (descModeDirect) descModeDirect.textContent = t.modeDirectDesc;
+  const lblProxyType = document.getElementById('lbl-proxy-type');
+  if (lblProxyType) lblProxyType.textContent = t.proxyTypeLabel;
+  const lblProxyHost = document.getElementById('lbl-proxy-host');
+  if (lblProxyHost) lblProxyHost.textContent = t.proxyHostLabel;
+  const lblProxyPort = document.getElementById('lbl-proxy-port');
+  if (lblProxyPort) lblProxyPort.textContent = t.proxyPortLabel;
+  const btnSaveProxy = document.getElementById('btn-save-proxy');
+  if (btnSaveProxy) btnSaveProxy.textContent = t.proxySaveBtn;
+}
+
 const api = window.hotkeyAPI;
 let labels = {}, defaults = {};
 let saved = {}, pending = {}, capturing = null;
@@ -728,6 +1017,50 @@ radThemeDark.onchange = () => selectTheme('dark');
 radThemeLight.onchange = () => selectTheme('light');
 radThemeSystem.onchange = () => selectTheme('system');
 
+// --- Language Settings Logic ---
+const localeApi = window.localeAPI;
+const cardLangEn = document.getElementById('card-lang-en');
+const cardLangZh = document.getElementById('card-lang-zh');
+const radLangEn = document.getElementById('rad-lang-en');
+const radLangZh = document.getElementById('rad-lang-zh');
+let currentSettingsLocale = 'en';
+
+function updateLangCardsUI(loc) {
+  currentSettingsLocale = (loc === 'zh-CN') ? 'zh-CN' : 'en';
+  [cardLangEn, cardLangZh].forEach(c => c && c.classList.remove('selected'));
+  if (currentSettingsLocale === 'zh-CN') {
+    if (cardLangZh) cardLangZh.classList.add('selected');
+    if (radLangZh) radLangZh.checked = true;
+  } else {
+    if (cardLangEn) cardLangEn.classList.add('selected');
+    if (radLangEn) radLangEn.checked = true;
+  }
+}
+
+async function selectLocale(loc) {
+  updateLangCardsUI(loc);
+  applySettingsLocale(loc);
+  if (localeApi) {
+    try {
+      await localeApi.set(loc);
+    } catch (e) {
+      console.error('Failed to set locale:', e);
+    }
+  }
+  try {
+    const data = await api.get();
+    if (data && data.labels) {
+      labels = data.labels || {};
+      render();
+    }
+  } catch (e) {}
+}
+
+if (cardLangEn) cardLangEn.onclick = () => selectLocale('en');
+if (cardLangZh) cardLangZh.onclick = () => selectLocale('zh-CN');
+if (radLangEn) radLangEn.onchange = () => selectLocale('en');
+if (radLangZh) radLangZh.onchange = () => selectLocale('zh-CN');
+
 if (chkAutoHide) {
   chkAutoHide.onchange = async (e) => {
     const enabled = e.target.checked;
@@ -746,6 +1079,15 @@ if (chkAutoHide) {
 }
 
 async function loadThemeAndUI() {
+  if (localeApi) {
+    try {
+      const loc = await localeApi.get();
+      updateLangCardsUI(loc);
+      applySettingsLocale(loc);
+    } catch (e) {
+      console.error(e);
+    }
+  }
   if (themeApi) {
     try {
       const cur = await themeApi.get();
@@ -911,6 +1253,20 @@ if (window.settingsTabAPI) {
   try { await refreshAutoState(); } catch (e) { console.error(e); }
   try { await loadThemeAndUI(); } catch (e) { console.error(e); }
   try { await loadProxySettings(); } catch (e) { console.error(e); }
+
+  if (window.localeAPI && window.localeAPI.onChanged) {
+    window.localeAPI.onChanged(async (newLoc) => {
+      updateLangCardsUI(newLoc);
+      applySettingsLocale(newLoc);
+      try {
+        const d = await api.get();
+        if (d && d.labels) {
+          labels = d.labels || {};
+          render();
+        }
+      } catch (e) {}
+    });
+  }
 })();
 </script>
 </body>

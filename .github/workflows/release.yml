@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-latest, macos-latest]
 
     runs-on: ${{ matrix.os }}
 
@@ -43,5 +43,12 @@ jobs:
       - name: Build and Publish (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: npx electron-builder --linux AppImage deb tar.gz --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # macOS 打包发布 (DMG + ZIP)
+      - name: Build and Publish (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npx electron-builder --mac dmg zip --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

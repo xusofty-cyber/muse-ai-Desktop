@@ -46,3 +46,14 @@ contextBridge.exposeInMainWorld('uiAPI', {
   },
 });
 
+contextBridge.exposeInMainWorld('localeAPI', {
+  get: () => ipcRenderer.invoke('locale-get'),
+  set: (locale) => ipcRenderer.invoke('locale-set', locale),
+  onChanged: (callback) => {
+    ipcRenderer.on('locale:changed', (e, loc) => {
+      if (typeof callback === 'function') callback(loc);
+    });
+  },
+});
+
+

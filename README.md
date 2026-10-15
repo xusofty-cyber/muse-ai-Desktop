@@ -1,83 +1,156 @@
-# Muse for Windows
+# Muse for Desktop (Windows, macOS, Linux)
 
-Desktop app for Muse on Windows. Meta only ships Mac, iOS, Android, and web
-clients, so this wraps the web app in a native window (same trick as the
-official Mac app). It does **not** give the agent access to your PC; it is
-your chat with Muse in a desktop window.
+<div align="center">
 
-## Features (v1.1)
+**Your Personal AI Agent in a Native, Lightweight Desktop App**
 
-- Main window for muse.ai, remembers size and position
-- System tray icon; closing the window parks the app in the tray
-- Quick chat popup: **Ctrl+Shift+Space** anywhere, hides when it loses focus
-- **Profiles**: separate isolated sessions per profile, so two people can each
-  stay signed in and switch from the tray. "Sign out" wipes the current
-  profile's login.
-- **Muse / Meta AI toggle**: **Ctrl+Shift+M** or the tray menu switches the
-  window between muse.ai and meta.ai. They are separate products with
-  separate logins; the toggle just switches sites, it does not merge them.
-  The switch reuses the current window instead of restarting it.
-- **Saved Meta AI accounts**: each profile keeps its own isolated login/session.
-  On Meta AI, the tray has an account switcher plus "Add Meta AI account…".
-  **Ctrl+Shift+N** cycles through saved Meta AI accounts and can be remapped
-  in Settings & Hotkeys.
-  Meta AI's voice chat and TTS are available when you're on its tab, and the
-  app grants microphone access for voice chat (muse.ai and meta.ai only).
-- **Save clipboard text as .txt**: tray menu item dumps the clipboard to
-  `Documents/Muse clips/clip-<timestamp>.txt` and opens its folder, so huge
-  pastes can be dragged into chat as a file instead of freezing the input.
-- **Right-click menu + downloads**: Save link as / Save image as / Copy link
-  address, standard cut-copy-paste. Downloads ask where to save and notify on
-  completion.
-- **Automation / Auto-Allow controls**: automation is opt-in and off by default. A remappable global hotkey, tray controls, and an on-screen widget can toggle the master switch. Auto-Allow All is explicit, and per-site rules can be set for individual connector/action categories. Any automation can be disabled from the same controls.
-- **Mic / speaker toggles + customizable hotkeys**: tray menu or global
-  hotkeys mute the microphone (for voice chat) and the app's speaker.
-  "Customize hotkeys…" opens a settings screen where every global hotkey can
-  be remapped. Mic selection itself isn't possible at the app level; the site
-  uses your Windows default input device.
-- Zoom: **Ctrl+= / Ctrl+- / Ctrl+0** in the main window
-- GPU rasterization flags for smoother scrolling
-- Run on startup toggle
-- Auto-update via GitHub Releases (see below)
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-## Run from source
+[![Release](https://img.shields.io/github/v/release/xusofty-cyber/muse-ai-Desktop?style=flat-square)](https://github.com/xusofty-cyber/muse-ai-Desktop/releases)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=flat-square)](#download--installation)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
-1. Install Node.js LTS from https://nodejs.org
-2. `npm install`
-3. `npm start`
+</div>
 
-## Build the Windows installer (on a Windows PC)
+---
 
-The installer target needs Windows to finalize (wine on Linux cannot do it):
+## 🌟 Overview
 
-1. Install Node.js LTS
-2. `npm install`
-3. `npm run dist`
-4. Find `dist/Muse Setup 1.1.0.exe` (installer) and `dist/Muse-Portable-1.1.0.exe`
-   (no-install portable) plus `dist/latest.yml`
+**Muse Desktop** wraps Muse ([muse.ai](https://muse.ai)) and Meta AI ([meta.ai](https://www.meta.ai)) in a fast, privacy-focused native desktop container for **Windows, Linux, and macOS**. It delivers multi-account session isolation, global shortcut controls, adaptive proxy & TUN virtual adapter compatibility, automated permission approval (Auto-Allow), and instant chat export—all inside a clean, clutter-free desktop UI.
 
-The portable build can also be produced on Linux/macOS; only the NSIS
-installer needs Windows.
+---
 
-## Auto-update setup
+## ✨ Key Features
 
-1. Create a **public** GitHub repo named `muse-windows` under your account
-   (the app is preconfigured for `whxjwksjs/muse-windows`; change
-   `build.publish` in package.json if yours differs)
-2. Build on Windows with `npm run dist`
-3. Create a GitHub Release and upload `Muse Setup 1.1.0.exe` **and**
-   `latest.yml` (electron-builder generates it in `dist/`)
-4. The app checks for updates 30 seconds after launch and every 6 hours, and
-   via Tray > Check for updates. Download is automatic; install happens on
-   restart from the tray menu.
+### 🌐 Cross-Platform Native Experience
+- **Windows**: NSIS Setup installer & zero-install standalone Portable executable.
+- **Linux**: AppImage, Debian package (`.deb`), and portable green tarball (`.tar.gz`).
+- **macOS**: Native DMG installer and portable ZIP package.
 
-Notes: updates work best with the installed (NSIS) build; the portable build
-will notify but is easiest updated by downloading the new portable. Without
-a code-signing certificate Windows SmartScreen warns on first run and on
-updates; click More info > Run anyway.
+### 🌐 Internationalization (i18n)
+- **Full Bilingual UI**: Switch between **English** and **简体中文** anytime.
+- **Instant Hot-Switching**: Change languages on the fly via the System Tray menu, the bottom-left Control Center popover, or the Settings dialog without restarting the app.
 
-## Storage
+### ⚡ Ultra-Lightweight & Optimized
+- **Deep Compression**: Powered by maximum LZMA compression and aggressive locale stripping (retaining only essential Chinese and English packs), reducing the binary footprint by 15–20MB.
+- **High Performance**: Hardware-accelerated GPU rasterization and zero-copy rendering for fluid scrolling and low memory usage.
 
-The ~100 MB size is almost entirely Chromium, which the app needs to run.
-`compression: maximum` is already set; a zip of the unpacked app saves only
-a few MB. Runtime disk use is the full unpacked size regardless.
+### 👥 Multi-Account Concurrent Login & Profile Isolation
+- **Simultaneous Multi-Account Login**: Sign in to multiple Muse or Meta AI accounts simultaneously (e.g., Personal, Work, Project-specific, or Family accounts) without logging out.
+- **True Session Isolation**: Powered by Chromium `persist:partition` storage. Cookies, local storage, tokens, caches, and history are completely isolated across accounts to prevent credential collision.
+- **Zero-Latency Instant Switching**: Switch between active accounts in real-time via the sleek left-side Dock with zero page reloads.
+- **Account Management & Customization**:
+  - **Quick Add**: One-click `+` button on the Dock to spin up a fresh isolated login session.
+  - **Custom Aliases**: Right-click any account badge to assign custom nicknames or notes (e.g., "Company Work", "Research").
+  - **Independent Sign-Out & Wipe**: Log out or permanently delete specific profile caches without affecting other active accounts.
+  - **Collapsible Dock**: Collapse the account Dock anytime to maximize conversational screen estate.
+
+### 🎨 Visual Style & Theme Customization
+- **Multiple Theme Styles**:
+  - **Dark Mode 🌙**: High-contrast, deep night palette tailored for low-light environments and long coding/writing sessions.
+  - **Light Mode ☀️**: Clean, crisp, and radiant daytime theme with sharp typography and minimal eye strain.
+  - **System Adaptive 💻**: Seamlessly synchronizes with Windows, macOS, or Linux system-wide dark/light theme changes.
+- **Instant Hot-Switching**: Toggle themes instantly via the bottom-left Control Center (`⚙`) popover or the Settings panel (`Ctrl+,` / `Cmd+,`) without reloading pages.
+- **Interface Layout Flexibility**: Customize UI density, toggle the account Dock sidebar, and enjoy a distraction-free conversation canvas.
+
+### ⚙️ Left-Bottom Unified Control Center
+- **Distraction-Free Screen**: Floating overlay buttons have been consolidated into a sleek `⚙` Control Center button docked at the bottom-left corner to maximize chat visibility.
+- **Quick Controls**: Access Theme/Style switching, Auto-Allow master switches, granular action categories, proxy configurations, and instant language switching in a single unified panel.
+
+### 🛡️ Smart Automation (Auto-Allow)
+- **Opt-In Safety**: Automation is completely disabled by default.
+- **Granular Approvals**: Customize auto-approvals per action category:
+  - App & Connector Integrations
+  - File and Data Access
+  - External Navigation & Links
+  - Code & Script Execution
+  - Microphone & Media Permissions
+- **Per-Site Rules**: Set domain-specific override rules (e.g., `muse.ai` vs `meta.ai`).
+
+### 🚀 Adaptive Network & Proxy Architecture
+- **Self-Adaptive Mode (Default)**: Automatically detects Windows/Linux/macOS system network settings, corporate VPNs, and TUN virtual network adapters (Clash Verge, Sing-box, Surge, V2Ray). Works out-of-the-box on new devices without manual configuration.
+- **Manual Proxy Override**: Supports custom local/LAN HTTP or SOCKS5 proxies (e.g., `127.0.0.1:7897`).
+- **Direct Mode**: Fast direct connection bypassing all system proxies.
+- **Auto-Recovery**: Automatic failover and diagnostic screen on network disconnects.
+
+### ⌨️ Global Hotkeys & Utilities
+- **Quick Chat Window**: Global popup shortcut (**Ctrl+Shift+Space** / **Cmd+Shift+Space**) for instant questions; automatically hides when losing focus.
+- **Site Switcher**: Toggle seamlessly between Muse and Meta AI (**Ctrl+Shift+M**).
+- **Mute Toggles**: Independent hotkeys to toggle microphone input (**Ctrl+Shift+U**) and app speaker output (**Ctrl+Shift+O**).
+- **Chat History Exporter**: Export conversations with one click (**Ctrl+Shift+E**) into clean Markdown, formatted HTML, or structured JSON.
+- **Clipboard Dump**: Save large clipboard snippets directly to `.txt` files to drag-and-drop into chat without browser freezes.
+
+---
+
+## 📥 Download & Installation
+
+Visit the [GitHub Releases](https://github.com/xusofty-cyber/muse-ai-Desktop/releases) page to download the latest builds for your platform:
+
+| Platform | Format | Description |
+| :--- | :--- | :--- |
+| **Windows** | `Muse Setup x.x.x.exe` | Standard NSIS installer with desktop shortcut |
+| **Windows** | `Muse-Portable-x.x.x.exe` | Standalone portable executable (No install required) |
+| **Linux** | `.AppImage` | Universal Linux binary, double-click to run |
+| **Linux** | `.deb` | Debian / Ubuntu / Mint installer package |
+| **Linux** | `.tar.gz` | Portable green archive (extract and execute `muse-desktop`) |
+| **macOS** | `.dmg` | macOS drag-and-drop installer |
+| **macOS** | `.zip` | Portable zipped application bundle |
+
+---
+
+## 🛠️ Build from Source
+
+### Prerequisites
+- Node.js 20+ (LTS recommended)
+- npm or yarn
+
+```bash
+# 1. Clone the repository
+git clone git@github.com:xusofty-cyber/muse-ai-Desktop.git
+cd muse-ai-Desktop
+
+# 2. Install dependencies
+npm install
+
+# 3. Start local development
+npm start
+```
+
+### Packaging Distribution Packages
+
+```bash
+# Package for Windows (NSIS + Portable)
+npm run dist:win
+
+# Package for Linux (AppImage + DEB + tar.gz)
+npm run dist:linux
+
+# Package for macOS (DMG + ZIP)
+npm run dist:mac
+```
+
+---
+
+## ⌨️ Default Keyboard Shortcuts
+
+| Shortcut (Win / Linux) | Shortcut (macOS) | Action |
+| :--- | :--- | :--- |
+| `Ctrl + Shift + Space` | `Cmd + Shift + Space` | Toggle quick floating chat popup |
+| `Ctrl + Shift + M` | `Cmd + Shift + M` | Switch between Muse and Meta AI |
+| `Ctrl + Shift + N` | `Cmd + Shift + N` | Cycle through saved accounts |
+| `Ctrl + Shift + A` | `Cmd + Shift + A` | Toggle Auto-Allow master switch |
+| `Ctrl + Shift + E` | `Cmd + Shift + E` | Export current chat session |
+| `Ctrl + Shift + U` | `Cmd + Shift + U` | Mute / unmute microphone |
+| `Ctrl + Shift + O` | `Cmd + Shift + O` | Mute / unmute app speaker sound |
+| `Ctrl + =` / `Ctrl + -` | `Cmd + =` / `Cmd + -` | Zoom in / Zoom out |
+| `Ctrl + 0` | `Cmd + 0` | Reset zoom level |
+
+*All shortcuts can be fully customized in Settings (`⚙` > Open Full Settings & Hotkeys).*
+
+---
+
+## 🤝 Contributing & License
+
+Contributions, issue reports, and pull requests are warmly welcomed!
+
+This project is licensed under the MIT License.

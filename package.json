@@ -37,7 +37,7 @@
       {
         "owner": "xusofty-cyber",
         "provider": "github",
-        "repo": "muse-windows",
+        "repo": "muse-ai-Desktop",
         "releaseType": "release"
       }
     ],
@@ -57,10 +57,18 @@
         "deb",
         "tar.gz"
       ]
+    },
+    "mac": {
+      "icon": "assets/icon.png",
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
     }
   },
   "dependencies": {},
-  "description": "Muse for Windows & Linux: your personal AI agent in a desktop app",
+  "description": "Muse for Desktop (Windows, macOS, Linux): your personal AI agent in a native desktop app",
   "devDependencies": {
     "electron": "^44.6.0",
     "electron-builder": "^26.15.3"
@@ -75,7 +83,8 @@
     "dist:win": "electron-builder --win portable nsis",
     "dist:linux": "electron-builder --linux AppImage deb",
     "dist:linux:tar": "electron-builder --linux tar.gz",
+    "dist:mac": "electron-builder --mac dmg zip",
     "start": "electron ."
   },
-  "version": "1.4.1"
+  "version": "1.5.0"
 }

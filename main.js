@@ -17,13 +17,135 @@ const DEFAULT_HOTKEYS = {
   metaAccount: 'CommandOrControl+Shift+N',
 };
 const HOTKEY_LABELS = {
-  quick: 'Quick chat popup',
-  site: 'Switch Muse / Meta AI',
-  export: 'Export this chat',
-  mic: 'Mute / unmute microphone',
-  speaker: 'Mute / unmute app sound',
-  automation: 'Toggle automation (Auto-Allow)',
-  metaAccount: 'Next account (Switch)',
+  en: {
+    quick: 'Quick chat popup',
+    site: 'Switch Muse / Meta AI',
+    export: 'Export this chat',
+    mic: 'Mute / unmute microphone',
+    speaker: 'Mute / unmute app sound',
+    automation: 'Toggle automation (Auto-Allow)',
+    metaAccount: 'Next account (Switch)',
+  },
+  'zh-CN': {
+    quick: '快捷会话窗口 (Quick chat)',
+    site: '切换 Muse / Meta AI',
+    export: '导出当前会话记录',
+    mic: '麦克风静音 / 开关',
+    speaker: '应用声音静音 / 开关',
+    automation: '自动化授权开关 (Auto-Allow)',
+    metaAccount: '切换下一个账号',
+  },
+};
+
+const I18N_MAIN = {
+  en: {
+    openMuse: 'Open Muse',
+    quickChat: (hk) => `Quick chat  (${hk})`,
+    switchTo: (name, hk) => `Switch to ${name}  (${hk})`,
+    metaAccounts: 'Meta AI Accounts',
+    nextMetaAccount: (hk) => `Next Meta AI account  (${hk})`,
+    addMetaAccount: 'Add Meta AI account…',
+    automationMenu: 'Automation / Auto-Allow',
+    masterAutomation: (hk) => `Master Automation  (${hk})`,
+    allowAllActions: 'Allow all actions',
+    thisWebsite: 'This website',
+    alwaysAllowOn: (host) => `Always allow on ${host}`,
+    whatCanBeAutoApproved: 'What can be auto-approved?',
+    actConnectors: 'App / connector actions',
+    actFile: 'File and data access',
+    actLinks: 'External navigation',
+    actCode: 'Code execution',
+    actMedia: 'Microphone and media',
+    hintConnectors: 'Approve connection and integration prompts',
+    hintFile: 'Approve file, upload, download, and data-access prompts',
+    hintLinks: 'Approve prompts to open links or navigate outside the chat',
+    hintCode: 'Approve prompts to run code, scripts, or terminal actions',
+    hintMedia: 'Approve microphone, camera, audio, and media permission requests',
+    showOnScreenWidget: 'Show On-Screen Widget',
+    settingsKeybinds: 'Settings & Keybinds…',
+    profileMenu: (name) => `Profile: ${name}`,
+    addProfile: 'Add profile…',
+    signOutFrom: (site) => `Sign out of ${site}…`,
+    saveClipboard: 'Save clipboard text as .txt',
+    exportChat: (hk) => `Export this chat as file…  (${hk})`,
+    muteMic: (hk) => `Mute / unmute microphone  (${hk})`,
+    muteSpeaker: (hk) => `Mute / unmute app sound  (${hk})`,
+    customizeHotkeys: 'Customize hotkeys & settings…',
+    networkProxy: 'Network & Proxy settings…',
+    appearance: (cur) => `Appearance: ${cur}`,
+    darkMode: 'Dark mode 🌙',
+    lightMode: 'Light mode ☀️',
+    systemMode: 'Follow system 💻',
+    language: 'Language / 界面语言',
+    langEn: 'English (US)',
+    langZh: '简体中文 (Chinese)',
+    autoHideButtons: 'Auto-hide floating buttons (Top-Right / Bottom-Right)',
+    runOnStartup: 'Run on startup',
+    checkUpdates: 'Check for updates',
+    restartInstall: 'Restart and install update',
+    quitMuse: 'Quit Muse',
+    saveLinkAs: 'Save link as…',
+    copyLinkAddress: 'Copy link address',
+    saveImageAs: 'Save image as…',
+    copyImageAddress: 'Copy image address',
+    cut: 'Cut',
+    copy: 'Copy',
+    paste: 'Paste',
+  },
+  'zh-CN': {
+    openMuse: '打开 Muse 主窗口',
+    quickChat: (hk) => `快捷会话窗口  (${hk})`,
+    switchTo: (name, hk) => `切换至 ${name}  (${hk})`,
+    metaAccounts: 'Meta AI 多账号',
+    nextMetaAccount: (hk) => `下一个 Meta AI 账号  (${hk})`,
+    addMetaAccount: '添加 Meta AI 账号…',
+    automationMenu: '自动化审批 (Auto-Allow)',
+    masterAutomation: (hk) => `总控开关  (${hk})`,
+    allowAllActions: '一键允许所有行为',
+    thisWebsite: '当前网站规则',
+    alwaysAllowOn: (host) => `在 ${host} 始终自动同意`,
+    whatCanBeAutoApproved: '全局动作授权范围',
+    actConnectors: '应用集成 / 插件授权',
+    actFile: '文件与数据访问',
+    actLinks: '外部链接与窗口跳转',
+    actCode: '代码执行与终端脚本',
+    actMedia: '麦克风与多媒体',
+    hintConnectors: '自动批准第三方应用与插件连接授权',
+    hintFile: '自动批准文件读写、上传与下载访问提示',
+    hintLinks: '自动批准跳转外部页面或新窗口打开链接',
+    hintCode: '自动批准运行代码、命令与终端执行提示',
+    hintMedia: '自动批准麦克风、摄像头与媒体访问权限',
+    showOnScreenWidget: '显示屏幕悬浮组件',
+    settingsKeybinds: '自动化与快捷键设置…',
+    profileMenu: (name) => `当前账号: ${name}`,
+    addProfile: '添加新账号…',
+    signOutFrom: (site) => `退出 ${site} 登录…`,
+    saveClipboard: '剪贴板内容另存为 .txt',
+    exportChat: (hk) => `导出当前会话记录…  (${hk})`,
+    muteMic: (hk) => `麦克风静音 / 开关  (${hk})`,
+    muteSpeaker: (hk) => `应用声音静音 / 开关  (${hk})`,
+    customizeHotkeys: '全局快捷键与高级偏好设置…',
+    networkProxy: '网络代理配置 (TUN/系统)…',
+    appearance: (cur) => `主题外观: ${cur}`,
+    darkMode: '深色模式 🌙',
+    lightMode: '浅色模式 ☀️',
+    systemMode: '跟随系统 💻',
+    language: 'Language / 界面语言',
+    langEn: 'English (US)',
+    langZh: '简体中文 (Chinese)',
+    autoHideButtons: '自动隐藏悬浮按钮 (右上/右下角)',
+    runOnStartup: '开机自动启动',
+    checkUpdates: '检查版本更新',
+    restartInstall: '重启并安装更新',
+    quitMuse: '彻底退出 Muse',
+    saveLinkAs: '链接另存为…',
+    copyLinkAddress: '复制链接地址',
+    saveImageAs: '图片另存为…',
+    copyImageAddress: '复制图片地址',
+    cut: '剪切',
+    copy: '复制',
+    paste: '粘贴',
+  },
 };
 const HOTKEY_ACTIONS = {
   quick: () => toggleQuickWindow(),
@@ -96,6 +218,14 @@ function defaultAutomation() {
   };
 }
 
+function detectDefaultLocale() {
+  try {
+    const sys = app.getLocale() || '';
+    if (sys.toLowerCase().startsWith('zh')) return 'zh-CN';
+  } catch {}
+  return 'en';
+}
+
 function defaultState() {
   return {
     window: {},
@@ -106,6 +236,7 @@ function defaultState() {
     automation: defaultAutomation(),
     proxy: defaultProxy(),
     theme: 'dark', // 'dark' | 'light' | 'system'
+    locale: detectDefaultLocale(), // 'zh-CN' | 'en'
     ui: {
       autoHideButtons: true, // 自动隐藏右上角与右下角按钮
     },
@@ -118,6 +249,7 @@ function loadState() {
     const merged = { ...defaultState(), ...raw };
     merged.hotkeys = { ...DEFAULT_HOTKEYS, ...(raw.hotkeys || {}) };
     merged.theme = raw.theme || 'dark';
+    merged.locale = (raw.locale === 'zh-CN' || raw.locale === 'en') ? raw.locale : detectDefaultLocale();
     merged.ui = { ...defaultState().ui, ...(raw.ui || {}) };
     merged.automation = {
       ...defaultAutomation(),
@@ -281,6 +413,29 @@ function setAppTheme(theme) {
   broadcastThemeChange();
 }
 
+function broadcastLocaleChange() {
+  const currentLocale = state.locale || 'en';
+  for (const win of profileWindows.values()) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('locale:changed', currentLocale);
+    }
+  }
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    quickWindow.webContents.send('locale:changed', currentLocale);
+  }
+  if (hotkeyWindow && !hotkeyWindow.isDestroyed()) {
+    hotkeyWindow.webContents.send('locale:changed', currentLocale);
+  }
+}
+
+function setAppLocale(locale) {
+  if (locale !== 'zh-CN' && locale !== 'en') return;
+  state.locale = locale;
+  saveState();
+  buildTrayMenu();
+  broadcastLocaleChange();
+}
+
 function setUIAutoHide(enabled) {
   state.ui = { ...(state.ui || {}), autoHideButtons: !!enabled };
   saveState();
@@ -322,6 +477,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     broadcastAccountChange();
     broadcastThemeChange();
     broadcastUISettingsChange();
+    broadcastLocaleChange();
   });
 
   // 网络错误处理：加载离线诊断页并自动弹出网络配置界面
@@ -734,9 +890,10 @@ function registerHotkeys() {
 // Applies a new binding map from the settings window. Returns {ok} or {ok, error}.
 function applyHotkeys(bindings) {
   const seen = {};
+  const currentLabels = HOTKEY_LABELS[state.locale] || HOTKEY_LABELS.en;
   for (const [id, acc] of Object.entries(bindings)) {
     if (!HOTKEY_ACTIONS[id]) return { ok: false, error: `Unknown action: ${id}` };
-    if (!acc || !String(acc).trim()) return { ok: false, error: `Empty hotkey for "${HOTKEY_LABELS[id]}"` };
+    if (!acc || !String(acc).trim()) return { ok: false, error: `Empty hotkey for "${currentLabels[id] || id}"` };
     const norm = String(acc).toLowerCase();
     if (seen[norm]) return { ok: false, error: `Duplicate hotkey: ${acc}` };
     seen[norm] = id;
@@ -781,11 +938,14 @@ function openHotkeySettings(initialTab) {
   hotkeyWindow.on('closed', () => { hotkeyWindow = null; });
 }
 
-ipcMain.handle('hotkeys-get', () => ({
-  bindings: { ...state.hotkeys },
-  labels: { ...HOTKEY_LABELS },
-  defaults: { ...DEFAULT_HOTKEYS },
-}));
+ipcMain.handle('hotkeys-get', () => {
+  const currentLabels = HOTKEY_LABELS[state.locale] || HOTKEY_LABELS.en;
+  return {
+    bindings: { ...state.hotkeys },
+    labels: { ...currentLabels },
+    defaults: { ...DEFAULT_HOTKEYS },
+  };
+});
 ipcMain.handle('hotkeys-set', (e, bindings) => applyHotkeys(bindings || {}));
 
 // Automation IPC handlers
@@ -987,6 +1147,18 @@ ipcMain.handle('ui-settings-set', (e, newUI) => {
   return { ok: false, error: 'Invalid UI settings' };
 });
 
+ipcMain.handle('locale-get', () => {
+  return state.locale || 'en';
+});
+
+ipcMain.handle('locale-set', (e, newLocale) => {
+  if (['en', 'zh-CN'].includes(newLocale)) {
+    setAppLocale(newLocale);
+    return { ok: true, locale: state.locale };
+  }
+  return { ok: false, error: 'Invalid locale' };
+});
+
 // Floating "Export chat" button in the page asks the main process to export.
 ipcMain.on('muse-export-request', () => exportChat());
 
@@ -1017,25 +1189,26 @@ function setupDownloadHandler(profileId) {
 
 function attachContextMenu(win) {
   win.webContents.on('context-menu', (e, params) => {
+    const t = I18N_MAIN[state.locale] || I18N_MAIN.en;
     const menu = new Menu();
     if (params.linkURL) {
       const url = params.linkURL;
-      menu.append(new MenuItem({ label: 'Save link as…', click: () => win.webContents.downloadURL(url) }));
-      menu.append(new MenuItem({ label: 'Copy link address', click: () => clipboard.writeText(url) }));
+      menu.append(new MenuItem({ label: t.saveLinkAs, click: () => win.webContents.downloadURL(url) }));
+      menu.append(new MenuItem({ label: t.copyLinkAddress, click: () => clipboard.writeText(url) }));
       menu.append(new MenuItem({ type: 'separator' }));
     }
     if (params.hasImageContents && params.srcURL) {
       const src = params.srcURL;
-      menu.append(new MenuItem({ label: 'Save image as…', click: () => win.webContents.downloadURL(src) }));
-      menu.append(new MenuItem({ label: 'Copy image address', click: () => clipboard.writeText(src) }));
+      menu.append(new MenuItem({ label: t.saveImageAs, click: () => win.webContents.downloadURL(src) }));
+      menu.append(new MenuItem({ label: t.copyImageAddress, click: () => clipboard.writeText(src) }));
       menu.append(new MenuItem({ type: 'separator' }));
     }
     if (params.isEditable) {
-      menu.append(new MenuItem({ role: 'cut' }));
-      menu.append(new MenuItem({ role: 'copy' }));
-      menu.append(new MenuItem({ role: 'paste' }));
+      menu.append(new MenuItem({ label: t.cut, role: 'cut' }));
+      menu.append(new MenuItem({ label: t.copy, role: 'copy' }));
+      menu.append(new MenuItem({ label: t.paste, role: 'paste' }));
     } else if (params.selectionText) {
-      menu.append(new MenuItem({ role: 'copy' }));
+      menu.append(new MenuItem({ label: t.copy, role: 'copy' }));
     }
     if (menu.items.length > 0) menu.popup({ window: win });
   });
@@ -1272,6 +1445,8 @@ function setGlobalAutomationAction(actionKey, enabled) {
 
 function buildTrayMenu() {
   if (!tray) return;
+  const lang = state.locale || 'en';
+  const t = I18N_MAIN[lang] || I18N_MAIN.en;
   const otherSite = state.site === 'muse' ? SITES.meta : SITES.muse;
   const loginSettings = app.getLoginItemSettings();
 
@@ -1297,30 +1472,30 @@ function buildTrayMenu() {
   }));
 
   const template = [
-    { label: 'Open Muse', click: showMainWindow },
-    { label: `Quick chat  (${prettyHotkey(state.hotkeys.quick)})`, click: toggleQuickWindow },
-    { label: `Switch to ${otherSite.name}  (${prettyHotkey(state.hotkeys.site)})`, click: toggleSite },
+    { label: t.openMuse, click: showMainWindow },
+    { label: t.quickChat(prettyHotkey(state.hotkeys.quick)), click: toggleQuickWindow },
+    { label: t.switchTo(otherSite.name, prettyHotkey(state.hotkeys.site)), click: toggleSite },
     {
-      label: 'Meta AI Accounts',
+      label: t.metaAccounts,
       submenu: [
         ...metaAccounts,
         { type: 'separator' },
-        { label: `Next Meta AI account  (${prettyHotkey(state.hotkeys.metaAccount)})`, click: switchMetaAccount },
-        { label: 'Add Meta AI account…', click: addMetaAccount },
+        { label: t.nextMetaAccount(prettyHotkey(state.hotkeys.metaAccount)), click: switchMetaAccount },
+        { label: t.addMetaAccount, click: addMetaAccount },
       ],
     },
     { type: 'separator' },
     {
-      label: 'Automation / Auto-Allow',
+      label: t.automationMenu,
       submenu: [
         {
-          label: `Master Automation (${prettyHotkey(state.hotkeys.automation)})`,
+          label: t.masterAutomation(prettyHotkey(state.hotkeys.automation)),
           type: 'checkbox',
           checked: state.automation.enabled,
           click: () => toggleAutomationMaster(),
         },
         {
-          label: 'Allow all actions',
+          label: t.allowAllActions,
           type: 'checkbox',
           checked: state.automation.autoAllowAll,
           click: (item) => {
@@ -1331,10 +1506,10 @@ function buildTrayMenu() {
           },
         },
         {
-          label: 'This website',
+          label: t.thisWebsite,
           submenu: [
             {
-              label: `Always allow on ${currentHostname}`,
+              label: t.alwaysAllowOn(currentHostname),
               type: 'checkbox',
               checked: !!state.automation.sites[currentHostname.toLowerCase()],
               click: (item) => {
@@ -1346,11 +1521,11 @@ function buildTrayMenu() {
             },
             { type: 'separator' },
             ...[
-              ['connectors', 'App / connector actions', 'Approve connection and integration prompts'],
-              ['file_access', 'File and data access', 'Approve file, upload, download, and data-access prompts'],
-              ['external_links', 'External navigation', 'Approve prompts to open links or navigate outside the chat'],
-              ['code_execution', 'Code execution', 'Approve prompts to run code, scripts, or terminal actions'],
-              ['media_permissions', 'Microphone and media', 'Approve microphone, camera, audio, and media permission requests'],
+              ['connectors', t.actConnectors, t.hintConnectors],
+              ['file_access', t.actFile, t.hintFile],
+              ['external_links', t.actLinks, t.hintLinks],
+              ['code_execution', t.actCode, t.hintCode],
+              ['media_permissions', t.actMedia, t.hintMedia],
             ].map(([key, label, hint]) => ({
               label,
               type: 'checkbox',
@@ -1369,18 +1544,18 @@ function buildTrayMenu() {
           ],
         },
         {
-          label: 'What can be auto-approved?',
+          label: t.whatCanBeAutoApproved,
           submenu: [
-            { label: 'App / connector actions', type: 'checkbox', checked: !!state.automation.actions.connectors, click: (item) => setGlobalAutomationAction('connectors', item.checked) },
-            { label: 'File and data access', type: 'checkbox', checked: !!state.automation.actions.file_access, click: (item) => setGlobalAutomationAction('file_access', item.checked) },
-            { label: 'External navigation', type: 'checkbox', checked: !!state.automation.actions.external_links, click: (item) => setGlobalAutomationAction('external_links', item.checked) },
-            { label: 'Code execution', type: 'checkbox', checked: !!state.automation.actions.code_execution, click: (item) => setGlobalAutomationAction('code_execution', item.checked) },
-            { label: 'Microphone and media', type: 'checkbox', checked: !!state.automation.actions.media_permissions, click: (item) => setGlobalAutomationAction('media_permissions', item.checked) },
+            { label: t.actConnectors, type: 'checkbox', checked: !!state.automation.actions.connectors, click: (item) => setGlobalAutomationAction('connectors', item.checked) },
+            { label: t.actFile, type: 'checkbox', checked: !!state.automation.actions.file_access, click: (item) => setGlobalAutomationAction('file_access', item.checked) },
+            { label: t.actLinks, type: 'checkbox', checked: !!state.automation.actions.external_links, click: (item) => setGlobalAutomationAction('external_links', item.checked) },
+            { label: t.actCode, type: 'checkbox', checked: !!state.automation.actions.code_execution, click: (item) => setGlobalAutomationAction('code_execution', item.checked) },
+            { label: t.actMedia, type: 'checkbox', checked: !!state.automation.actions.media_permissions, click: (item) => setGlobalAutomationAction('media_permissions', item.checked) },
           ],
         },
         { type: 'separator' },
         {
-          label: 'Show On-Screen Widget',
+          label: t.showOnScreenWidget,
           type: 'checkbox',
           checked: state.automation.showOnScreenWidget,
           click: (item) => {
@@ -1390,55 +1565,62 @@ function buildTrayMenu() {
             notifyWebContentsAutomationChange();
           },
         },
-        { label: 'Settings & Keybinds…', click: openHotkeySettings },
+        { label: t.settingsKeybinds, click: openHotkeySettings },
       ],
     },
     { type: 'separator' },
     {
-      label: `Profile: ${activeProfile().name}`,
+      label: t.profileMenu(activeProfile().name),
       submenu: [
         ...profileItems,
         { type: 'separator' },
-        { label: 'Add profile…', click: addProfile },
-        { label: `Sign out of ${currentSite().name}…`, click: signOut },
+        { label: t.addProfile, click: addProfile },
+        { label: t.signOutFrom(currentSite().name), click: signOut },
       ],
     },
-    { label: 'Save clipboard text as .txt', click: saveClipboardAsFile },
-    { label: `Export this chat as file…  (${prettyHotkey(state.hotkeys.export)})`, click: exportChat },
+    { label: t.saveClipboard, click: saveClipboardAsFile },
+    { label: t.exportChat(prettyHotkey(state.hotkeys.export)), click: exportChat },
     { type: 'separator' },
-    { label: `Mute / unmute microphone  (${prettyHotkey(state.hotkeys.mic)})`, click: toggleMic },
-    { label: `Mute / unmute app sound  (${prettyHotkey(state.hotkeys.speaker)})`, click: toggleSpeaker },
-    { label: 'Customize hotkeys & settings…', click: () => openHotkeySettings() },
-    { label: 'Network & Proxy settings…', click: () => openHotkeySettings('tab-proxy') },
+    { label: t.muteMic(prettyHotkey(state.hotkeys.mic)), click: toggleMic },
+    { label: t.muteSpeaker(prettyHotkey(state.hotkeys.speaker)), click: toggleSpeaker },
+    { label: t.customizeHotkeys, click: () => openHotkeySettings() },
+    { label: t.networkProxy, click: () => openHotkeySettings('tab-proxy') },
     { type: 'separator' },
     {
-      label: `Appearance: ${state.theme === 'light' ? 'Light ☀️' : state.theme === 'system' ? 'System 💻' : 'Dark 🌙'}`,
+      label: t.appearance(state.theme === 'light' ? t.lightMode : state.theme === 'system' ? t.systemMode : t.darkMode),
       submenu: [
-        { label: 'Dark mode 🌙', type: 'radio', checked: state.theme === 'dark', click: () => setAppTheme('dark') },
-        { label: 'Light mode ☀️', type: 'radio', checked: state.theme === 'light', click: () => setAppTheme('light') },
-        { label: 'Follow system 💻', type: 'radio', checked: state.theme === 'system', click: () => setAppTheme('system') },
+        { label: t.darkMode, type: 'radio', checked: state.theme === 'dark', click: () => setAppTheme('dark') },
+        { label: t.lightMode, type: 'radio', checked: state.theme === 'light', click: () => setAppTheme('light') },
+        { label: t.systemMode, type: 'radio', checked: state.theme === 'system', click: () => setAppTheme('system') },
       ],
     },
     {
-      label: 'Auto-hide floating buttons (右上/右下角)',
+      label: t.language,
+      submenu: [
+        { label: t.langEn, type: 'radio', checked: (state.locale || 'en') === 'en', click: () => setAppLocale('en') },
+        { label: t.langZh, type: 'radio', checked: state.locale === 'zh-CN', click: () => setAppLocale('zh-CN') },
+      ],
+    },
+    {
+      label: t.autoHideButtons,
       type: 'checkbox',
       checked: !!(state.ui && state.ui.autoHideButtons),
       click: (item) => setUIAutoHide(item.checked),
     },
     { type: 'separator' },
     {
-      label: 'Run on startup',
+      label: t.runOnStartup,
       type: 'checkbox',
       checked: loginSettings.openAtLogin,
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
-    { label: 'Check for updates', click: () => checkForUpdates(true) },
+    { label: t.checkUpdates, click: () => checkForUpdates(true) },
     ...(updateDownloaded
-      ? [{ label: 'Restart and install update', click: installUpdateAndRestart }]
+      ? [{ label: t.restartInstall, click: installUpdateAndRestart }]
       : []),
     { type: 'separator' },
     {
-      label: 'Quit Muse',
+      label: t.quitMuse,
       click: () => {
         app.quitting = true;
         app.quit();

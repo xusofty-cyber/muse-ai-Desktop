@@ -15,7 +15,113 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- Theme & AutoHide Engine (Dark / Light + Corner Auto-Fade) --------------
 let currentTheme = 'dark';
+let currentLocale = 'en';
 let uiSettings = { autoHideButtons: true };
+
+const I18N_RENDERER = {
+  en: {
+    expandDock: 'Expand accounts dock',
+    collapseDock: 'Collapse accounts dock',
+    myAccount: 'My account',
+    currentAccountBadge: 'Current',
+    clickToSwitch: 'Click to switch',
+    addAccountPromptTitle: 'Add New Account',
+    addAccountPlaceholder: 'Enter profile nickname...',
+    addAccountDefaultName: (n) => `Account ${n}`,
+    addAccountTooltip: 'Add new account (multi-session)',
+    themeLightTooltip: 'Current: Light mode (Click to switch to Dark mode)',
+    themeDarkTooltip: 'Current: Dark mode (Click to switch to Light mode)',
+    settingsCenterTooltip: 'Control Center & Settings (Auto-Allow & Preferences)',
+    renameAccount: 'Rename account',
+    renamePromptTitle: (name) => `Rename account (${name})`,
+    signOutAccount: 'Sign out this account',
+    signOutConfirm: (name) => `Are you sure you want to sign out [${name}]? Session credentials will be cleared.`,
+    deleteAccount: 'Delete this account',
+    deleteConfirm: (name) => `Are you sure you want to delete [${name}]? All associated local data will be deleted.`,
+    networkProxy: 'Network & Proxy settings…',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+    popoverTitle: '⚙ Control Center & Auto-Allow',
+    autoAllowTitle: 'Auto-Approval (Auto-Allow)',
+    masterSwitch: 'Master Switch',
+    allowAll: 'Allow All Actions',
+    enableOnSite: (host) => `Enable on this site (${host})`,
+    actionScope: 'Allowed action scope:',
+    actConnectors: 'App / Connector Integrations (Connectors)',
+    actFile: 'File & Data Access (File Access)',
+    actLinks: 'External Links & Navigation (External Links)',
+    actCode: 'Code Execution & Scripts (Code Execution)',
+    themeBtnLight: '☀️ Light',
+    themeBtnDark: '🌙 Dark',
+    proxyBtn: '🌐 Proxy',
+    langBtn: '🌐 EN / 中文',
+    fullSettingsBtn: '⚙ Open Full Settings & Hotkeys…',
+    badgeOff: '⚡ Auto Allow: OFF',
+    badgeAll: '⚡ Auto Allow: ALL',
+    badgeOn: '⚡ Auto Allow: ON',
+    badgePaused: '⚡ Auto Allow: PAUSED',
+  },
+  'zh-CN': {
+    expandDock: '展开多账号栏',
+    collapseDock: '收起多账号栏',
+    myAccount: '我的账号',
+    currentAccountBadge: '当前账号',
+    clickToSwitch: '点击切换',
+    addAccountPromptTitle: '添加新账号',
+    addAccountPlaceholder: '输入账号备注昵称...',
+    addAccountDefaultName: (n) => `账号 ${n}`,
+    addAccountTooltip: '添加新账号（家庭成员/多会话）',
+    themeLightTooltip: '当前：浅色模式（点击切换为深色模式）',
+    themeDarkTooltip: '当前：深色模式（点击切换为浅色模式）',
+    settingsCenterTooltip: '设置与自动化控制中心 (Auto-Allow & Settings)',
+    renameAccount: '修改备注名称',
+    renamePromptTitle: (name) => `修改账号名称 (${name})`,
+    signOutAccount: '退出此账号登录',
+    signOutConfirm: (name) => `确定要退出账号 [${name}] 的登录状态吗？将清除此账号的登录凭据。`,
+    deleteAccount: '删除此账号',
+    deleteConfirm: (name) => `确定要删除账号 [${name}] 吗？该账号的所有独立本地数据将被清理。`,
+    networkProxy: '网络代理设置…',
+    cancel: '取消',
+    confirm: '确定',
+    popoverTitle: '⚙ 控制中心 & 自动化',
+    autoAllowTitle: '自动审批授权 (Auto-Allow)',
+    masterSwitch: '启用自动同意 (Master Switch)',
+    allowAll: '一键允许所有行为 (Allow All)',
+    enableOnSite: (host) => `在此网站启用 (${host})`,
+    actionScope: '细分动作允许范围：',
+    actConnectors: '应用集成 / 插件授权 (Connectors)',
+    actFile: '文件与数据访问 (File Access)',
+    actLinks: '外部链接与窗口跳转 (External Links)',
+    actCode: '代码执行与脚本运行 (Code Execution)',
+    themeBtnLight: '☀️ 浅色',
+    themeBtnDark: '🌙 深色',
+    proxyBtn: '🌐 网络代理',
+    langBtn: '🌐 中文 / EN',
+    fullSettingsBtn: '⚙ 打开完整设置与快捷键…',
+    badgeOff: '⚡ 自动同意: 关闭',
+    badgeAll: '⚡ 自动同意: 全部',
+    badgeOn: '⚡ 自动同意: 开启',
+    badgePaused: '⚡ 自动同意: 暂停',
+  },
+};
+
+function getT() {
+  return I18N_RENDERER[currentLocale] || I18N_RENDERER.en;
+}
+
+function applyLocale(locale) {
+  if (locale === 'zh-CN' || locale === 'en') {
+    currentLocale = locale;
+    if (typeof window.__museRenderDock === 'function') {
+      window.__museRenderDock();
+    }
+    const pop = document.getElementById('muse-settings-popover');
+    if (pop && pop.style.display === 'flex' && typeof window.__museRenderSettingsPopoverContent === 'function') {
+      window.__museRenderSettingsPopoverContent();
+    }
+  }
+}
+
 
 function injectThemeStyles() {
   if (document.getElementById('muse-theme-autohide-styles')) return;
@@ -246,8 +352,9 @@ function applyTheme(theme) {
   }
   const themeBtn = document.getElementById('muse-dock-theme-toggle');
   if (themeBtn) {
+    const t = getT();
     themeBtn.innerHTML = currentTheme === 'light' ? '☀️' : '🌙';
-    themeBtn.title = currentTheme === 'light' ? '当前：浅色模式（点击切换为深色模式）' : '当前：深色模式（点击切换为浅色模式）';
+    themeBtn.title = currentTheme === 'light' ? t.themeLightTooltip : t.themeDarkTooltip;
   }
 }
 
@@ -263,6 +370,14 @@ ipcRenderer.invoke('theme-get').then((theme) => {
 
 ipcRenderer.on('theme:changed', (e, theme) => {
   applyTheme(theme);
+});
+
+ipcRenderer.invoke('locale-get').then((loc) => {
+  applyLocale(loc);
+}).catch(() => {});
+
+ipcRenderer.on('locale:changed', (e, loc) => {
+  applyLocale(loc);
 });
 
 // Floating widgets have been relocated to the unified left-bottom settings center.
@@ -646,79 +761,81 @@ contextBridge.exposeInMainWorld('automationAPI', {
   window.__museToggleSettingsPopover = toggleSettingsPopover;
 
   function getAutoBadgeMeta() {
+    const t = getT();
     if (!autoState.enabled) {
-      return { cls: 'off', text: '⚡ Auto Allow: OFF', borderColor: '#6b7280' };
+      return { cls: 'off', text: t.badgeOff, borderColor: '#6b7280' };
     }
     if (autoState.autoAllowAll) {
-      return { cls: 'on', text: '⚡ Auto Allow: ALL', borderColor: '#3b82f6' };
+      return { cls: 'on', text: t.badgeAll, borderColor: '#3b82f6' };
     }
     if (isCurrentSiteAllowed()) {
-      return { cls: 'on', text: '⚡ Auto Allow: ON', borderColor: '#10b981' };
+      return { cls: 'on', text: t.badgeOn, borderColor: '#10b981' };
     }
-    return { cls: 'paused', text: '⚡ Auto Allow: PAUSED', borderColor: '#f59e0b' };
+    return { cls: 'paused', text: t.badgePaused, borderColor: '#f59e0b' };
   }
 
   function renderSettingsPopoverContent() {
     const pop = ensureSettingsPopover();
     if (!pop) return;
-    const hostname = location.hostname || '当前网站';
+    const t = getT();
+    const hostname = location.hostname || (currentLocale === 'zh-CN' ? '当前网站' : 'Current Site');
     const siteAllowed = isCurrentSiteAllowed();
     const meta = getAutoBadgeMeta();
 
     pop.innerHTML = `
       <div class="muse-popover-header">
         <div class="muse-popover-title">
-          <span>⚙ 控制中心 & 自动化</span>
+          <span>${t.popoverTitle}</span>
         </div>
-        <button class="muse-popover-close" id="muse-pop-close-btn" title="关闭">✕</button>
+        <button class="muse-popover-close" id="muse-pop-close-btn" title="Close">✕</button>
       </div>
 
       <!-- 自动化审批区块 -->
       <div class="muse-pop-card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <span style="font-weight:600; font-size:12px;">自动审批授权 (Auto-Allow)</span>
+          <span style="font-weight:600; font-size:12px;">${t.autoAllowTitle}</span>
           <span class="muse-pop-badge ${meta.cls}">${meta.text}</span>
         </div>
 
         <div class="muse-pop-row">
           <label>
             <input type="checkbox" id="muse-pop-chk-master" ${autoState.enabled ? 'checked' : ''}>
-            <span>启用自动同意 (Master Switch)</span>
+            <span>${t.masterSwitch}</span>
           </label>
         </div>
 
         <div class="muse-pop-row">
           <label>
             <input type="checkbox" id="muse-pop-chk-allowall" ${autoState.autoAllowAll ? 'checked' : ''}>
-            <span>一键允许所有行为 (Allow All)</span>
+            <span>${t.allowAll}</span>
           </label>
         </div>
 
         <div class="muse-pop-row">
           <label>
             <input type="checkbox" id="muse-pop-chk-site" ${siteAllowed ? 'checked' : ''}>
-            <span>在此网站启用 (${hostname})</span>
+            <span>${t.enableOnSite(hostname)}</span>
           </label>
         </div>
 
         <!-- 细分行为授权 -->
         <div style="margin-top:6px; padding-top:6px; border-top:1px dashed rgba(255,255,255,0.1); display:flex; flex-direction:column; gap:4px;">
-          <div style="font-size:11px; color:#8a909d; font-weight:600;">细分动作允许范围：</div>
+          <div style="font-size:11px; color:#8a909d; font-weight:600;">${t.actionScope}</div>
           <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
             <input type="checkbox" id="muse-pop-act-connectors" ${isActionAllowed('connectors') ? 'checked' : ''}>
-            <span>应用集成 / 插件授权 (Connectors)</span>
+            <span>${t.actConnectors}</span>
           </label>
           <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
             <input type="checkbox" id="muse-pop-act-file" ${isActionAllowed('file_access') ? 'checked' : ''}>
-            <span>文件与数据访问 (File Access)</span>
+            <span>${t.actFile}</span>
           </label>
           <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
             <input type="checkbox" id="muse-pop-act-links" ${isActionAllowed('external_links') ? 'checked' : ''}>
-            <span>外部链接与窗口跳转 (External Links)</span>
+            <span>${t.actLinks}</span>
           </label>
           <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
             <input type="checkbox" id="muse-pop-act-code" ${isActionAllowed('code_execution') ? 'checked' : ''}>
-            <span>代码执行与脚本运行 (Code Execution)</span>
+            <span>${t.actCode}</span>
           </label>
         </div>
       </div>
@@ -726,16 +843,19 @@ contextBridge.exposeInMainWorld('automationAPI', {
       <!-- 外观与快捷入口区块 -->
       <div style="display:flex; gap:6px;">
         <button class="muse-pop-btn" id="muse-pop-theme-btn" style="flex:1;">
-          <span>${currentTheme === 'light' ? '☀️ 浅色' : '🌙 深色'}</span>
+          <span>${currentTheme === 'light' ? t.themeBtnLight : t.themeBtnDark}</span>
         </button>
         <button class="muse-pop-btn" id="muse-pop-proxy-btn" style="flex:1;">
-          <span>🌐 网络代理</span>
+          <span>${t.proxyBtn}</span>
+        </button>
+        <button class="muse-pop-btn" id="muse-pop-lang-btn" style="flex:1;">
+          <span>${currentLocale === 'zh-CN' ? '🌐 EN' : '🌐 中文'}</span>
         </button>
       </div>
 
       <!-- 打开完整设置 -->
       <button class="muse-pop-btn primary" id="muse-pop-full-settings">
-        <span>⚙ 打开完整设置与快捷键…</span>
+        <span>${t.fullSettingsBtn}</span>
       </button>
     `;
 
@@ -778,11 +898,19 @@ contextBridge.exposeInMainWorld('automationAPI', {
       pop.style.display = 'none';
     };
 
+    pop.querySelector('#muse-pop-lang-btn').onclick = () => {
+      const nextLocale = currentLocale === 'zh-CN' ? 'en' : 'zh-CN';
+      ipcRenderer.invoke('locale-set', nextLocale).catch(() => {});
+      pop.style.display = 'none';
+    };
+
     pop.querySelector('#muse-pop-full-settings').onclick = () => {
       ipcRenderer.invoke('open-settings');
       pop.style.display = 'none';
     };
   }
+
+  window.__museRenderSettingsPopoverContent = renderSettingsPopoverContent;
 
   function updateWidgetUI() {
     // 同步 Dock 上设置按钮的指示点
@@ -1216,6 +1344,7 @@ function injectExportButton() {}
 
   function showPromptModal(title, initialValue, onConfirm) {
     closeModal();
+    const t = getT();
     const overlay = document.createElement('div');
     overlay.className = 'muse-modal-overlay';
 
@@ -1229,19 +1358,19 @@ function injectExportButton() {}
     const input = document.createElement('input');
     input.className = 'muse-modal-input';
     input.value = initialValue || '';
-    input.placeholder = '输入账号备注昵称...';
+    input.placeholder = t.addAccountPlaceholder;
 
     const actions = document.createElement('div');
     actions.className = 'muse-modal-actions';
 
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'muse-modal-btn cancel';
-    cancelBtn.textContent = '取消';
+    cancelBtn.textContent = t.cancel;
     cancelBtn.onclick = closeModal;
 
     const confirmBtn = document.createElement('button');
     confirmBtn.className = 'muse-modal-btn confirm';
-    confirmBtn.textContent = '确定';
+    confirmBtn.textContent = t.confirm;
     confirmBtn.onclick = () => {
       const val = input.value.trim();
       closeModal();
@@ -1272,6 +1401,7 @@ function injectExportButton() {}
     e.preventDefault();
     e.stopPropagation();
     closeContextMenu();
+    const t = getT();
 
     const menu = document.createElement('div');
     menu.className = 'muse-context-menu';
@@ -1279,10 +1409,10 @@ function injectExportButton() {}
     // 1. 修改备注
     const renameItem = document.createElement('div');
     renameItem.className = 'muse-context-item';
-    renameItem.innerHTML = '<span>✏️</span><span>修改备注名称</span>';
+    renameItem.innerHTML = `<span>✏️</span><span>${t.renameAccount}</span>`;
     renameItem.onclick = () => {
       closeContextMenu();
-      showPromptModal(`修改账号名称 (${profile.name})`, profile.name, (newName) => {
+      showPromptModal(t.renamePromptTitle(profile.name), profile.name, (newName) => {
         if (newName && newName !== profile.name) {
           ipcRenderer.invoke('account:rename', { id: profile.id, name: newName });
         }
@@ -1293,10 +1423,10 @@ function injectExportButton() {}
     // 2. 退出登录
     const signOutItem = document.createElement('div');
     signOutItem.className = 'muse-context-item';
-    signOutItem.innerHTML = '<span>🚪</span><span>退出此账号登录</span>';
+    signOutItem.innerHTML = `<span>🚪</span><span>${t.signOutAccount}</span>`;
     signOutItem.onclick = () => {
       closeContextMenu();
-      if (confirm(`确定要退出账号 [${profile.name}] 的登录状态吗？将清除此账号的登录凭据。`)) {
+      if (confirm(t.signOutConfirm(profile.name))) {
         ipcRenderer.invoke('account:sign-out', { id: profile.id });
       }
     };
@@ -1306,10 +1436,10 @@ function injectExportButton() {}
     if (dockState.profiles.length > 1) {
       const deleteItem = document.createElement('div');
       deleteItem.className = 'muse-context-item danger';
-      deleteItem.innerHTML = '<span>🗑️</span><span>删除此账号</span>';
+      deleteItem.innerHTML = `<span>🗑️</span><span>${t.deleteAccount}</span>`;
       deleteItem.onclick = () => {
         closeContextMenu();
-        if (confirm(`确定要删除账号 [${profile.name}] 吗？该账号的所有独立本地数据将被清理。`)) {
+        if (confirm(t.deleteConfirm(profile.name))) {
           ipcRenderer.invoke('account:delete', { id: profile.id });
         }
       };
@@ -1319,7 +1449,7 @@ function injectExportButton() {}
     // 4. 网络代理设置
     const proxyItem = document.createElement('div');
     proxyItem.className = 'muse-context-item';
-    proxyItem.innerHTML = '<span>🌐</span><span>网络代理设置…</span>';
+    proxyItem.innerHTML = `<span>🌐</span><span>${t.networkProxy}</span>`;
     proxyItem.onclick = () => {
       closeContextMenu();
       ipcRenderer.invoke('open-settings', 'tab-proxy');
@@ -1335,6 +1465,7 @@ function injectExportButton() {}
   function renderDock() {
     const parent = document.body || document.documentElement;
     if (!parent) return;
+    const t = getT();
 
     if (!dockContainer) {
       dockContainer = document.createElement('div');
@@ -1355,7 +1486,7 @@ function injectExportButton() {}
     // 折叠按钮
     const collapseBtn = document.createElement('div');
     collapseBtn.className = 'muse-dock-collapse-btn';
-    collapseBtn.title = dockState.collapsed ? '展开多账号栏' : '收起多账号栏';
+    collapseBtn.title = dockState.collapsed ? t.expandDock : t.collapseDock;
     collapseBtn.innerHTML = dockState.collapsed ? '▶' : '◀';
     collapseBtn.onclick = (e) => {
       e.stopPropagation();
@@ -1372,7 +1503,7 @@ function injectExportButton() {}
     // 保底至少渲染一个当前账号徽章
     const profilesToRender = (dockState.profiles && dockState.profiles.length > 0)
       ? dockState.profiles
-      : [{ id: dockState.activeProfileId || 'default', name: '我的账号', color: '#3b82f6' }];
+      : [{ id: dockState.activeProfileId || 'default', name: t.myAccount, color: '#3b82f6' }];
 
     profilesToRender.forEach((p) => {
       const item = document.createElement('div');
@@ -1394,12 +1525,12 @@ function injectExportButton() {}
       if (p.id === dockState.activeProfileId) {
         const badge = document.createElement('span');
         badge.className = 'muse-dock-tooltip-badge';
-        badge.textContent = '当前账号';
+        badge.textContent = t.currentAccountBadge;
         tooltip.appendChild(badge);
       } else {
         const hint = document.createElement('span');
         hint.className = 'muse-dock-tooltip-hint';
-        hint.textContent = '点击切换';
+        hint.textContent = t.clickToSwitch;
         tooltip.appendChild(hint);
       }
 
@@ -1424,10 +1555,10 @@ function injectExportButton() {}
     const addBtn = document.createElement('button');
     addBtn.className = 'muse-dock-add-btn';
     addBtn.type = 'button';
-    addBtn.title = '添加新账号（家庭成员/多会话）';
+    addBtn.title = t.addAccountTooltip;
     addBtn.textContent = '+';
     addBtn.onclick = () => {
-      showPromptModal('添加新账号', `账号 ${profilesToRender.length + 1}`, (name) => {
+      showPromptModal(t.addAccountPromptTitle, t.addAccountDefaultName(profilesToRender.length + 1), (name) => {
         ipcRenderer.invoke('account:add', { name }).catch(() => {});
       });
     };
@@ -1441,7 +1572,7 @@ function injectExportButton() {}
     themeBtn.style.marginTop = '4px';
     themeBtn.style.fontSize = '12px';
     themeBtn.innerHTML = currentTheme === 'light' ? '☀️' : '🌙';
-    themeBtn.title = currentTheme === 'light' ? '当前：浅色模式（点击切换为深色模式）' : '当前：深色模式（点击切换为浅色模式）';
+    themeBtn.title = currentTheme === 'light' ? t.themeLightTooltip : t.themeDarkTooltip;
     themeBtn.onclick = () => {
       const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
       ipcRenderer.invoke('theme-set', nextTheme).catch(() => {});
@@ -1457,7 +1588,7 @@ function injectExportButton() {}
     settingsBtn.style.position = 'relative';
     settingsBtn.style.fontSize = '14px';
     settingsBtn.innerHTML = '⚙';
-    settingsBtn.title = '设置与自动化控制中心 (Auto-Allow & Settings)';
+    settingsBtn.title = t.settingsCenterTooltip;
 
     // 右下角微型自动化状态指示圆点
     const dot = document.createElement('span');
@@ -1484,6 +1615,8 @@ function injectExportButton() {}
     };
     dockContainer.appendChild(settingsBtn);
   }
+
+  window.__museRenderDock = renderDock;
 
   // 全局点击关闭上下文菜单
   window.addEventListener('click', () => closeContextMenu());
