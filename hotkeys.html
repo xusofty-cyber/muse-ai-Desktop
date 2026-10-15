@@ -83,12 +83,42 @@
     flex: 1; background: #23262e; border: 1px solid #3a3f4b;
     color: #e8eaf0; padding: 4px 8px; border-radius: 4px; font-size: 12px;
   }
+  .proxy-mode-card {
+    background: #1d2028; border: 1px solid #292d38;
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+    cursor: pointer; transition: all 0.2s ease;
+  }
+  .proxy-mode-card:hover {
+    border-color: #3e4453;
+  }
+  .proxy-mode-card.selected {
+    border-color: #3b5bfd; background: #202432;
+  }
+  .proxy-mode-header {
+    display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600;
+  }
+  .proxy-mode-title {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .proxy-mode-desc {
+    font-size: 11.5px; color: #8a909d; margin-top: 4px; line-height: 1.4; padding-left: 24px;
+  }
+  .proxy-badge {
+    display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 500;
+  }
+  .proxy-badge.rec {
+    background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+  .quick-link {
+    display: inline-block; font-size: 11px; color: #7aa2ff; cursor: pointer; text-decoration: underline; margin-top: 6px;
+  }
 </style>
 </head>
 <body>
   <div class="tabs">
     <button class="tab-btn active" id="tab-hotkeys-btn">Hotkeys</button>
     <button class="tab-btn" id="tab-auto-btn">Automation & Rules</button>
+    <button class="tab-btn" id="tab-proxy-btn">Network & Proxy</button>
   </div>
 
   <div class="tab-content active" id="tab-hotkeys">
@@ -163,6 +193,83 @@
         <button id="site-add-btn" class="action" style="flex:0; padding:4px 12px;">Add</button>
       </div>
     </div>
+  </div>
+
+  <div class="tab-content" id="tab-proxy">
+    <h2>Network & Proxy Settings</h2>
+    <p class="hint">选择网络代理策略。默认开启自适应模式，自动兼容 TUN 虚拟网卡与系统代理，多设备免配置直接联网。</p>
+
+    <div class="section-title">连接模式 (Connection Mode)</div>
+
+    <!-- 模式 1: 自适应系统网络与TUN网卡 (默认推荐) -->
+    <div class="proxy-mode-card selected" id="card-mode-system">
+      <div class="proxy-mode-header">
+        <div class="proxy-mode-title">
+          <input type="radio" name="proxy-mode" id="rad-mode-system" value="system" checked>
+          <label for="rad-mode-system" style="cursor:pointer;">自适应系统代理 / TUN 虚拟网卡</label>
+        </div>
+        <span class="proxy-badge rec">推荐 · 默认开箱即用</span>
+      </div>
+      <div class="proxy-mode-desc">
+        自动继承 Windows 系统网络代理、VPN 与 Clash Verge 的 TUN 虚拟网卡模式。部署到新电脑无需任何手动设置，免配置畅通联网。
+      </div>
+    </div>
+
+    <!-- 模式 2: 手动指定代理服务器 (覆盖模式) -->
+    <div class="proxy-mode-card" id="card-mode-custom">
+      <div class="proxy-mode-header">
+        <div class="proxy-mode-title">
+          <input type="radio" name="proxy-mode" id="rad-mode-custom" value="custom">
+          <label for="rad-mode-custom" style="cursor:pointer;">手动指定本地/局域网代理 (覆盖模式)</label>
+        </div>
+      </div>
+      <div class="proxy-mode-desc">
+        强制所有账号流量经过指定的本地或局域网代理端口（如 Clash HTTP/SOCKS 7897 端口）。
+      </div>
+
+      <!-- 手动配置项展开区 -->
+      <div id="custom-proxy-panel" style="margin-top:10px; padding-top:10px; border-top:1px solid #2d323e; display:none;">
+        <div class="auto-row">
+          <div><span>代理协议 (Type)</span><span class="sub">HTTP / SOCKS5</span></div>
+          <select id="sel-proxy-type" style="background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 8px; border-radius:6px; font-size:12px;">
+            <option value="http">HTTP</option>
+            <option value="socks5">SOCKS5</option>
+          </select>
+        </div>
+
+        <div class="auto-row" style="margin-top: 6px;">
+          <div><span>代理服务器 (Host)</span><span class="sub">默认本地 127.0.0.1</span></div>
+          <input type="text" id="txt-proxy-host" value="127.0.0.1" style="width:130px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 8px; border-radius:6px; font-size:12px;">
+        </div>
+
+        <div class="auto-row" style="margin-top: 6px;">
+          <div><span>代理端口 (Port)</span><span class="sub">例如 Clash Verge 默认 7897</span></div>
+          <input type="number" id="txt-proxy-port" value="7897" style="width:90px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 8px; border-radius:6px; font-size:12px;">
+        </div>
+
+        <div style="text-align:right; margin-top:6px;">
+          <a class="quick-link" id="link-fill-clash">一键填入 Clash Verge 默认 (127.0.0.1:7897)</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 模式 3: 直接连接 (禁用代理) -->
+    <div class="proxy-mode-card" id="card-mode-direct">
+      <div class="proxy-mode-header">
+        <div class="proxy-mode-title">
+          <input type="radio" name="proxy-mode" id="rad-mode-direct" value="direct">
+          <label for="rad-mode-direct" style="cursor:pointer;">直接连接 (Direct)</label>
+        </div>
+      </div>
+      <div class="proxy-mode-desc">
+        不经过任何本地或系统代理，直连互联网。
+      </div>
+    </div>
+
+    <div class="actions" style="margin-top:16px;">
+      <button class="action primary" id="btn-save-proxy">保存并立即生效</button>
+    </div>
+    <p id="proxy-msg" style="margin-top:10px; font-size:12px; min-height:18px;"></p>
   </div>
 
 <script>
@@ -434,23 +541,141 @@ document.getElementById('site-add-btn').onclick = () => {
 // Tabs
 const tabHotkeysBtn = document.getElementById('tab-hotkeys-btn');
 const tabAutoBtn = document.getElementById('tab-auto-btn');
+const tabProxyBtn = document.getElementById('tab-proxy-btn');
 const tabHotkeys = document.getElementById('tab-hotkeys');
 const tabAuto = document.getElementById('tab-auto');
+const tabProxy = document.getElementById('tab-proxy');
 
-tabHotkeysBtn.onclick = () => {
-  tabHotkeysBtn.classList.add('active');
-  tabAutoBtn.classList.remove('active');
-  tabHotkeys.classList.add('active');
-  tabAuto.classList.remove('active');
-};
+function selectTab(btn, content) {
+  [tabHotkeysBtn, tabAutoBtn, tabProxyBtn].forEach(b => b.classList.remove('active'));
+  [tabHotkeys, tabAuto, tabProxy].forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  content.classList.add('active');
+}
 
+tabHotkeysBtn.onclick = () => selectTab(tabHotkeysBtn, tabHotkeys);
 tabAutoBtn.onclick = () => {
-  tabAutoBtn.classList.add('active');
-  tabHotkeysBtn.classList.remove('active');
-  tabAuto.classList.add('active');
-  tabHotkeys.classList.remove('active');
+  selectTab(tabAutoBtn, tabAuto);
   refreshAutoState();
 };
+tabProxyBtn.onclick = () => {
+  selectTab(tabProxyBtn, tabProxy);
+  loadProxySettings();
+};
+
+const proxyApi = window.proxyAPI;
+const customPanel = document.getElementById('custom-proxy-panel');
+const cardSystem = document.getElementById('card-mode-system');
+const cardCustom = document.getElementById('card-mode-custom');
+const cardDirect = document.getElementById('card-mode-direct');
+const radSystem = document.getElementById('rad-mode-system');
+const radCustom = document.getElementById('rad-mode-custom');
+const radDirect = document.getElementById('rad-mode-direct');
+
+function updateModeUI(mode) {
+  [cardSystem, cardCustom, cardDirect].forEach(c => c.classList.remove('selected'));
+  if (mode === 'custom') {
+    cardCustom.classList.add('selected');
+    radCustom.checked = true;
+    customPanel.style.display = 'block';
+  } else if (mode === 'direct') {
+    cardDirect.classList.add('selected');
+    radDirect.checked = true;
+    customPanel.style.display = 'none';
+  } else {
+    cardSystem.classList.add('selected');
+    radSystem.checked = true;
+    customPanel.style.display = 'none';
+  }
+}
+
+cardSystem.onclick = () => updateModeUI('system');
+cardCustom.onclick = (e) => {
+  // 如果点击的是输入框本身，不阻断焦点
+  if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT' && e.target.tagName !== 'A') {
+    updateModeUI('custom');
+  } else {
+    cardCustom.classList.add('selected');
+    radCustom.checked = true;
+  }
+};
+cardDirect.onclick = () => updateModeUI('direct');
+
+radSystem.onchange = () => updateModeUI('system');
+radCustom.onchange = () => updateModeUI('custom');
+radDirect.onchange = () => updateModeUI('direct');
+
+document.getElementById('link-fill-clash').onclick = (e) => {
+  e.preventDefault();
+  document.getElementById('sel-proxy-type').value = 'http';
+  document.getElementById('txt-proxy-host').value = '127.0.0.1';
+  document.getElementById('txt-proxy-port').value = '7897';
+};
+
+async function loadProxySettings() {
+  if (!proxyApi) return;
+  try {
+    const p = await proxyApi.get();
+    if (p) {
+      let mode = p.mode;
+      if (!mode) {
+        mode = p.enabled ? 'custom' : 'system';
+      }
+      updateModeUI(mode);
+      document.getElementById('sel-proxy-type').value = p.type || 'http';
+      document.getElementById('txt-proxy-host').value = p.host || '127.0.0.1';
+      document.getElementById('txt-proxy-port').value = p.port || 7897;
+    }
+  } catch (err) {
+    console.error('Could not load proxy settings:', err);
+  }
+}
+
+document.getElementById('btn-save-proxy').onclick = async () => {
+  const pMsg = document.getElementById('proxy-msg');
+  pMsg.style.color = '#7aa2ff';
+  pMsg.textContent = '正在保存并应用网络代理配置...';
+  try {
+    const selectedRadio = document.querySelector('input[name="proxy-mode"]:checked');
+    const mode = selectedRadio ? selectedRadio.value : 'system';
+    const config = {
+      mode,
+      enabled: mode === 'custom',
+      type: document.getElementById('sel-proxy-type').value,
+      host: document.getElementById('txt-proxy-host').value.trim() || '127.0.0.1',
+      port: parseInt(document.getElementById('txt-proxy-port').value, 10) || 7897,
+    };
+    const res = await proxyApi.set(config);
+    if (res && res.ok) {
+      pMsg.style.color = '#7ee2a8';
+      if (mode === 'system') {
+        pMsg.textContent = '已切换为【自适应系统代理 / TUN 虚拟网卡】模式，主窗口正在重新连接！';
+      } else if (mode === 'custom') {
+        pMsg.textContent = `已应用【手动代理覆盖 (${config.type.toUpperCase()}://${config.host}:${config.port})】，主窗口正在重新连接！`;
+      } else {
+        pMsg.textContent = '已切换为【直接连接 (Direct)】模式，主窗口正在重新连接！';
+      }
+    } else {
+      pMsg.style.color = '#ff9a9a';
+      pMsg.textContent = '保存失败: ' + ((res && res.error) || '未知错误');
+    }
+  } catch (err) {
+    pMsg.style.color = '#ff9a9a';
+    pMsg.textContent = '保存出错: ' + err.message;
+  }
+};
+
+if (window.settingsTabAPI) {
+  window.settingsTabAPI.onSwitchTab((tabId) => {
+    if (tabId === 'tab-proxy') {
+      tabProxyBtn.click();
+    } else if (tabId === 'tab-auto') {
+      tabAutoBtn.click();
+    } else if (tabId === 'tab-hotkeys') {
+      tabHotkeysBtn.click();
+    }
+  });
+}
 
 (async () => {
   try {
@@ -461,6 +686,7 @@ tabAutoBtn.onclick = () => {
     pending = { ...data.bindings };
     render();
     refreshAutoState();
+    loadProxySettings();
   } catch (err) {
     setMsg('Could not load hotkeys: ' + err, 'err');
   }

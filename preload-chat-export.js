@@ -6,6 +6,11 @@
 // paginated history into the DOM (restored afterwards).
 const { contextBridge, ipcRenderer } = require('electron');
 
+contextBridge.exposeInMainWorld('offlineAPI', {
+  selfHealToSystem: () => ipcRenderer.invoke('proxy-set', { mode: 'system', enabled: false }),
+  openProxySettings: () => ipcRenderer.invoke('open-settings', 'tab-proxy'),
+});
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- light HTML -> Markdown ------------------------------------------------
@@ -685,3 +690,574 @@ if (document.readyState === 'loading') {
 } else {
   injectExportButton();
 }
+
+// ---- Multi-Account Quick Dock -----------------------------------------------
+(function initAccountDock() {
+  let isCollapsed = false;
+  try {
+    isCollapsed = localStorage.getItem('muse_dock_collapsed') === '1';
+  } catch {}
+
+  let dockState = {
+    profiles: [],
+    activeProfileId: 'default',
+    collapsed: isCollapsed,
+  };
+
+  let dockContainer = null;
+  let activeContextMenu = null;
+  let activeModal = null;
+
+  function closeContextMenu() {
+    if (activeContextMenu && activeContextMenu.parentNode) {
+      activeContextMenu.parentNode.removeChild(activeContextMenu);
+    }
+    activeContextMenu = null;
+  }
+
+  function closeModal() {
+    if (activeModal && activeModal.parentNode) {
+      activeModal.parentNode.removeChild(activeModal);
+    }
+    activeModal = null;
+  }
+
+  function getInitials(name) {
+    if (!name) return 'A';
+    const trimmed = name.trim();
+    const numMatch = trimmed.match(/(?:账号|profile|account)\s*(\d+)/i);
+    if (numMatch) return numMatch[1];
+    if (/^[\u4e00-\u9fa5]/.test(trimmed)) {
+      return trimmed.length > 2 ? trimmed.slice(0, 2) : trimmed;
+    }
+    return trimmed.slice(0, 2).toUpperCase();
+  }
+
+  function injectDockStyles() {
+    if (document.getElementById('muse-account-dock-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'muse-account-dock-styles';
+    style.textContent = `
+      #muse-account-dock {
+        position: fixed;
+        left: 10px;
+        bottom: 80px;
+        z-index: 2147483640;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background: rgba(18, 18, 22, 0.85);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 24px;
+        padding: 8px 6px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+        user-select: none;
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      #muse-account-dock.collapsed {
+        transform: translateX(-34px);
+        opacity: 0.55;
+      }
+      #muse-account-dock.collapsed:hover {
+        transform: translateX(0);
+        opacity: 1;
+      }
+      .muse-dock-collapse-btn {
+        width: 22px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: rgba(255, 255, 255, 0.4);
+        margin-bottom: 6px;
+        border-radius: 4px;
+        transition: color 0.15s, background 0.15s;
+        font-size: 10px;
+      }
+      .muse-dock-collapse-btn:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.12);
+      }
+      .muse-dock-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 380px;
+        overflow-y: auto;
+        padding: 2px;
+        scrollbar-width: none;
+      }
+      .muse-dock-list::-webkit-scrollbar {
+        display: none;
+      }
+      .muse-dock-item {
+        position: relative;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
+        flex-shrink: 0;
+      }
+      .muse-dock-item:hover {
+        transform: scale(1.1);
+      }
+      .muse-dock-item.active {
+        box-shadow: 0 0 0 2.5px #fff, 0 4px 12px rgba(0, 0, 0, 0.4);
+      }
+      .muse-dock-item.active::after {
+        content: '';
+        position: absolute;
+        right: -3px;
+        bottom: -2px;
+        width: 8px;
+        height: 8px;
+        background: #10b981;
+        border: 2px solid #141416;
+        border-radius: 50%;
+      }
+      .muse-dock-tooltip {
+        position: absolute;
+        left: calc(100% + 10px);
+        top: 50%;
+        transform: translateY(-50%) translateX(-4px);
+        background: rgba(24, 24, 28, 0.95);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        padding: 6px 10px;
+        border-radius: 8px;
+        color: #fff;
+        font-size: 12px;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        z-index: 2147483645;
+      }
+      .muse-dock-item:hover .muse-dock-tooltip {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(-50%) translateX(0);
+      }
+      .muse-dock-tooltip-badge {
+        font-size: 10px;
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: rgba(16, 185, 129, 0.25);
+        color: #34d399;
+        font-weight: 500;
+      }
+      .muse-dock-tooltip-hint {
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.4);
+      }
+      .muse-dock-add-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 1px dashed rgba(255, 255, 255, 0.28);
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(255, 255, 255, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        cursor: pointer;
+        margin-top: 6px;
+        transition: all 0.2s;
+      }
+      .muse-dock-add-btn:hover {
+        background: rgba(255, 255, 255, 0.15);
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.5);
+        transform: scale(1.08);
+      }
+      .muse-context-menu {
+        position: fixed;
+        z-index: 2147483647;
+        background: rgba(28, 28, 34, 0.96);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        padding: 6px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+        min-width: 140px;
+        color: #eee;
+        font-size: 13px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .muse-context-item {
+        padding: 7px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: background 0.15s;
+      }
+      .muse-context-item:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+      }
+      .muse-context-item.danger {
+        color: #f87171;
+      }
+      .muse-context-item.danger:hover {
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+      }
+      .muse-modal-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483646;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .muse-modal-card {
+        background: #1c1c22;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 16px;
+        padding: 20px;
+        width: 320px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+        color: #fff;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      .muse-modal-title {
+        font-size: 15px;
+        font-weight: 600;
+        margin-bottom: 12px;
+      }
+      .muse-modal-input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 9px 12px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        color: #fff;
+        font-size: 14px;
+        outline: none;
+        margin-bottom: 16px;
+      }
+      .muse-modal-input:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+      }
+      .muse-modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .muse-modal-btn {
+        padding: 6px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+        border: 1px solid transparent;
+        font-weight: 500;
+        transition: all 0.15s;
+      }
+      .muse-modal-btn.cancel {
+        background: transparent;
+        border-color: rgba(255, 255, 255, 0.15);
+        color: #ccc;
+      }
+      .muse-modal-btn.cancel:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+      }
+      .muse-modal-btn.confirm {
+        background: #3b82f6;
+        color: #fff;
+      }
+      .muse-modal-btn.confirm:hover {
+        background: #2563eb;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function showPromptModal(title, initialValue, onConfirm) {
+    closeModal();
+    const overlay = document.createElement('div');
+    overlay.className = 'muse-modal-overlay';
+
+    const card = document.createElement('div');
+    card.className = 'muse-modal-card';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'muse-modal-title';
+    titleEl.textContent = title;
+
+    const input = document.createElement('input');
+    input.className = 'muse-modal-input';
+    input.value = initialValue || '';
+    input.placeholder = '输入账号备注昵称...';
+
+    const actions = document.createElement('div');
+    actions.className = 'muse-modal-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'muse-modal-btn cancel';
+    cancelBtn.textContent = '取消';
+    cancelBtn.onclick = closeModal;
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'muse-modal-btn confirm';
+    confirmBtn.textContent = '确定';
+    confirmBtn.onclick = () => {
+      const val = input.value.trim();
+      closeModal();
+      onConfirm(val);
+    };
+
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') confirmBtn.click();
+      if (e.key === 'Escape') closeModal();
+    };
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+    card.appendChild(titleEl);
+    card.appendChild(input);
+    card.appendChild(actions);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    activeModal = overlay;
+
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 50);
+  }
+
+  function openItemContextMenu(e, profile) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeContextMenu();
+
+    const menu = document.createElement('div');
+    menu.className = 'muse-context-menu';
+
+    // 1. 修改备注
+    const renameItem = document.createElement('div');
+    renameItem.className = 'muse-context-item';
+    renameItem.innerHTML = '<span>✏️</span><span>修改备注名称</span>';
+    renameItem.onclick = () => {
+      closeContextMenu();
+      showPromptModal(`修改账号名称 (${profile.name})`, profile.name, (newName) => {
+        if (newName && newName !== profile.name) {
+          ipcRenderer.invoke('account:rename', { id: profile.id, name: newName });
+        }
+      });
+    };
+    menu.appendChild(renameItem);
+
+    // 2. 退出登录
+    const signOutItem = document.createElement('div');
+    signOutItem.className = 'muse-context-item';
+    signOutItem.innerHTML = '<span>🚪</span><span>退出此账号登录</span>';
+    signOutItem.onclick = () => {
+      closeContextMenu();
+      if (confirm(`确定要退出账号 [${profile.name}] 的登录状态吗？将清除此账号的登录凭据。`)) {
+        ipcRenderer.invoke('account:sign-out', { id: profile.id });
+      }
+    };
+    menu.appendChild(signOutItem);
+
+    // 3. 删除账号
+    if (dockState.profiles.length > 1) {
+      const deleteItem = document.createElement('div');
+      deleteItem.className = 'muse-context-item danger';
+      deleteItem.innerHTML = '<span>🗑️</span><span>删除此账号</span>';
+      deleteItem.onclick = () => {
+        closeContextMenu();
+        if (confirm(`确定要删除账号 [${profile.name}] 吗？该账号的所有独立本地数据将被清理。`)) {
+          ipcRenderer.invoke('account:delete', { id: profile.id });
+        }
+      };
+      menu.appendChild(deleteItem);
+    }
+
+    // 4. 网络代理设置
+    const proxyItem = document.createElement('div');
+    proxyItem.className = 'muse-context-item';
+    proxyItem.innerHTML = '<span>🌐</span><span>网络代理设置…</span>';
+    proxyItem.onclick = () => {
+      closeContextMenu();
+      ipcRenderer.invoke('open-settings', 'tab-proxy');
+    };
+    menu.appendChild(proxyItem);
+
+    menu.style.left = `${Math.min(e.clientX + 5, window.innerWidth - 160)}px`;
+    menu.style.top = `${Math.min(e.clientY - 20, window.innerHeight - 150)}px`;
+    document.body.appendChild(menu);
+    activeContextMenu = menu;
+  }
+
+  function renderDock() {
+    const parent = document.body || document.documentElement;
+    if (!parent) return;
+
+    if (!dockContainer) {
+      dockContainer = document.createElement('div');
+      dockContainer.id = 'muse-account-dock';
+      parent.appendChild(dockContainer);
+    } else if (!dockContainer.parentNode) {
+      parent.appendChild(dockContainer);
+    }
+
+    if (dockState.collapsed) {
+      dockContainer.classList.add('collapsed');
+    } else {
+      dockContainer.classList.remove('collapsed');
+    }
+
+    dockContainer.innerHTML = '';
+
+    // 折叠按钮
+    const collapseBtn = document.createElement('div');
+    collapseBtn.className = 'muse-dock-collapse-btn';
+    collapseBtn.title = dockState.collapsed ? '展开多账号栏' : '收起多账号栏';
+    collapseBtn.innerHTML = dockState.collapsed ? '▶' : '◀';
+    collapseBtn.onclick = (e) => {
+      e.stopPropagation();
+      dockState.collapsed = !dockState.collapsed;
+      try { localStorage.setItem('muse_dock_collapsed', dockState.collapsed ? '1' : '0'); } catch {}
+      renderDock();
+    };
+    dockContainer.appendChild(collapseBtn);
+
+    // 账号列表
+    const list = document.createElement('div');
+    list.className = 'muse-dock-list';
+
+    // 保底至少渲染一个当前账号徽章
+    const profilesToRender = (dockState.profiles && dockState.profiles.length > 0)
+      ? dockState.profiles
+      : [{ id: dockState.activeProfileId || 'default', name: '我的账号', color: '#3b82f6' }];
+
+    profilesToRender.forEach((p) => {
+      const item = document.createElement('div');
+      item.className = 'muse-dock-item';
+      if (p.id === dockState.activeProfileId) {
+        item.classList.add('active');
+      }
+      item.style.backgroundColor = p.color || '#3b82f6';
+      item.textContent = getInitials(p.name);
+
+      // Tooltip
+      const tooltip = document.createElement('div');
+      tooltip.className = 'muse-dock-tooltip';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = p.name;
+      tooltip.appendChild(nameSpan);
+
+      if (p.id === dockState.activeProfileId) {
+        const badge = document.createElement('span');
+        badge.className = 'muse-dock-tooltip-badge';
+        badge.textContent = '当前账号';
+        tooltip.appendChild(badge);
+      } else {
+        const hint = document.createElement('span');
+        hint.className = 'muse-dock-tooltip-hint';
+        hint.textContent = '点击切换';
+        tooltip.appendChild(hint);
+      }
+
+      item.appendChild(tooltip);
+
+      // 点击切换
+      item.onclick = () => {
+        if (p.id !== dockState.activeProfileId) {
+          ipcRenderer.invoke('account:switch', { id: p.id }).catch(() => {});
+        }
+      };
+
+      // 右键管理
+      item.oncontextmenu = (e) => openItemContextMenu(e, p);
+
+      list.appendChild(item);
+    });
+
+    dockContainer.appendChild(list);
+
+    // 新增账号按钮
+    const addBtn = document.createElement('button');
+    addBtn.className = 'muse-dock-add-btn';
+    addBtn.type = 'button';
+    addBtn.title = '添加新账号（家庭成员/多会话）';
+    addBtn.textContent = '+';
+    addBtn.onclick = () => {
+      showPromptModal('添加新账号', `账号 ${profilesToRender.length + 1}`, (name) => {
+        ipcRenderer.invoke('account:add', { name }).catch(() => {});
+      });
+    };
+    dockContainer.appendChild(addBtn);
+  }
+
+  // 全局点击关闭上下文菜单
+  window.addEventListener('click', () => closeContextMenu());
+  window.addEventListener('contextmenu', (e) => {
+    if (activeContextMenu && !activeContextMenu.contains(e.target)) {
+      closeContextMenu();
+    }
+  });
+
+  // 监听主进程广播的账号变化
+  ipcRenderer.on('account:changed', (e, newState) => {
+    if (newState) {
+      dockState.profiles = newState.profiles || [];
+      dockState.activeProfileId = newState.activeProfileId || 'default';
+      renderDock();
+    }
+  });
+
+  function startDock() {
+    injectDockStyles();
+    renderDock(); // 先用初始数据渲染，确保绝不空白
+    ipcRenderer.invoke('account:get-state').then((res) => {
+      if (res) {
+        dockState.profiles = res.profiles || [];
+        dockState.activeProfileId = res.activeProfileId || 'default';
+      }
+      renderDock();
+    }).catch(() => {
+      renderDock();
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', startDock);
+  } else {
+    startDock();
+  }
+  // 延时再次检查保底附加
+  setTimeout(startDock, 500);
+  setTimeout(startDock, 2000);
+})();
+

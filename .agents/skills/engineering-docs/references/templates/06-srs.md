@@ -1,0 +1,67 @@
+---
+id: SRS-XXX
+title: "[模块/系统名称] 软件需求规格说明"
+type: specs
+status: draft
+modules:
+  - "src/your_module/**"
+depends_on:
+  - "docs/specs/PRD-XXX.md"
+version: 0.1.0
+last_verified_commit: HEAD
+---
+
+# 软件需求规格说明 / Software Requirements Specification (SRS)
+
+> **文档类型**：软件需求规格说明 / 开发需求细化表  
+> **适用阶段**：需求 Requirements  
+> **覆盖**：软件需求规格说明、开发需求细化表  
+> **渲染规范**：参见 `../rendering-spec.md`（标题字号/段落/字体）；未知项标 `TODO: <说明>`，不要编造。
+
+## 1. 引言 / Introduction
+
+<!-- 目的、范围、定义、参考资料。 -->
+
+[引言内容]
+
+## 2. 总体描述 / Overall Description
+
+<!-- 产品视角、用户特征、约束、假设。 -->
+
+[总体描述内容]
+
+## 3. 功能需求 / Functional Requirements
+
+<!-- 编号 FR-001…：输入、前置条件、处理、输出、后置条件。 格式：用 ### 子标题分条，每条含：编号 FR-XXX、输入、前置条件、处理逻辑、输出、后置条件。 -->
+
+[功能需求内容]
+
+## 4. 接口需求 / Interface Requirements
+
+<!-- 用户界面、硬件接口、软件接口、通信接口。 格式：用表格：| 接口 | 类型 | 说明 |。 -->
+
+[接口需求内容]
+
+## 5. 非功能需求 / Non-functional Requirements
+
+<!-- 性能、安全、可靠性、可维护性，量化指标。 格式：用列表，指标量化（如：响应时间 < 200ms）。 -->
+
+[非功能需求内容]
+
+## 6. 数据需求 / Data Requirements
+
+<!-- 数据模型、数据字典引用。 -->
+
+[数据需求内容]
+
+## 7. 需求追溯 / Traceability
+
+<!-- 需求编号 ↔ 用户需求/产品规格的追溯表。 -->
+
+[需求追溯内容]
+
+## 8. 附录 / Appendix
+
+<!-- 需求细化表（可拆分为独立 xlsx）。 -->
+
+[附录内容]
