@@ -27,6 +27,8 @@
 - **受影响文件与具体改动**：
   - [main.js](file:///e:/project/github/muse-windows/main.js)：
     - **自适应系统代理 + 手动覆盖机制**：引入 `applyProxyToSession` 与 `applyProxySettings`，默认配置为 `mode: 'system'`，自动兼容 Windows 系统代理与 TUN 虚拟网卡（Clash Verge TUN 等），确保部署到任何新电脑开箱即用，免配置直接联网；同时支持用户通过设置界面开启 `mode: 'custom'` 强制指定代理协议（HTTP/SOCKS5）、Host 与端口。
+    - **网络代理全局设备级统一持久化**：代理配置统一收口至 `state.proxy` 并持久化存储至 `app-state.json`；无论账号如何切换或动态新增账号标签，均在窗口初始化阶段自动继承当前全局代理设置，消除多账号重复配置；保存代理设置时广播热重载所有存活的账号窗口（`profileWindows`）。
+    - **连接失败主动唤起网络设置**：当主窗口或标签窗口加载失败（如 `-130`、`-100`、`-7`、`-105`）时，除展示 `offline.html` 离线诊断页外，主进程自动弹出设置窗口并聚焦至“网络与代理设置”，引导用户一键切换自适应或修改端口。
     - **网络握手稳定性与防白屏机制**：注入 `--disable-quic`（防 TUN 模式下 UDP 丢包挂起）、`--ignore-certificate-errors`（兼容本地中间人证书）、全量伪装标准 Chrome 桌面版 User-Agent（防 Cloudflare 拦截），并在 `mainWindow.webContents` 上增加 `did-fail-load` 自动重试自愈能力。
     - **多账号管理 IPC 与广播**：完整提供 `account:get-state`、`account:switch`、`account:add`、`account:rename`、`account:sign-out`、`account:delete`、`proxy-get`、`proxy-set`，支持多 Partition 会话安全隔离。
   - [hotkeys.html](file:///e:/project/github/muse-windows/hotkeys.html) & [preload-settings.js](file:///e:/project/github/muse-windows/preload-settings.js)：
@@ -51,15 +53,19 @@
    - 维护 `profileWindows = new Map()` 结构，每个账号对应独立的常驻 BrowserWindow；
    - 切换账号通过切换窗口可见性与继承 Bounds 实现，耗时 `< 10ms`；
    - 彻底告别切换时的 `closeWindows()` 销毁与重新 `loadURL`，保持会话与输入状态完全无感。
+4. **网络代理设备级统一与自动唤起验证**：
+   - 代理配置保存后直接持久化至 `app-state.json`，重启直接加载生效；
+   - 动态创建的账号窗口通过 `applyProxyToSession(ses)` 自动继承全局代理配置；
+   - 连接阻断时主动调用 `openHotkeySettings('tab-proxy')` 自动弹出配置面板。
 
 ---
 
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - 零重载多标签秒切、自适应代理自愈与黑框预防方案全部落地并通过编译验证。
-   - 特性分支 `feature/multi-account-and-adaptive-proxy` 已通过指定 SSH Host (`github-xusofty` 端口 443 + `id_ed25519_xusofty`) 成功推送到远端服务器 `origin`。
+   - 零重载多标签秒切、自适应代理自愈、设备级代理全局统一与持久化方案全部落地并通过编译验证。
+   - `main` 分支已合并最新代码并推送到远端服务器 `origin/main`。
 2. **后续下一步**：
-   - [x] 分支提交并推送到远端 `origin/feature/multi-account-and-adaptive-proxy`。
-   - [ ] 按照 GitHub 提示创建 Pull Request 合入 `main`：`https://github.com/xusofty-cyber/muse-windows/pull/new/feature/multi-account-and-adaptive-proxy`。
+   - [x] 分支提交并推送到远端 `origin/main`。
+   - [ ] 本地启动验证多账号网络连通性与异常自动唤起效果。
 
