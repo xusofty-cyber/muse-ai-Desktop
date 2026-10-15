@@ -13,6 +13,236 @@ contextBridge.exposeInMainWorld('offlineAPI', {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ---- Theme & AutoHide Engine (Dark / Light + Corner Auto-Fade) --------------
+let currentTheme = 'dark';
+let uiSettings = { autoHideButtons: true };
+
+function injectThemeStyles() {
+  if (document.getElementById('muse-theme-autohide-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'muse-theme-autohide-styles';
+  style.textContent = `
+    /* Floating Controls Transition & Auto-Hide */
+    #muse-automation-widget, #muse-export-btn {
+      transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+    .muse-floating-hidden {
+      opacity: 0.08 !important;
+      pointer-events: none !important;
+      transform: scale(0.96) !important;
+    }
+    .muse-floating-visible {
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      transform: scale(1) !important;
+    }
+
+    /* Light Mode Theme Overrides */
+    [data-muse-theme="light"] #muse-automation-widget #muse-automation-badge {
+      background: #ffffff !important;
+      color: #1e293b !important;
+      border-color: #cbd5e1 !important;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+    }
+    [data-muse-theme="light"] #muse-automation-panel {
+      background: #ffffff !important;
+      color: #1e293b !important;
+      border-color: #cbd5e1 !important;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12) !important;
+    }
+    [data-muse-theme="light"] #muse-automation-panel span {
+      color: #334155 !important;
+    }
+    [data-muse-theme="light"] #muse-automation-panel button {
+      background: #f1f5f9 !important;
+      color: #1e293b !important;
+      border-color: #cbd5e1 !important;
+    }
+    [data-muse-theme="light"] #muse-export-btn {
+      background: rgba(255, 255, 255, 0.95) !important;
+      color: #1e293b !important;
+      border-color: rgba(0, 0, 0, 0.12) !important;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1) !important;
+    }
+    [data-muse-theme="light"] #muse-export-btn:hover {
+      background: #f8fafc !important;
+    }
+    [data-muse-theme="light"] #muse-account-dock {
+      background: rgba(255, 255, 255, 0.94) !important;
+      border-color: rgba(0, 0, 0, 0.1) !important;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1) !important;
+    }
+    [data-muse-theme="light"] .muse-dock-collapse-btn {
+      color: #64748b !important;
+    }
+    [data-muse-theme="light"] .muse-dock-collapse-btn:hover {
+      color: #0f172a !important;
+      background: rgba(0, 0, 0, 0.06) !important;
+    }
+    [data-muse-theme="light"] .muse-dock-add-btn {
+      background: rgba(0, 0, 0, 0.06) !important;
+      border-color: rgba(0, 0, 0, 0.1) !important;
+      color: #334155 !important;
+    }
+    [data-muse-theme="light"] .muse-dock-add-btn:hover {
+      background: rgba(0, 0, 0, 0.1) !important;
+      color: #0f172a !important;
+    }
+    [data-muse-theme="light"] .muse-context-menu {
+      background: #ffffff !important;
+      border-color: #e2e8f0 !important;
+      color: #1e293b !important;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
+    }
+    [data-muse-theme="light"] .muse-context-item {
+      color: #334155 !important;
+    }
+    [data-muse-theme="light"] .muse-context-item:hover {
+      background: #f1f5f9 !important;
+      color: #0f172a !important;
+    }
+    [data-muse-theme="light"] .muse-modal-card {
+      background: #ffffff !important;
+      border-color: #e2e8f0 !important;
+      color: #0f172a !important;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15) !important;
+    }
+    [data-muse-theme="light"] .muse-modal-input {
+      background: #f8fafc !important;
+      border-color: #cbd5e1 !important;
+      color: #0f172a !important;
+    }
+  `;
+  (document.head || document.documentElement).appendChild(style);
+}
+
+function applyTheme(theme) {
+  currentTheme = (theme === 'light') ? 'light' : 'dark';
+  const root = document.documentElement || document.body;
+  if (root) {
+    root.setAttribute('data-muse-theme', currentTheme);
+  }
+  const themeBtn = document.getElementById('muse-dock-theme-toggle');
+  if (themeBtn) {
+    themeBtn.innerHTML = currentTheme === 'light' ? '☀️' : '🌙';
+    themeBtn.title = currentTheme === 'light' ? '当前：浅色模式（点击切换为深色模式）' : '当前：深色模式（点击切换为浅色模式）';
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', injectThemeStyles);
+} else {
+  injectThemeStyles();
+}
+
+ipcRenderer.invoke('theme-get').then((theme) => {
+  applyTheme(theme);
+}).catch(() => {});
+
+ipcRenderer.on('theme:changed', (e, theme) => {
+  applyTheme(theme);
+});
+
+// ---- Auto-Hide Floating Controls Controller ----
+(function initAutoHideFloating() {
+  let isHovering = false;
+  let isMouseNearCorner = false;
+  let hideTimer = null;
+  let autoHideEnabled = true;
+
+  function updateAutoHideState(ui) {
+    autoHideEnabled = !!(ui && ui.autoHideButtons);
+    if (!autoHideEnabled) {
+      showButtons();
+    } else {
+      triggerAutoHideCountdown();
+    }
+  }
+
+  function getFloatingElements() {
+    return [
+      document.getElementById('muse-automation-widget'),
+      document.getElementById('muse-export-btn')
+    ].filter(Boolean);
+  }
+
+  function showButtons() {
+    clearTimeout(hideTimer);
+    getFloatingElements().forEach((el) => {
+      el.classList.remove('muse-floating-hidden');
+      el.classList.add('muse-floating-visible');
+    });
+  }
+
+  function hideButtons() {
+    if (!autoHideEnabled) return;
+    if (isHovering || isMouseNearCorner) return;
+
+    // 面板展开时绝对不隐藏
+    const panel = document.getElementById('muse-automation-panel');
+    if (panel && panel.style.display !== 'none' && panel.style.display !== '') {
+      return;
+    }
+
+    getFloatingElements().forEach((el) => {
+      el.classList.remove('muse-floating-visible');
+      el.classList.add('muse-floating-hidden');
+    });
+  }
+
+  function triggerAutoHideCountdown() {
+    if (!autoHideEnabled) return;
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(hideButtons, 2200);
+  }
+
+  window.addEventListener('mousemove', (e) => {
+    const x = e.clientX;
+    const y = e.clientY;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    // 检测是否进入右上角（宽 240px，高 90px）或右下角（宽 200px，高 85px）
+    const nearTopRight = (x > w - 240 && y < 90);
+    const nearBottomRight = (x > w - 200 && y > h - 85);
+
+    if (nearTopRight || nearBottomRight) {
+      isMouseNearCorner = true;
+      showButtons();
+      clearTimeout(hideTimer);
+    } else {
+      isMouseNearCorner = false;
+      showButtons();
+      triggerAutoHideCountdown();
+    }
+  }, { passive: true });
+
+  function bindHoverListeners() {
+    getFloatingElements().forEach((el) => {
+      if (el.__museHoverBound) return;
+      el.__museHoverBound = true;
+      el.addEventListener('mouseenter', () => {
+        isHovering = true;
+        showButtons();
+      });
+      el.addEventListener('mouseleave', () => {
+        isHovering = false;
+        triggerAutoHideCountdown();
+      });
+    });
+  }
+
+  ipcRenderer.invoke('ui-settings-get').then((ui) => {
+    updateAutoHideState(ui);
+  }).catch(() => {});
+
+  ipcRenderer.on('ui-settings:changed', (e, ui) => {
+    updateAutoHideState(ui);
+  });
+
+  setInterval(bindHoverListeners, 1000);
+})();
+
 // ---- light HTML -> Markdown ------------------------------------------------
 function nodeToMarkdown(node) {
   if (!node) return '';
@@ -1218,6 +1448,21 @@ if (document.readyState === 'loading') {
       });
     };
     dockContainer.appendChild(addBtn);
+
+    // 主题切换快捷按钮 (Dark / Light)
+    const themeBtn = document.createElement('button');
+    themeBtn.id = 'muse-dock-theme-toggle';
+    themeBtn.className = 'muse-dock-add-btn';
+    themeBtn.type = 'button';
+    themeBtn.style.marginTop = '4px';
+    themeBtn.style.fontSize = '12px';
+    themeBtn.innerHTML = currentTheme === 'light' ? '☀️' : '🌙';
+    themeBtn.title = currentTheme === 'light' ? '当前：浅色模式（点击切换为深色模式）' : '当前：深色模式（点击切换为浅色模式）';
+    themeBtn.onclick = () => {
+      const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
+      ipcRenderer.invoke('theme-set', nextTheme).catch(() => {});
+    };
+    dockContainer.appendChild(themeBtn);
   }
 
   // 全局点击关闭上下文菜单

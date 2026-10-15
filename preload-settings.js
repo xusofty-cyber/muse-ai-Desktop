@@ -26,3 +26,23 @@ contextBridge.exposeInMainWorld('settingsTabAPI', {
   },
 });
 
+contextBridge.exposeInMainWorld('themeAPI', {
+  get: () => ipcRenderer.invoke('theme-get'),
+  set: (theme) => ipcRenderer.invoke('theme-set', theme),
+  onChanged: (callback) => {
+    ipcRenderer.on('theme:changed', (e, t) => {
+      if (typeof callback === 'function') callback(t);
+    });
+  },
+});
+
+contextBridge.exposeInMainWorld('uiAPI', {
+  get: () => ipcRenderer.invoke('ui-settings-get'),
+  set: (settings) => ipcRenderer.invoke('ui-settings-set', settings),
+  onChanged: (callback) => {
+    ipcRenderer.on('ui-settings:changed', (e, u) => {
+      if (typeof callback === 'function') callback(u);
+    });
+  },
+});
+
