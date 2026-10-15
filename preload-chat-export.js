@@ -1659,3 +1659,45 @@ function injectExportButton() {}
   setTimeout(startDock, 2000);
 })();
 
+// ---- Global External Link Handling (Open In Default Browser) ---------------
+(function initExternalLinkCapture() {
+  function isInternalUrl(rawUrl) {
+    try {
+      const parsed = new URL(rawUrl, window.location.href);
+      const host = parsed.hostname.toLowerCase();
+      if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
+      if (host === 'meta.ai' || host.endsWith('.meta.ai')) return true;
+      if (parsed.protocol === 'file:') return true;
+      // 常见认证回调与页面跳转
+      if (host.includes('accounts.google.com') || host.includes('auth.meta.com') || host.includes('facebook.com')) {
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  // 使用捕获阶段 (capture: true)，优先拦截网页中所有 a 标签点击
+  document.addEventListener(
+    'click',
+    (e) => {
+      const anchor = e.target && e.target.closest ? e.target.closest('a') : null;
+      if (!anchor || !anchor.href) return;
+      const href = anchor.href;
+
+      // 仅拦截 http/https/mailto
+      if (!href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('mailto:')) {
+        return;
+      }
+
+      if (!isInternalUrl(href)) {
+        e.preventDefault();
+        e.stopPropagation();
+        ipcRenderer.send('open-external-url', href);
+      }
+    },
+    true
+  );
+})();
+

@@ -326,6 +326,83 @@ function attachZoomShortcuts(win) {
   });
 }
 
+// ---- External links & navigation security (Open in system default browser) --
+function isInternalSiteUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
+    if (host === 'meta.ai' || host.endsWith('.meta.ai')) return true;
+    if (parsed.protocol === 'file:') return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function isAuthUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host.includes('accounts.google.com') ||
+      host.includes('appleid.apple.com') ||
+      host.includes('auth.meta.com') ||
+      host.includes('facebook.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function setupExternalLinkHandler(win) {
+  if (!win || win.isDestroyed()) return;
+
+  // 1. 拦截 window.open() 或带 target="_blank" 的链接
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    // 允许身份验证弹窗在应用内完成 OAuth 流程
+    if (isAuthUrl(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          autoHideMenuBar: true,
+          webPreferences: {
+            ...webPrefs(),
+            partition: win.webContents.getWebPreferences().partition,
+          },
+        },
+      };
+    }
+
+    // 内部站点链接：如果被调用 window.open，直接在当前窗口加载并阻止弹窗
+    if (isInternalSiteUrl(url)) {
+      win.loadURL(url).catch(() => {});
+      return { action: 'deny' };
+    }
+
+    // 外部链接（知识库、外部网盘、文档、第三方网页等）：统一交由操作系统默认浏览器打开
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
+      shell.openExternal(url).catch((err) => {
+        console.warn('[ExternalLink] Failed to open external URL:', url, err);
+      });
+    }
+    return { action: 'deny' };
+  });
+
+  // 2. 拦截在主窗口内的普通超链接跳转（如 <a href="...">），防止主聊天窗口被外部网页覆盖
+  win.webContents.on('will-navigate', (event, url) => {
+    if (isInternalSiteUrl(url) || isAuthUrl(url)) {
+      return;
+    }
+    event.preventDefault();
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
+      shell.openExternal(url).catch((err) => {
+        console.warn('[ExternalLink] Failed to open external URL on will-navigate:', url, err);
+      });
+    }
+  });
+}
+
 // ---- network & proxy settings ---------------------------------------------
 async function applyProxyToSession(targetSession) {
   if (!targetSession) return;
@@ -504,6 +581,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
 
   attachZoomShortcuts(win);
   attachContextMenu(win);
+  setupExternalLinkHandler(win);
 
   const persistBounds = () => {
     if (!win || win.isDestroyed()) return;
@@ -547,6 +625,7 @@ function createQuickWindow() {
   quickWindow.webContents.setUserAgent(CHROME_UA);
   quickWindow.loadURL(currentSite().url);
   attachContextMenu(quickWindow);
+  setupExternalLinkHandler(quickWindow);
   // Spotlight-style: hide when focus is lost.
   quickWindow.on('blur', () => { if (quickWindow) quickWindow.hide(); });
   quickWindow.on('closed', () => { quickWindow = null; });
@@ -1161,6 +1240,15 @@ ipcMain.handle('locale-set', (e, newLocale) => {
 
 // Floating "Export chat" button in the page asks the main process to export.
 ipcMain.on('muse-export-request', () => exportChat());
+
+// 处理页面请求用系统默认浏览器打开外部链接
+ipcMain.on('open-external-url', (e, rawUrl) => {
+  if (typeof rawUrl === 'string' && (rawUrl.startsWith('http://') || rawUrl.startsWith('https://') || rawUrl.startsWith('mailto:'))) {
+    shell.openExternal(rawUrl).catch((err) => {
+      console.warn('[ExternalLink] Failed to open external URL from IPC:', rawUrl, err);
+    });
+  }
+});
 
 // ---- downloads & right-click menu -------------------------------------------
 // Electron shows no context menu on its own, so links can only be clicked
