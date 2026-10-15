@@ -105,6 +105,10 @@ function defaultState() {
     hotkeys: { ...DEFAULT_HOTKEYS },
     automation: defaultAutomation(),
     proxy: defaultProxy(),
+    theme: 'dark', // 'dark' | 'light' | 'system'
+    ui: {
+      autoHideButtons: true, // 自动隐藏右上角与右下角按钮
+    },
   };
 }
 const statePath = () => path.join(app.getPath('userData'), 'app-state.json');
@@ -113,6 +117,8 @@ function loadState() {
     const raw = JSON.parse(fs.readFileSync(statePath(), 'utf8'));
     const merged = { ...defaultState(), ...raw };
     merged.hotkeys = { ...DEFAULT_HOTKEYS, ...(raw.hotkeys || {}) };
+    merged.theme = raw.theme || 'dark';
+    merged.ui = { ...defaultState().ui, ...(raw.ui || {}) };
     merged.automation = {
       ...defaultAutomation(),
       ...(raw.automation || {}),
@@ -140,6 +146,10 @@ function loadState() {
   }
 }
 let state = loadState();
+const { nativeTheme } = require('electron');
+try {
+  nativeTheme.themeSource = state.theme || 'dark';
+} catch {}
 if (!state.profiles.some((p) => p.id === state.activeProfileId)) {
   state.activeProfileId = state.profiles[0].id;
 }
@@ -237,6 +247,47 @@ function broadcastAccountChange() {
   }
 }
 
+function broadcastThemeChange() {
+  const currentTheme = state.theme || 'dark';
+  for (const win of profileWindows.values()) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('theme:changed', currentTheme);
+    }
+  }
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    quickWindow.webContents.send('theme:changed', currentTheme);
+  }
+}
+
+function broadcastUISettingsChange() {
+  const currentUI = state.ui || { autoHideButtons: true };
+  for (const win of profileWindows.values()) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('ui-settings:changed', currentUI);
+    }
+  }
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    quickWindow.webContents.send('ui-settings:changed', currentUI);
+  }
+}
+
+function setAppTheme(theme) {
+  state.theme = theme;
+  try {
+    nativeTheme.themeSource = theme;
+  } catch {}
+  saveState();
+  buildTrayMenu();
+  broadcastThemeChange();
+}
+
+function setUIAutoHide(enabled) {
+  state.ui = { ...(state.ui || {}), autoHideButtons: !!enabled };
+  saveState();
+  buildTrayMenu();
+  broadcastUISettingsChange();
+}
+
 function getOrCreateProfileWindow(profileId, targetBounds) {
   let win = profileWindows.get(profileId);
   if (win && !win.isDestroyed()) {
@@ -269,6 +320,8 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
   win.webContents.on('did-finish-load', () => {
     injectMicShim(win);
     broadcastAccountChange();
+    broadcastThemeChange();
+    broadcastUISettingsChange();
   });
 
   // 网络错误处理：加载离线诊断页并自动弹出网络配置界面
@@ -906,6 +959,34 @@ ipcMain.handle('proxy-set', async (e, config) => {
   return { ok: true };
 });
 
+// 主题与外观配置 IPC handlers
+ipcMain.handle('theme-get', () => {
+  return state.theme || 'dark';
+});
+
+ipcMain.handle('theme-set', (e, newTheme) => {
+  if (['dark', 'light', 'system'].includes(newTheme)) {
+    setAppTheme(newTheme);
+    return { ok: true, theme: state.theme };
+  }
+  return { ok: false, error: 'Invalid theme' };
+});
+
+ipcMain.handle('ui-settings-get', () => {
+  return state.ui || { autoHideButtons: true };
+});
+
+ipcMain.handle('ui-settings-set', (e, newUI) => {
+  if (newUI && typeof newUI === 'object') {
+    state.ui = { ...(state.ui || {}), ...newUI };
+    saveState();
+    buildTrayMenu();
+    broadcastUISettingsChange();
+    return { ok: true, ui: state.ui };
+  }
+  return { ok: false, error: 'Invalid UI settings' };
+});
+
 // Floating "Export chat" button in the page asks the main process to export.
 ipcMain.on('muse-export-request', () => exportChat());
 
@@ -1329,6 +1410,21 @@ function buildTrayMenu() {
     { label: `Mute / unmute app sound  (${prettyHotkey(state.hotkeys.speaker)})`, click: toggleSpeaker },
     { label: 'Customize hotkeys & settings…', click: () => openHotkeySettings() },
     { label: 'Network & Proxy settings…', click: () => openHotkeySettings('tab-proxy') },
+    { type: 'separator' },
+    {
+      label: `Appearance: ${state.theme === 'light' ? 'Light ☀️' : state.theme === 'system' ? 'System 💻' : 'Dark 🌙'}`,
+      submenu: [
+        { label: 'Dark mode 🌙', type: 'radio', checked: state.theme === 'dark', click: () => setAppTheme('dark') },
+        { label: 'Light mode ☀️', type: 'radio', checked: state.theme === 'light', click: () => setAppTheme('light') },
+        { label: 'Follow system 💻', type: 'radio', checked: state.theme === 'system', click: () => setAppTheme('system') },
+      ],
+    },
+    {
+      label: 'Auto-hide floating buttons (右上/右下角)',
+      type: 'checkbox',
+      checked: !!(state.ui && state.ui.autoHideButtons),
+      click: (item) => setUIAutoHide(item.checked),
+    },
     { type: 'separator' },
     {
       label: 'Run on startup',

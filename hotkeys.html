@@ -5,103 +5,139 @@
 <title>Settings & Hotkeys</title>
 <style>
   * { box-sizing: border-box; }
+  :root {
+    --bg-main: #16181d;
+    --bg-card: #1d2028;
+    --bg-card-sel: #202432;
+    --bg-hover: #23262e;
+    --border-color: #262a33;
+    --border-card: #292d38;
+    --text-main: #e8eaf0;
+    --text-muted: #9aa0ae;
+    --text-dim: #8a909d;
+    --accent: #3b5bfd;
+    --accent-light: #7aa2ff;
+    --key-bg: #23262e;
+    --key-border: #3a3f4b;
+    --key-text: #d7dbe4;
+  }
+  body[data-theme="light"] {
+    --bg-main: #f6f8fa;
+    --bg-card: #ffffff;
+    --bg-card-sel: #edf2ff;
+    --bg-hover: #f1f3f9;
+    --border-color: #e1e4ea;
+    --border-card: #e2e6ef;
+    --text-main: #1a1f2c;
+    --text-muted: #626c7e;
+    --text-dim: #8892a4;
+    --accent: #2b59ff;
+    --accent-light: #2b59ff;
+    --key-bg: #f8fafc;
+    --key-border: #cbd5e1;
+    --key-text: #2d3748;
+  }
   body {
     margin: 0; padding: 18px 20px;
     font-family: "Segoe UI", system-ui, sans-serif;
-    background: #16181d; color: #e8eaf0;
+    background: var(--bg-main); color: var(--text-main);
     user-select: none;
     overflow-y: auto;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
   .tabs {
-    display: flex; gap: 8px; border-bottom: 1px solid #262a33;
+    display: flex; gap: 8px; border-bottom: 1px solid var(--border-color);
     padding-bottom: 10px; margin-bottom: 14px;
   }
   .tab-btn {
-    background: transparent; border: none; color: #9aa0ae;
+    background: transparent; border: none; color: var(--text-muted);
     padding: 6px 12px; font-size: 13.5px; font-weight: 600;
-    border-radius: 6px; cursor: pointer;
+    border-radius: 6px; cursor: pointer; transition: all 0.15s ease;
   }
-  .tab-btn.active { background: #23262e; color: #7aa2ff; }
+  .tab-btn:hover { background: var(--bg-hover); color: var(--text-main); }
+  .tab-btn.active { background: var(--bg-hover); color: var(--accent-light); }
   .tab-content { display: none; }
   .tab-content.active { display: block; }
   h2 { margin: 0 0 4px; font-size: 16.5px; font-weight: 600; }
-  .hint { margin: 0 0 14px; font-size: 12px; color: #9aa0ae; }
+  .hint { margin: 0 0 14px; font-size: 12px; color: var(--text-muted); }
   .row {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 8px 0; border-bottom: 1px solid #262a33;
+    padding: 8px 0; border-bottom: 1px solid var(--border-color);
   }
   .row .name { font-size: 13px; }
   .key {
     min-width: 180px; text-align: center;
     font-family: Consolas, monospace; font-size: 12px;
-    background: #23262e; color: #d7dbe4;
-    border: 1px solid #3a3f4b; border-radius: 6px;
+    background: var(--key-bg); color: var(--key-text);
+    border: 1px solid var(--key-border); border-radius: 6px;
     padding: 6px 10px; cursor: pointer;
   }
   .key:hover { border-color: #5a6376; }
   .key.capturing {
-    border-color: #7aa2ff; color: #fff;
+    border-color: var(--accent-light); color: #fff;
     animation: pulse 1s infinite;
   }
   @keyframes pulse { 50% { background: #2c3350; } }
   .actions { display: flex; gap: 10px; margin-top: 16px; }
   button.action {
     flex: 1; padding: 8px 0; font-size: 13px;
-    border-radius: 6px; cursor: pointer; border: 1px solid #3a3f4b;
-    background: #23262e; color: #e8eaf0;
+    border-radius: 6px; cursor: pointer; border: 1px solid var(--key-border);
+    background: var(--bg-hover); color: var(--text-main);
   }
-  button.action.primary { background: #3b5bfd; border-color: #3b5bfd; color: #fff; }
+  button.action.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.action:disabled { opacity: 0.45; cursor: default; }
   #msg { margin-top: 10px; font-size: 12px; min-height: 18px; }
   #msg.ok { color: #7ee2a8; }
   #msg.err { color: #ff9a9a; }
 
-  /* Automation settings styles */
+  /* Automation & Theme settings styles */
   .section-title {
     font-size: 12px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.5px; color: #7aa2ff; margin: 12px 0 6px;
+    letter-spacing: 0.5px; color: var(--accent-light); margin: 14px 0 8px;
   }
   .auto-card {
-    background: #1d2028; border: 1px solid #292d38;
-    border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+    background: var(--bg-card); border: 1px solid var(--border-card);
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 10px;
+    transition: background 0.2s ease, border-color 0.2s ease;
   }
   .auto-row {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 6px 0; border-bottom: 1px solid #262a33; font-size: 12.5px;
+    padding: 7px 0; border-bottom: 1px solid var(--border-color); font-size: 12.5px;
   }
   .auto-row:last-child { border-bottom: none; }
-  .auto-row span.sub { font-size: 11px; color: #8a909d; display: block; }
-  .toggle-switch { cursor: pointer; width: 16px; height: 16px; }
+  .auto-row span.sub { font-size: 11px; color: var(--text-dim); display: block; margin-top: 2px; }
+  .toggle-switch { cursor: pointer; width: 16px; height: 16px; accent-color: var(--accent); }
   .site-item {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 4px 0; font-size: 12px;
+    padding: 6px 0; font-size: 12px; border-bottom: 1px solid var(--border-color);
   }
+  .site-item:last-child { border-bottom: none; }
   .site-input-group {
     display: flex; gap: 6px; margin-top: 8px;
   }
   .site-input {
-    flex: 1; background: #23262e; border: 1px solid #3a3f4b;
-    color: #e8eaf0; padding: 4px 8px; border-radius: 4px; font-size: 12px;
+    flex: 1; background: var(--key-bg); border: 1px solid var(--key-border);
+    color: var(--text-main); padding: 4px 8px; border-radius: 4px; font-size: 12px;
   }
-  .proxy-mode-card {
-    background: #1d2028; border: 1px solid #292d38;
-    border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+  .proxy-mode-card, .theme-mode-card {
+    background: var(--bg-card); border: 1px solid var(--border-card);
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 8px;
     cursor: pointer; transition: all 0.2s ease;
   }
-  .proxy-mode-card:hover {
-    border-color: #3e4453;
+  .proxy-mode-card:hover, .theme-mode-card:hover {
+    border-color: #5a6376;
   }
-  .proxy-mode-card.selected {
-    border-color: #3b5bfd; background: #202432;
+  .proxy-mode-card.selected, .theme-mode-card.selected {
+    border-color: var(--accent); background: var(--bg-card-sel);
   }
-  .proxy-mode-header {
+  .proxy-mode-header, .theme-mode-header {
     display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600;
   }
-  .proxy-mode-title {
+  .proxy-mode-title, .theme-mode-title {
     display: flex; align-items: center; gap: 8px;
   }
-  .proxy-mode-desc {
-    font-size: 11.5px; color: #8a909d; margin-top: 4px; line-height: 1.4; padding-left: 24px;
+  .proxy-mode-desc, .theme-mode-desc {
+    font-size: 11.5px; color: var(--text-dim); margin-top: 4px; line-height: 1.4; padding-left: 24px;
   }
   .proxy-badge {
     display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 500;
@@ -110,13 +146,14 @@
     background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);
   }
   .quick-link {
-    display: inline-block; font-size: 11px; color: #7aa2ff; cursor: pointer; text-decoration: underline; margin-top: 6px;
+    display: inline-block; font-size: 11px; color: var(--accent-light); cursor: pointer; text-decoration: underline; margin-top: 6px;
   }
 </style>
 </head>
 <body>
   <div class="tabs">
     <button class="tab-btn active" id="tab-hotkeys-btn">Hotkeys</button>
+    <button class="tab-btn" id="tab-appearance-btn">Appearance & UI</button>
     <button class="tab-btn" id="tab-auto-btn">Automation & Rules</button>
     <button class="tab-btn" id="tab-proxy-btn">Network & Proxy</button>
   </div>
@@ -130,6 +167,63 @@
       <button class="action primary" id="save" disabled>Save</button>
     </div>
     <p id="msg"></p>
+  </div>
+
+  <div class="tab-content" id="tab-appearance">
+    <h2>Appearance & Display</h2>
+    <p class="hint">Customize theme colors and floating control visibility.</p>
+
+    <div class="section-title">Color Theme (主题风格)</div>
+
+    <!-- Theme 1: Dark -->
+    <div class="theme-mode-card selected" id="card-theme-dark">
+      <div class="theme-mode-header">
+        <div class="theme-mode-title">
+          <input type="radio" name="theme-choice" id="rad-theme-dark" value="dark" checked>
+          <label for="rad-theme-dark" style="cursor:pointer;">🌙 Dark Theme (深色模式)</label>
+        </div>
+      </div>
+      <div class="theme-mode-desc">
+        沉浸式暗黑调配色，保护视力，适合夜间或低光照环境下专注使用。
+      </div>
+    </div>
+
+    <!-- Theme 2: Light -->
+    <div class="theme-mode-card" id="card-theme-light">
+      <div class="theme-mode-header">
+        <div class="theme-mode-title">
+          <input type="radio" name="theme-choice" id="rad-theme-light" value="light">
+          <label for="rad-theme-light" style="cursor:pointer;">☀️ Light Theme (浅色模式)</label>
+        </div>
+      </div>
+      <div class="theme-mode-desc">
+        高清晰明亮雅致配色，文字锐利清晰，适合日光环境和明亮办公场景。
+      </div>
+    </div>
+
+    <!-- Theme 3: System -->
+    <div class="theme-mode-card" id="card-theme-system">
+      <div class="theme-mode-header">
+        <div class="theme-mode-title">
+          <input type="radio" name="theme-choice" id="rad-theme-system" value="system">
+          <label for="rad-theme-system" style="cursor:pointer;">💻 Follow System (跟随系统)</label>
+        </div>
+      </div>
+      <div class="theme-mode-desc">
+        跟随 Windows 系统的深浅色模式自动切换。
+      </div>
+    </div>
+
+    <div class="section-title">Layout & Controls (界面布局与交互)</div>
+    <div class="auto-card">
+      <div class="auto-row">
+        <div>
+          <span>左下角集成控制中心 (Left-Bottom Unified Center)</span>
+          <span class="sub">右上角及右下角悬浮按钮已彻底移除以最大化释放网页可视空间；所有自动化授权、网络代理与外观设置均已聚合至左下角 ⚙ 按钮，点击即可随时唤出控制面板。</span>
+        </div>
+      </div>
+    </div>
+    <p id="theme-msg" style="margin-top:10px; font-size:12px; min-height:18px;"></p>
   </div>
 
   <div class="tab-content" id="tab-auto">
@@ -540,20 +634,26 @@ document.getElementById('site-add-btn').onclick = () => {
 
 // Tabs
 const tabHotkeysBtn = document.getElementById('tab-hotkeys-btn');
+const tabAppearanceBtn = document.getElementById('tab-appearance-btn');
 const tabAutoBtn = document.getElementById('tab-auto-btn');
 const tabProxyBtn = document.getElementById('tab-proxy-btn');
 const tabHotkeys = document.getElementById('tab-hotkeys');
+const tabAppearance = document.getElementById('tab-appearance');
 const tabAuto = document.getElementById('tab-auto');
 const tabProxy = document.getElementById('tab-proxy');
 
 function selectTab(btn, content) {
-  [tabHotkeysBtn, tabAutoBtn, tabProxyBtn].forEach(b => b.classList.remove('active'));
-  [tabHotkeys, tabAuto, tabProxy].forEach(c => c.classList.remove('active'));
+  [tabHotkeysBtn, tabAppearanceBtn, tabAutoBtn, tabProxyBtn].forEach(b => b.classList.remove('active'));
+  [tabHotkeys, tabAppearance, tabAuto, tabProxy].forEach(c => c.classList.remove('active'));
   btn.classList.add('active');
   content.classList.add('active');
 }
 
 tabHotkeysBtn.onclick = () => selectTab(tabHotkeysBtn, tabHotkeys);
+tabAppearanceBtn.onclick = () => {
+  selectTab(tabAppearanceBtn, tabAppearance);
+  loadThemeAndUI();
+};
 tabAutoBtn.onclick = () => {
   selectTab(tabAutoBtn, tabAuto);
   refreshAutoState();
@@ -562,6 +662,120 @@ tabProxyBtn.onclick = () => {
   selectTab(tabProxyBtn, tabProxy);
   loadProxySettings();
 };
+
+// --- Appearance & UI Settings Logic ---
+const themeApi = window.themeAPI;
+const uiApi = window.uiAPI;
+const cardThemeDark = document.getElementById('card-theme-dark');
+const cardThemeLight = document.getElementById('card-theme-light');
+const cardThemeSystem = document.getElementById('card-theme-system');
+const radThemeDark = document.getElementById('rad-theme-dark');
+const radThemeLight = document.getElementById('rad-theme-light');
+const radThemeSystem = document.getElementById('rad-theme-system');
+const chkAutoHide = document.getElementById('chk-auto-hide-buttons');
+const themeMsg = document.getElementById('theme-msg');
+
+function applySettingsWindowTheme(theme) {
+  if (theme === 'light') {
+    document.body.setAttribute('data-theme', 'light');
+  } else if (theme === 'dark') {
+    document.body.removeAttribute('data-theme');
+  } else {
+    // system
+    const isLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+    if (isLight) {
+      document.body.setAttribute('data-theme', 'light');
+    } else {
+      document.body.removeAttribute('data-theme');
+    }
+  }
+}
+
+function updateThemeCardsUI(theme) {
+  [cardThemeDark, cardThemeLight, cardThemeSystem].forEach(c => c.classList.remove('selected'));
+  if (theme === 'light') {
+    cardThemeLight.classList.add('selected');
+    radThemeLight.checked = true;
+  } else if (theme === 'system') {
+    cardThemeSystem.classList.add('selected');
+    radThemeSystem.checked = true;
+  } else {
+    cardThemeDark.classList.add('selected');
+    radThemeDark.checked = true;
+  }
+  applySettingsWindowTheme(theme);
+}
+
+async function selectTheme(theme) {
+  updateThemeCardsUI(theme);
+  if (!themeApi) return;
+  try {
+    const res = await themeApi.set(theme);
+    if (res && res.ok) {
+      themeMsg.style.color = '#7ee2a8';
+      themeMsg.textContent = `主题已即时切换为【${theme === 'light' ? '浅色模式' : theme === 'dark' ? '深色模式' : '跟随系统'}】！`;
+      setTimeout(() => { if (themeMsg.textContent.includes('主题已即时切换')) themeMsg.textContent = ''; }, 3000);
+    }
+  } catch (err) {
+    console.error('Failed to set theme:', err);
+  }
+}
+
+cardThemeDark.onclick = () => selectTheme('dark');
+cardThemeLight.onclick = () => selectTheme('light');
+cardThemeSystem.onclick = () => selectTheme('system');
+radThemeDark.onchange = () => selectTheme('dark');
+radThemeLight.onchange = () => selectTheme('light');
+radThemeSystem.onchange = () => selectTheme('system');
+
+if (chkAutoHide) {
+  chkAutoHide.onchange = async (e) => {
+    const enabled = e.target.checked;
+    if (!uiApi) return;
+    try {
+      const res = await uiApi.set({ autoHideButtons: enabled });
+      if (res && res.ok) {
+        themeMsg.style.color = '#7ee2a8';
+        themeMsg.textContent = enabled ? '已开启悬浮按钮自动隐藏' : '已关闭悬浮按钮自动隐藏';
+        setTimeout(() => { themeMsg.textContent = ''; }, 3000);
+      }
+    } catch (err) {
+      console.error('Failed to set UI setting:', err);
+    }
+  };
+}
+
+async function loadThemeAndUI() {
+  if (themeApi) {
+    try {
+      const cur = await themeApi.get();
+      updateThemeCardsUI(cur || 'dark');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  if (uiApi && chkAutoHide) {
+    try {
+      const u = await uiApi.get();
+      chkAutoHide.checked = (u && typeof u.autoHideButtons === 'boolean') ? u.autoHideButtons : true;
+    } catch (e) {
+      console.error(e);
+    }
+  }
+}
+
+if (themeApi && themeApi.onChanged) {
+  themeApi.onChanged((newTheme) => {
+    updateThemeCardsUI(newTheme);
+  });
+}
+if (uiApi && uiApi.onChanged) {
+  uiApi.onChanged((newUi) => {
+    if (chkAutoHide && newUi && typeof newUi.autoHideButtons === 'boolean') {
+      chkAutoHide.checked = newUi.autoHideButtons;
+    }
+  });
+}
 
 const proxyApi = window.proxyAPI;
 const customPanel = document.getElementById('custom-proxy-panel');
@@ -673,6 +887,8 @@ if (window.settingsTabAPI) {
       tabAutoBtn.click();
     } else if (tabId === 'tab-hotkeys') {
       tabHotkeysBtn.click();
+    } else if (tabId === 'tab-appearance') {
+      tabAppearanceBtn.click();
     }
   });
 }
@@ -680,16 +896,21 @@ if (window.settingsTabAPI) {
 (async () => {
   try {
     const data = await api.get();
-    labels = data.labels;
-    defaults = data.defaults;
-    saved = { ...data.bindings };
-    pending = { ...data.bindings };
-    render();
-    refreshAutoState();
-    loadProxySettings();
+    if (data) {
+      labels = data.labels || {};
+      defaults = data.defaults || {};
+      saved = { ...(data.bindings || {}) };
+      pending = { ...(data.bindings || {}) };
+      render();
+    }
   } catch (err) {
+    console.error('Could not load hotkeys:', err);
     setMsg('Could not load hotkeys: ' + err, 'err');
   }
+
+  try { await refreshAutoState(); } catch (e) { console.error(e); }
+  try { await loadThemeAndUI(); } catch (e) { console.error(e); }
+  try { await loadProxySettings(); } catch (e) { console.error(e); }
 })();
 </script>
 </body>
