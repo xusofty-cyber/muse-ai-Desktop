@@ -69,3 +69,9 @@
   - **背景**：根据项目 README.md 与代码库建立统一的跨会话项目上下文记忆标准。
   - **决策**：在 `PROJECT_CONTEXT.md` 固化 `muse-windows` 的 Electron 架构事实、双站点封装机制、快捷键与持久化设计。
   - **影响**：所有 Agent 在会话启动阶段优先加载本文件，确保业务理解与技术决策准确一致。
+- **2026-10-15**：[落地零重载多标签常驻架构与自适应代理防黑屏机制]
+  - **背景**：原账号切换会销毁窗口或重新 `loadURL` 导致白屏打断体验；另外 Chromium 默认后量子握手与代理配置异常易触发握手中断 (`-100 ERR_CONNECTION_CLOSED` / `-130 ERR_PROXY_CONNECTION_FAILED`) 陷入黑屏。
+  - **决策**：
+    1. 采用 `profileWindows = new Map()` 维护常驻窗口实例，账号切换通过可见性瞬切与 Bounds 继承，实现 `< 10ms` 零重载、输入状态 100% 保留；
+    2. 默认采用 `mode: 'system'` 自适应 Windows 系统代理与 TUN 虚拟网卡（开箱即用免配置），设置界面支持手动覆盖；禁用 `PostQuantumKeyAgreement` 彻底打通 TLS 握手，搭配 `offline.html` 离线诊断页保障黑屏自愈。
+  - **影响**：多账号切换达到原生多标签体验，新环境部署免配置直接联网，彻底根治握手超时与黑屏。

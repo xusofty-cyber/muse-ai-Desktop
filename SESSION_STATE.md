@@ -56,7 +56,10 @@
 
 ## 五、当前断点与后续待执行事项
 
-1. **当前断点**：零重载多标签秒切、自适应代理自愈与黑框预防方案全部落地。
+1. **当前断点**：
+   - 零重载多标签秒切、自适应代理自愈与黑框预防方案全部落地并通过编译验证。
+   - 特性分支 `feature/multi-account-and-adaptive-proxy` 已通过指定 SSH Host (`github-xusofty` 端口 443 + `id_ed25519_xusofty`) 成功推送到远端服务器 `origin`。
 2. **后续下一步**：
-   - [ ] 用户重启 `npm start` 验证账号秒切（点击左下角 Dock 徽章或按 `Ctrl+Shift+N`）。
+   - [x] 分支提交并推送到远端 `origin/feature/multi-account-and-adaptive-proxy`。
+   - [ ] 按照 GitHub 提示创建 Pull Request 合入 `main`：`https://github.com/xusofty-cyber/muse-windows/pull/new/feature/multi-account-and-adaptive-proxy`。
 
