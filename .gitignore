@@ -1,3 +1,33 @@
-node_modules/
+﻿node_modules/
 dist/
 *.log
+
+# ==============================================================================
+# Agent Harness local runtime & machine-specific ignores
+# ==============================================================================
+# Claude & Comet local runtime generated artifacts
+.claude/skills/
+.comet/*
+!.comet/config.yaml
+
+# Machine-specific agent hook configurations (comet init / local IDE hooks with absolute paths)
+.codex/hooks.json
+.trae/hooks.json
+.trae-cn/hooks.json
+.devin/hooks.json
+.github/hooks/
+.kiro/hooks/
+
+# Backup files generated during deployment
+*.bak-*
+
+# Local ai-memory project opt-in; never commit a machine/project marker by default
+/.ai-memory.toml
+
+# Temporary logs & scratch
+scratch/
+# >>> Comet managed project state >>>
+!/.comet/
+/.comet/*
+!/.comet/config.yaml
+# <<< Comet managed project state <<<

@@ -23,7 +23,7 @@ const HOTKEY_LABELS = {
   mic: 'Mute / unmute microphone',
   speaker: 'Mute / unmute app sound',
   automation: 'Toggle automation (Auto-Allow)',
-  metaAccount: 'Next Meta AI account',
+  metaAccount: 'Next account (Switch)',
 };
 const HOTKEY_ACTIONS = {
   quick: () => toggleQuickWindow(),
@@ -32,7 +32,7 @@ const HOTKEY_ACTIONS = {
   mic: () => toggleMic(),
   speaker: () => toggleSpeaker(),
   automation: () => toggleAutomationMaster(),
-  metaAccount: () => switchMetaAccount(),
+  metaAccount: () => nextAccount(),
 };
 
 let mainWindow = null;
@@ -44,12 +44,41 @@ let pendingUpdate = null;
 app.setName('Muse');
 app.setAppUserModelId('ai.muse.desktop');
 
-// Performance: push raster work to the GPU. The page itself is still the
-// bottleneck, but this removes the wrapper as a source of jank.
+// Performance & Network flags
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('disable-quic');
+app.commandLine.appendSwitch('ignore-certificate-errors');
+app.commandLine.appendSwitch('allow-insecure-localhost');
+// 关键：禁用后量子密钥协商(Kyber)与ECH拓展，解决Clash/代理软件在TLS 1.3 ClientHello拆包时触发的 net_error -100 (ERR_CONNECTION_CLOSED)
+app.commandLine.appendSwitch('disable-features', 'PostQuantumKeyAgreement,EncryptedClientHello');
+app.commandLine.appendSwitch('ssl-version-min', 'tls1.2');
+
+const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+app.userAgentFallback = CHROME_UA;
+
+app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+  event.preventDefault();
+  callback(true);
+});
 
 // ---- persisted state ----------------------------------------------------
+const AVATAR_COLORS = [
+  '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
+  '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'
+];
+
+function defaultProxy() {
+  return {
+    mode: 'system', // 'system' (自适应系统/TUN网卡), 'custom' (手动指定覆盖), 'direct' (直连)
+    enabled: false,  // 手动指定代理开关
+    type: 'http',   // 'http' | 'socks5'
+    host: '127.0.0.1',
+    port: 7897,
+    bypass: '<local>;localhost;127.0.0.1',
+  };
+}
+
 function defaultAutomation() {
   return {
     enabled: false,
@@ -71,10 +100,11 @@ function defaultState() {
   return {
     window: {},
     site: 'muse',
-    profiles: [{ id: 'default', name: 'Profile 1' }],
+    profiles: [{ id: 'default', name: '账号 1', color: AVATAR_COLORS[0] }],
     activeProfileId: 'default',
     hotkeys: { ...DEFAULT_HOTKEYS },
     automation: defaultAutomation(),
+    proxy: defaultProxy(),
   };
 }
 const statePath = () => path.join(app.getPath('userData'), 'app-state.json');
@@ -90,6 +120,20 @@ function loadState() {
       sites: { ...((raw.automation && raw.automation.sites) || {}) },
       siteActions: { ...((raw.automation && raw.automation.siteActions) || {}) },
     };
+    merged.proxy = { ...defaultProxy(), ...(raw.proxy || {}) };
+    // 兼容历史老数据：若未显式指定 custom/direct，统一重置为 system 自适应模式
+    if (merged.proxy.mode !== 'custom' && merged.proxy.mode !== 'direct') {
+      merged.proxy.mode = 'system';
+      merged.proxy.enabled = false;
+    }
+    if (Array.isArray(merged.profiles) && merged.profiles.length > 0) {
+      merged.profiles = merged.profiles.map((p, idx) => ({
+        ...p,
+        color: p.color || AVATAR_COLORS[idx % AVATAR_COLORS.length],
+      }));
+    } else {
+      merged.profiles = [{ id: 'default', name: '账号 1', color: AVATAR_COLORS[0] }];
+    }
     return merged;
   } catch {
     return defaultState();
@@ -140,9 +184,68 @@ function attachZoomShortcuts(win) {
   });
 }
 
-function createMainWindow() {
-  const saved = state.window || {};
-  mainWindow = new BrowserWindow({
+// ---- network & proxy settings ---------------------------------------------
+async function applyProxyToSession(targetSession) {
+  if (!targetSession) return;
+  const p = state.proxy || defaultProxy();
+  try {
+    if (p.mode === 'custom' && p.enabled !== false) {
+      const type = (p.type || 'http').toLowerCase();
+      const host = (p.host || '127.0.0.1').trim();
+      const port = parseInt(p.port, 10) || 7897;
+      // 标准单代理规则语法：http://127.0.0.1:7897 或 socks5://127.0.0.1:7897
+      const proxyRules = `${type}://${host}:${port}`;
+      const proxyBypassRules = p.bypass || '<local>;localhost;127.0.0.1';
+      await targetSession.setProxy({ proxyRules, proxyBypassRules });
+      console.log(`[Proxy] Applied custom proxy: ${proxyRules}`);
+    } else if (p.mode === 'direct') {
+      await targetSession.setProxy({ mode: 'direct' });
+      console.log('[Proxy] Applied direct connection mode');
+    } else {
+      // 默认自适应系统网络与TUN虚拟网卡（开箱即用，支持多机部署）
+      await targetSession.setProxy({ mode: 'system' });
+      console.log('[Proxy] Applied adaptive system/TUN proxy mode');
+    }
+  } catch (err) {
+    console.error('[Proxy] Failed to apply proxy to session:', err);
+  }
+}
+
+async function applyProxySettings() {
+  await applyProxyToSession(session.defaultSession);
+  for (const p of state.profiles) {
+    const s = session.fromPartition(partitionFor(p.id));
+    await applyProxyToSession(s);
+  }
+}
+
+// ---- Multi-Window Tab Architecture (Zero-Reload Instant Switching) --------
+const profileWindows = new Map(); // profileId -> BrowserWindow
+
+function broadcastAccountChange() {
+  const payload = {
+    profiles: state.profiles,
+    activeProfileId: state.activeProfileId,
+  };
+  for (const win of profileWindows.values()) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('account:changed', payload);
+    }
+  }
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    quickWindow.webContents.send('account:changed', payload);
+  }
+}
+
+function getOrCreateProfileWindow(profileId, targetBounds) {
+  let win = profileWindows.get(profileId);
+  if (win && !win.isDestroyed()) {
+    if (targetBounds) win.setBounds(targetBounds);
+    return win;
+  }
+
+  const saved = targetBounds || state.window || {};
+  win = new BrowserWindow({
     width: saved.width || 1200,
     height: saved.height || 800,
     x: typeof saved.x === 'number' ? saved.x : undefined,
@@ -151,33 +254,69 @@ function createMainWindow() {
     autoHideMenuBar: true,
     backgroundColor: '#141414',
     show: false,
-    webPreferences: webPrefs(),
+    webPreferences: {
+      ...webPrefs(),
+      partition: partitionFor(profileId),
+    },
   });
 
-  mainWindow.loadURL(currentSite().url);
-  mainWindow.once('ready-to-show', () => mainWindow.show());
-  mainWindow.webContents.on('did-finish-load', () => injectMicShim(mainWindow));
-  attachZoomShortcuts(mainWindow);
-  attachContextMenu(mainWindow);
+  win.webContents.setUserAgent(CHROME_UA);
+  win.loadURL(currentSite().url);
+  win.webContents.on('did-finish-load', () => {
+    injectMicShim(win);
+    broadcastAccountChange();
+  });
+
+  // 网络错误自愈诊断页
+  win.webContents.on('did-fail-load', async (event, errorCode, errorDescription, validatedURL) => {
+    if (errorCode === -3) return; // ERR_ABORTED 忽略
+    console.warn(`[Network] Failed to load ${validatedURL}: [${errorCode}] ${errorDescription}`);
+    if (validatedURL && validatedURL.includes('offline.html')) return;
+
+    if (errorCode === -130 && state.proxy && state.proxy.mode === 'custom') {
+      console.log('[Self-Heal] Auto resetting proxy to adaptive system mode...');
+      state.proxy.mode = 'system';
+      state.proxy.enabled = false;
+      saveState();
+      await applyProxySettings();
+    }
+
+    win.loadFile(path.join(__dirname, 'offline.html'), {
+      query: {
+        err: errorCode,
+        desc: errorDescription,
+        url: validatedURL || currentSite().url,
+      },
+    }).catch(() => {});
+  });
+
+  attachZoomShortcuts(win);
+  attachContextMenu(win);
 
   const persistBounds = () => {
-    if (!mainWindow) return;
-    const [width, height] = mainWindow.getSize();
-    const [x, y] = mainWindow.getPosition();
+    if (!win || win.isDestroyed()) return;
+    const [width, height] = win.getSize();
+    const [x, y] = win.getPosition();
     state.window = { width, height, x, y };
     saveState();
   };
-  mainWindow.on('resize', persistBounds);
-  mainWindow.on('move', persistBounds);
+  win.on('resize', persistBounds);
+  win.on('move', persistBounds);
 
-  // Closing parks the app in the tray instead of quitting.
-  mainWindow.on('close', (e) => {
+  win.on('close', (e) => {
     if (!app.quitting) {
       e.preventDefault();
-      mainWindow.hide();
+      win.hide();
     }
   });
-  mainWindow.on('closed', () => { mainWindow = null; });
+
+  profileWindows.set(profileId, win);
+  return win;
+}
+
+function createMainWindow() {
+  mainWindow = getOrCreateProfileWindow(state.activeProfileId);
+  mainWindow.once('ready-to-show', () => mainWindow.show());
 }
 
 function createQuickWindow() {
@@ -193,6 +332,7 @@ function createQuickWindow() {
     backgroundColor: '#141414',
     webPreferences: webPrefs(),
   });
+  quickWindow.webContents.setUserAgent(CHROME_UA);
   quickWindow.loadURL(currentSite().url);
   attachContextMenu(quickWindow);
   // Spotlight-style: hide when focus is lost.
@@ -201,8 +341,19 @@ function createQuickWindow() {
 }
 
 function closeWindows() {
-  if (quickWindow) { quickWindow.removeAllListeners('closed'); quickWindow.close(); quickWindow = null; }
-  if (mainWindow) { mainWindow.removeAllListeners('closed'); mainWindow.close(); mainWindow = null; }
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    quickWindow.removeAllListeners('closed');
+    quickWindow.close();
+    quickWindow = null;
+  }
+  for (const win of profileWindows.values()) {
+    if (win && !win.isDestroyed()) {
+      win.removeAllListeners('close');
+      win.close();
+    }
+  }
+  profileWindows.clear();
+  mainWindow = null;
 }
 
 function toggleQuickWindow() {
@@ -224,40 +375,76 @@ function toggleQuickWindow() {
 }
 
 function showMainWindow() {
-  if (!mainWindow) createMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = getOrCreateProfileWindow(state.activeProfileId);
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
 }
 
-// ---- profiles & sites ----------------------------------------------------
-function switchProfile(id) {
-  if (id === state.activeProfileId) return;
+// ---- profiles & accounts (Zero-Reload Multi-Tab Switching) ---------------
+function switchAccount(id) {
+  if (!state.profiles.some((p) => p.id === id)) return;
+  if (id === state.activeProfileId && mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) return;
+
+  const prevWin = mainWindow;
+  let currentBounds = null;
+  if (prevWin && !prevWin.isDestroyed()) {
+    currentBounds = prevWin.getBounds();
+  }
+
   state.activeProfileId = id;
   saveState();
-  closeWindows();
-  createMainWindow();
-  showMainWindow();
+
+  // 获取或复用目标账号的常驻窗口（零重载瞬切）
+  const targetWin = getOrCreateProfileWindow(id, currentBounds);
+  mainWindow = targetWin;
+
+  targetWin.show();
+  targetWin.focus();
+
+  // 隐藏前一个窗口
+  if (prevWin && prevWin !== targetWin && !prevWin.isDestroyed()) {
+    prevWin.hide();
+  }
+
   buildTrayMenu();
+  broadcastAccountChange();
 }
 
-function addProfile() {
-  const id = `p${Date.now()}`;
-  const profile = { id, name: `Profile ${state.profiles.length + 1}` };
+function switchProfile(id) {
+  switchAccount(id);
+}
+
+function nextAccount() {
+  if (!state.profiles || state.profiles.length <= 1) return;
+  const idx = state.profiles.findIndex((p) => p.id === state.activeProfileId);
+  const nextIdx = (idx + 1) % state.profiles.length;
+  switchAccount(state.profiles[nextIdx].id);
+}
+
+function addProfile(customName) {
+  const id = `acc_${Date.now()}`;
+  const color = AVATAR_COLORS[state.profiles.length % AVATAR_COLORS.length];
+  const name = (customName && customName.trim()) || `账号 ${state.profiles.length + 1}`;
+  const profile = { id, name, color };
   state.profiles.push(profile);
   saveState();
   setupDownloadHandler(id);
   setupPermissions(id);
-  switchProfile(id);
-  notify('New profile', `${profile.name} created. Sign in with the other account.`);
+  applyProxyToSession(session.fromPartition(partitionFor(id)));
+  switchAccount(id);
+  notify('新增账号', `${profile.name} 已创建，已就绪独立会话环境。`);
 }
 
 async function signOut() {
   const ses = session.fromPartition(partitionFor(state.activeProfileId));
   await ses.clearStorageData();
-  closeWindows();
-  createMainWindow();
-  showMainWindow();
+  const curWin = profileWindows.get(state.activeProfileId);
+  if (curWin && !curWin.isDestroyed()) {
+    curWin.loadURL(currentSite().url);
+  }
   notify('Signed out', `Signed out of ${currentSite().name} on ${activeProfile().name}.`);
 }
 
@@ -515,12 +702,16 @@ function applyHotkeys(bindings) {
 }
 
 let hotkeyWindow = null;
-function openHotkeySettings() {
-  if (hotkeyWindow && !hotkeyWindow.isDestroyed()) { hotkeyWindow.focus(); return; }
+function openHotkeySettings(initialTab) {
+  if (hotkeyWindow && !hotkeyWindow.isDestroyed()) {
+    hotkeyWindow.focus();
+    if (initialTab) hotkeyWindow.webContents.send('switch-tab', initialTab);
+    return;
+  }
   hotkeyWindow = new BrowserWindow({
-    width: 460,
-    height: 640,
-    title: 'Customize hotkeys',
+    width: 480,
+    height: 660,
+    title: 'Customize hotkeys & settings',
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -528,6 +719,9 @@ function openHotkeySettings() {
     webPreferences: { preload: path.join(__dirname, 'preload-settings.js') },
   });
   hotkeyWindow.loadFile(path.join(__dirname, 'hotkeys.html'));
+  hotkeyWindow.webContents.on('did-finish-load', () => {
+    if (initialTab) hotkeyWindow.webContents.send('switch-tab', initialTab);
+  });
   hotkeyWindow.on('closed', () => { hotkeyWindow = null; });
 }
 
@@ -605,10 +799,104 @@ ipcMain.handle('automation-set-action', (e, actionKey, enabled) => {
   return { ok: false, error: 'Unknown action' };
 });
 
-ipcMain.handle('open-settings', () => {
-  openHotkeySettings();
+ipcMain.handle('open-settings', (e, tab) => {
+  openHotkeySettings(tab);
   return { ok: true };
 });
+
+// 多账号管理 IPC handlers
+ipcMain.handle('account:get-state', () => ({
+  profiles: state.profiles,
+  activeProfileId: state.activeProfileId,
+}));
+
+ipcMain.handle('account:switch', (e, { id }) => {
+  switchAccount(id);
+  return { ok: true };
+});
+
+ipcMain.handle('account:add', (e, { name }) => {
+  addProfile(name);
+  return { ok: true };
+});
+
+ipcMain.handle('account:rename', (e, { id, name }) => {
+  const p = state.profiles.find((item) => item.id === id);
+  if (p) {
+    p.name = (name && name.trim()) || p.name;
+    saveState();
+    buildTrayMenu();
+    broadcastAccountChange();
+    return { ok: true };
+  }
+  return { ok: false, error: 'Account not found' };
+});
+
+ipcMain.handle('account:sign-out', async (e, { id }) => {
+  const targetId = id || state.activeProfileId;
+  const targetSession = session.fromPartition(partitionFor(targetId));
+  try {
+    await targetSession.clearStorageData();
+    console.log(`[Account] Signed out / cleared storage for ${targetId}`);
+  } catch (err) {
+    console.warn('[Account] Sign-out clear error:', err);
+  }
+  const targetWin = profileWindows.get(targetId);
+  if (targetWin && !targetWin.isDestroyed()) {
+    targetWin.loadURL(currentSite().url);
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('account:delete', async (e, { id }) => {
+  if (state.profiles.length <= 1) {
+    return { ok: false, error: '至少保留一个账号' };
+  }
+  const idx = state.profiles.findIndex((p) => p.id === id);
+  if (idx === -1) return { ok: false, error: '账号不存在' };
+
+  // 销毁窗口
+  const win = profileWindows.get(id);
+  if (win && !win.isDestroyed()) {
+    win.removeAllListeners('close');
+    win.close();
+  }
+  profileWindows.delete(id);
+
+  try {
+    await session.fromPartition(partitionFor(id)).clearStorageData();
+  } catch {}
+
+  state.profiles.splice(idx, 1);
+  if (state.activeProfileId === id) {
+    switchAccount(state.profiles[0].id);
+  } else {
+    saveState();
+    buildTrayMenu();
+    broadcastAccountChange();
+  }
+  return { ok: true };
+});
+
+// 网络与代理配置 IPC handlers
+ipcMain.handle('proxy-get', () => {
+  return state.proxy || defaultProxy();
+});
+
+ipcMain.handle('proxy-set', async (e, config) => {
+  if (!config || typeof config !== 'object') return { ok: false, error: 'Invalid proxy configuration' };
+  state.proxy = {
+    ...defaultProxy(),
+    ...config,
+  };
+  saveState();
+  await applyProxySettings();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.reload();
+  }
+  return { ok: true };
+});
+
 // Floating "Export chat" button in the page asks the main process to export.
 ipcMain.on('muse-export-request', () => exportChat());
 
@@ -1030,7 +1318,8 @@ function buildTrayMenu() {
     { type: 'separator' },
     { label: `Mute / unmute microphone  (${prettyHotkey(state.hotkeys.mic)})`, click: toggleMic },
     { label: `Mute / unmute app sound  (${prettyHotkey(state.hotkeys.speaker)})`, click: toggleSpeaker },
-    { label: 'Customize hotkeys & settings…', click: openHotkeySettings },
+    { label: 'Customize hotkeys & settings…', click: () => openHotkeySettings() },
+    { label: 'Network & Proxy settings…', click: () => openHotkeySettings('tab-proxy') },
     { type: 'separator' },
     {
       label: 'Run on startup',
@@ -1075,7 +1364,9 @@ if (!gotLock) {
 } else {
   app.on('second-instance', showMainWindow);
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    console.log('[Init] Applying initial proxy settings...');
+    await applyProxySettings();
     createMainWindow();
     createTray();
     registerHotkeys();

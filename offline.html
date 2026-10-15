@@ -1,0 +1,199 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>网络连接自愈诊断 - Muse</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: #0d0f14;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #e2e8f0;
+    user-select: none;
+  }
+  .card {
+    width: 480px; max-width: 90vw;
+    background: #161922;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    text-align: center;
+  }
+  .icon-wrap {
+    width: 64px; height: 64px;
+    margin: 0 auto 20px;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    animation: pulse 2s infinite ease-in-out;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.9; }
+    50% { transform: scale(1.06); opacity: 1; }
+  }
+  h1 {
+    font-size: 20px; font-weight: 700; margin: 0 0 8px; color: #f8fafc;
+  }
+  .desc {
+    font-size: 13.5px; color: #94a3b8; line-height: 1.5; margin: 0 0 20px;
+  }
+  .info-box {
+    background: #0f1117;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 12px;
+    color: #cbd5e1;
+    margin-bottom: 24px;
+  }
+  .info-row {
+    display: flex; justify-content: space-between; margin-bottom: 6px;
+  }
+  .info-row:last-child { margin-bottom: 0; }
+  .info-label { color: #64748b; }
+  .info-value { font-family: Consolas, monospace; color: #f87171; font-weight: 600; }
+  .suggestion {
+    margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255, 255, 255, 0.08);
+    color: #38bdf8; font-size: 12px; line-height: 1.4;
+  }
+  .actions {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .btn {
+    width: 100%; padding: 12px 16px;
+    border: 1px solid transparent; border-radius: 10px;
+    font-size: 13.5px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s ease;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn-primary {
+    background: #10b981; color: #fff;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+  }
+  .btn-primary:hover {
+    background: #059669;
+  }
+  .btn-secondary {
+    background: #1e293b; color: #e2e8f0; border-color: rgba(255, 255, 255, 0.1);
+  }
+  .btn-secondary:hover {
+    background: #334155; border-color: rgba(255, 255, 255, 0.2);
+  }
+  .countdown {
+    margin-top: 16px; font-size: 12px; color: #64748b;
+  }
+  .countdown span { color: #94a3b8; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="icon-wrap">🌐</div>
+  <h1>网络连接异常</h1>
+  <p class="desc">客户端无法建立与目标站点的安全网络连接。这通常是由于本地代理端口未启动或网络环境变化引起。</p>
+
+  <div class="info-box">
+    <div class="info-row">
+      <span class="info-label">目标地址:</span>
+      <span id="target-url" style="color:#e2e8f0; word-break:break-all;">https://muse.ai</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">错误代码:</span>
+      <span class="info-value" id="error-code">ERR_CONNECTION_CLOSED</span>
+    </div>
+    <div class="suggestion" id="suggestion-text">
+      💡 提示：如果您开启了 Clash Verge TUN 模式，点击下方【一键切换为自适应系统代理】即可自动恢复访问。
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="btn-self-heal">
+      <span>⚡</span> 一键切换为【自适应系统代理】并重试
+    </button>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-secondary" id="btn-retry" style="flex:1;">
+        <span>🔄</span> 重新连接
+      </button>
+      <button class="btn btn-secondary" id="btn-open-proxy" style="flex:1;">
+        <span>⚙️</span> 网络设置
+      </button>
+    </div>
+  </div>
+
+  <div class="countdown" id="countdown-text">
+    将在 <span id="sec-count">10</span> 秒后自动重试… (点击页面任意位置暂停)
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const errCode = params.get('err') || 'ERR_CONNECTION_FAILED';
+const errDesc = params.get('desc') || '';
+const targetUrl = params.get('url') || 'https://muse.ai';
+
+document.getElementById('target-url').textContent = targetUrl;
+document.getElementById('error-code').textContent = `[${errCode}] ${errDesc || ''}`;
+
+const suggestionEl = document.getElementById('suggestion-text');
+if (String(errCode).includes('-130') || String(errDesc).includes('PROXY')) {
+  suggestionEl.innerHTML = '⚠️ <strong>手动代理配置异常</strong>：当前设置的代理端口无法连通。点击上方绿色按钮切换为【自适应系统代理 / TUN 模式】即可瞬间自愈。';
+} else if (String(errCode).includes('-7') || String(errDesc).includes('TIMED_OUT')) {
+  suggestionEl.innerHTML = '⏳ <strong>网络握手超时</strong>：目标服务器响应延迟。若使用本地代理，请确认代理软件已启动。';
+}
+
+let countdown = 10;
+let timer = null;
+const secCount = document.getElementById('sec-count');
+const countdownText = document.getElementById('countdown-text');
+
+function tick() {
+  countdown--;
+  if (countdown <= 0) {
+    clearInterval(timer);
+    retry();
+  } else {
+    secCount.textContent = countdown;
+  }
+}
+timer = setInterval(tick, 1000);
+
+window.addEventListener('click', (e) => {
+  if (e.target.tagName !== 'BUTTON') {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+      countdownText.textContent = '已暂停自动重试，请按需点击上方按钮。';
+    }
+  }
+});
+
+function retry() {
+  window.location.href = targetUrl;
+}
+
+document.getElementById('btn-retry').onclick = () => retry();
+
+document.getElementById('btn-self-heal').onclick = async () => {
+  if (window.offlineAPI && window.offlineAPI.selfHealToSystem) {
+    try {
+      await window.offlineAPI.selfHealToSystem();
+    } catch {}
+  }
+  retry();
+};
+
+document.getElementById('btn-open-proxy').onclick = () => {
+  if (window.offlineAPI && window.offlineAPI.openProxySettings) {
+    window.offlineAPI.openProxySettings();
+  }
+};
+</script>
+</body>
+</html>
