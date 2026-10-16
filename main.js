@@ -369,16 +369,66 @@ function isInternalSiteUrl(rawUrl) {
   }
 }
 
-function isAuthUrl(rawUrl) {
+function isAuthOrConnectorUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
   try {
     const parsed = new URL(rawUrl);
     const host = parsed.hostname.toLowerCase();
-    return (
-      host.includes('accounts.google.com') ||
-      host.includes('appleid.apple.com') ||
-      host.includes('auth.meta.com') ||
-      host.includes('facebook.com')
-    );
+    const pathname = parsed.pathname.toLowerCase();
+    const search = parsed.search.toLowerCase();
+
+    // 1. 常见第三方连接器与 OAuth 认证域名
+    const authHosts = [
+      'accounts.google.com',
+      'appleid.apple.com',
+      'auth.meta.com',
+      'account.meta.com',
+      'facebook.com',
+      'github.com',
+      'spotify.com',
+      'accounts.spotify.com',
+      'dropbox.com',
+      'zoom.us',
+      'canva.com',
+      'onepeloton.com',
+      'peloton.com',
+      'slack.com',
+      'notion.so',
+      'login.microsoftonline.com',
+      'live.com',
+      'login.live.com',
+      'linkedin.com',
+      'twitter.com',
+      'x.com',
+    ];
+    if (authHosts.some((h) => host === h || host.endsWith('.' + h))) {
+      return true;
+    }
+
+    // 2. 内部站点的连接器中转授权与登录路由
+    const isInternal = host === 'muse.ai' || host.endsWith('.muse.ai') ||
+                       host === 'meta.ai' || host.endsWith('.meta.ai');
+    if (isInternal) {
+      if (
+        pathname.includes('/connector') ||
+        pathname.includes('/auth') ||
+        pathname.includes('/oauth') ||
+        pathname.includes('/login') ||
+        search.includes('connector')
+      ) {
+        return true;
+      }
+    }
+
+    // 3. 通用 OAuth 特征（包含 client_id 以及 redirect_uri / response_type）
+    if (
+      (search.includes('client_id=') || search.includes('response_type=')) &&
+      (search.includes('redirect_uri=') || pathname.includes('oauth') || pathname.includes('auth'))
+    ) {
+      return true;
+    }
+
+    return false;
   } catch {
     return false;
   }
@@ -388,9 +438,14 @@ function setupExternalLinkHandler(win) {
   if (!win || win.isDestroyed()) return;
 
   // 1. 拦截 window.open() 或带 target="_blank" 的链接
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    // 允许身份验证弹窗在应用内完成 OAuth 流程
-    if (isAuthUrl(url)) {
+  win.webContents.setWindowOpenHandler((details) => {
+    const { url, disposition, features } = details;
+
+    // 允许身份验证与连接器弹窗在应用内完成 OAuth 授权流程
+    const isAuth = isAuthOrConnectorUrl(url);
+    const isPopupDisposition = disposition === 'new-window' || (typeof features === 'string' && (features.includes('width=') || features.includes('height=')));
+
+    if (isAuth || isPopupDisposition) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
@@ -418,9 +473,21 @@ function setupExternalLinkHandler(win) {
     return { action: 'deny' };
   });
 
+  // 监听创建子窗口：为所有连接器/认证弹窗注入规范的 Chrome UA 并支持快捷缩放
+  win.webContents.on('did-create-window', (childWin) => {
+    try {
+      if (childWin && !childWin.isDestroyed()) {
+        childWin.webContents.setUserAgent(CHROME_UA);
+        attachZoomShortcuts(childWin);
+      }
+    } catch (e) {
+      console.warn('[Window] Failed to setup child window:', e);
+    }
+  });
+
   // 2. 拦截在主窗口内的普通超链接跳转（如 <a href="...">）及 302 重定向，防止主聊天窗口被覆盖或因阻止导航挂起黑屏
   const handleNavigation = (event, url) => {
-    if (isAuthUrl(url)) {
+    if (isAuthOrConnectorUrl(url)) {
       return;
     }
     const extracted = extractExternalTargetUrl(url);

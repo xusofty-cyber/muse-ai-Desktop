@@ -1694,8 +1694,28 @@ function injectExportButton() {}
       if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
       if (host === 'meta.ai' || host.endsWith('.meta.ai')) return true;
       if (parsed.protocol === 'file:') return true;
-      // 常见认证回调与页面跳转
-      if (host.includes('accounts.google.com') || host.includes('auth.meta.com') || host.includes('facebook.com')) {
+      // 常见认证回调、连接器与页面跳转
+      const authHosts = [
+        'accounts.google.com',
+        'appleid.apple.com',
+        'auth.meta.com',
+        'account.meta.com',
+        'facebook.com',
+        'github.com',
+        'spotify.com',
+        'accounts.spotify.com',
+        'dropbox.com',
+        'zoom.us',
+        'canva.com',
+        'onepeloton.com',
+        'peloton.com',
+        'slack.com',
+        'notion.so',
+        'login.microsoftonline.com',
+        'live.com',
+        'linkedin.com',
+      ];
+      if (authHosts.some((h) => host === h || host.endsWith('.' + h))) {
         return true;
       }
       return false;
