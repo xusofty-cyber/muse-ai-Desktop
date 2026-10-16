@@ -54,18 +54,23 @@
    - 实现重定向包装外链提取器 `extractExternalTargetUrl`（支持 u/url/target/dest 等参数）；
    - 监听 `will-navigate` 与 `will-redirect` 双事件，外链安全引导至系统默认浏览器；
    - 在 Preload 捕获阶段优先拦截与安全调度，单元回归测试全部通过。
+4. **连接器与 OAuth 授权弹窗拦截修复（v1.5.4 证据）**：
+   - 根治在设置->连接器中点击“连接”（GitHub, Spotify, Canva, Zoom 等）时提示“无法打开连接页面。请允许弹窗并重试”的缺陷；
+   - 在 `setWindowOpenHandler` 中支持识别 `isAuthOrConnectorUrl` 及显式弹窗（`new-window` / 宽高特征），放行授权窗口（`action: 'allow'`）；
+   - 通过 `did-create-window` 为授权弹窗配置标准 Chrome UA，避免被识别为非安全浏览器；子窗口自动继承当前 Profile 的会话代理环境与全局快捷键；
+   - 扩展 Preload 中的认证服务商白名单，避免授权按钮被误捕获。
 
 ---
 
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - 外链点击黑屏 Bug 彻底修复，版本升级至 `v1.5.3`。
-   - `main` 分支最新提交已推送到远端 `origin/main`（commit `1a89aa2`）。
-   - 发布标签 `v1.5.3` 已推送至远端，GitHub Actions 自动化多平台构建发布工作流已触发。
+   - 连接器 OAuth 弹窗拦截问题彻底修复，版本升级至 `v1.5.4`。
+   - `main` 分支最新提交已推送到远端 `origin/main`（commit `d297ed1`）。
+   - 发布标签 `v1.5.4` 已推送至远端，GitHub Actions 自动化多平台构建发布工作流已触发。
 2. **后续下一步**：
-   - [x] 代码修复与回归断言自测。
+   - [x] 连接器与认证弹窗逻辑修复与回归断言自测。
    - [x] 合并至 `main` 分支并推送到远端。
-   - [x] 打上 `v1.5.3` 标签并推送触发 CI/CD 自动发布。
+   - [x] 打上 `v1.5.4` 标签并推送触发 CI/CD 自动发布。
    - [ ] 观察 GitHub Release 页面产物构建结果。
 
