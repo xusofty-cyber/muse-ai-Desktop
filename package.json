@@ -87,5 +87,5 @@
     "dist:mac": "electron-builder --mac dmg zip",
     "start": "electron ."
   },
-  "version": "1.5.5"
+  "version": "1.5.6"
 }

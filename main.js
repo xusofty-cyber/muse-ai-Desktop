@@ -459,10 +459,6 @@ function setupExternalLinkHandler(win) {
         action: 'allow',
         overrideBrowserWindowOptions: {
           autoHideMenuBar: true,
-          webPreferences: {
-            ...webPrefs(),
-            partition: win.webContents.getWebPreferences().partition,
-          },
         },
       };
     }
@@ -1531,7 +1527,7 @@ async function exportChat() {
 // updates itself: check the GitHub releases feed, download the new portable
 // exe in the background, and swap it in on restart via a tiny detached
 // PowerShell helper. A .bak of the previous version is kept beside the exe.
-const UPDATE_REPO = 'whxjwksjs/muse-windows';
+const UPDATE_REPO = 'xusofty-cyber/muse-ai-Desktop';
 
 function cmpVersions(a, b) {
   const pa = String(a).split('.').map(Number);
