@@ -1661,8 +1661,34 @@ function injectExportButton() {}
 
 // ---- Global External Link Handling (Open In Default Browser) ---------------
 (function initExternalLinkCapture() {
+  function extractTargetUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return null;
+    try {
+      const parsed = new URL(rawUrl, window.location.href);
+      const redirectKeys = ['u', 'url', 'target', 'dest', 'destination', 'link', 'href', 'q'];
+      for (const key of redirectKeys) {
+        const candidate = parsed.searchParams.get(key);
+        if (candidate) {
+          try {
+            const candUrl = new URL(candidate);
+            if (candUrl.protocol === 'http:' || candUrl.protocol === 'https:') {
+              const candHost = candUrl.hostname.toLowerCase();
+              const isInternal = candHost === 'muse.ai' || candHost.endsWith('.muse.ai') ||
+                               candHost === 'meta.ai' || candHost.endsWith('.meta.ai');
+              if (!isInternal) {
+                return candidate;
+              }
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+    return null;
+  }
+
   function isInternalUrl(rawUrl) {
     try {
+      if (extractTargetUrl(rawUrl)) return false;
       const parsed = new URL(rawUrl, window.location.href);
       const host = parsed.hostname.toLowerCase();
       if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
@@ -1682,19 +1708,39 @@ function injectExportButton() {}
   document.addEventListener(
     'click',
     (e) => {
-      const anchor = e.target && e.target.closest ? e.target.closest('a') : null;
-      if (!anchor || !anchor.href) return;
-      const href = anchor.href;
+      try {
+        const anchor = e.target && e.target.closest ? e.target.closest('a') : null;
+        if (!anchor) return;
+        const rawHref = anchor.getAttribute('href') || anchor.href;
+        if (!rawHref) return;
 
-      // 仅拦截 http/https/mailto
-      if (!href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('mailto:')) {
-        return;
-      }
+        // 跳过纯锚点与非网络协议
+        if (rawHref.startsWith('#') || rawHref.startsWith('javascript:')) return;
 
-      if (!isInternalUrl(href)) {
-        e.preventDefault();
-        e.stopPropagation();
-        ipcRenderer.send('open-external-url', href);
+        let fullHref = rawHref;
+        try {
+          fullHref = new URL(rawHref, window.location.href).href;
+        } catch {}
+
+        if (!fullHref.startsWith('http://') && !fullHref.startsWith('https://') && !fullHref.startsWith('mailto:')) {
+          return;
+        }
+
+        const externalTarget = extractTargetUrl(fullHref);
+        if (externalTarget) {
+          e.preventDefault();
+          e.stopPropagation();
+          ipcRenderer.send('open-external-url', externalTarget);
+          return;
+        }
+
+        if (!isInternalUrl(fullHref)) {
+          e.preventDefault();
+          e.stopPropagation();
+          ipcRenderer.send('open-external-url', fullHref);
+        }
+      } catch (err) {
+        console.warn('[Preload] External link intercept error:', err);
       }
     },
     true

@@ -327,8 +327,37 @@ function attachZoomShortcuts(win) {
 }
 
 // ---- External links & navigation security (Open in system default browser) --
+function extractExternalTargetUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  try {
+    const parsed = new URL(rawUrl);
+    // 识别常见重定向跳转参数
+    const redirectKeys = ['u', 'url', 'target', 'dest', 'destination', 'link', 'href', 'q'];
+    for (const key of redirectKeys) {
+      const candidate = parsed.searchParams.get(key);
+      if (candidate) {
+        try {
+          const candUrl = new URL(candidate);
+          if (candUrl.protocol === 'http:' || candUrl.protocol === 'https:') {
+            const candHost = candUrl.hostname.toLowerCase();
+            const isInternal = candHost === 'muse.ai' || candHost.endsWith('.muse.ai') ||
+                             candHost === 'meta.ai' || candHost.endsWith('.meta.ai');
+            if (!isInternal) {
+              return candidate;
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+  return null;
+}
+
 function isInternalSiteUrl(rawUrl) {
   try {
+    // 若属于外部链接包装重定向，实质属于外链
+    if (extractExternalTargetUrl(rawUrl)) return false;
+
     const parsed = new URL(rawUrl);
     const host = parsed.hostname.toLowerCase();
     if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
@@ -374,33 +403,41 @@ function setupExternalLinkHandler(win) {
       };
     }
 
-    // 内部站点链接：如果被调用 window.open，直接在当前窗口加载并阻止弹窗
-    if (isInternalSiteUrl(url)) {
-      win.loadURL(url).catch(() => {});
+    // 检查是否为外部链接或包装的外链重定向
+    const extracted = extractExternalTargetUrl(url);
+    const finalExternalUrl = extracted || (!isInternalSiteUrl(url) ? url : null);
+
+    if (finalExternalUrl && (finalExternalUrl.startsWith('http://') || finalExternalUrl.startsWith('https://') || finalExternalUrl.startsWith('mailto:'))) {
+      shell.openExternal(finalExternalUrl).catch((err) => {
+        console.warn('[ExternalLink] Failed to open external URL:', finalExternalUrl, err);
+      });
       return { action: 'deny' };
     }
 
-    // 外部链接（知识库、外部网盘、文档、第三方网页等）：统一交由操作系统默认浏览器打开
-    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
-      shell.openExternal(url).catch((err) => {
-        console.warn('[ExternalLink] Failed to open external URL:', url, err);
-      });
-    }
+    // 内部站点链接：绝不直接在主窗口执行 win.loadURL(url) 以免冲毁当前正在聊天的会话
     return { action: 'deny' };
   });
 
-  // 2. 拦截在主窗口内的普通超链接跳转（如 <a href="...">），防止主聊天窗口被外部网页覆盖
-  win.webContents.on('will-navigate', (event, url) => {
-    if (isInternalSiteUrl(url) || isAuthUrl(url)) {
+  // 2. 拦截在主窗口内的普通超链接跳转（如 <a href="...">）及 302 重定向，防止主聊天窗口被覆盖或因阻止导航挂起黑屏
+  const handleNavigation = (event, url) => {
+    if (isAuthUrl(url)) {
       return;
     }
-    event.preventDefault();
-    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
-      shell.openExternal(url).catch((err) => {
-        console.warn('[ExternalLink] Failed to open external URL on will-navigate:', url, err);
-      });
+    const extracted = extractExternalTargetUrl(url);
+    const finalExternalUrl = extracted || (!isInternalSiteUrl(url) ? url : null);
+
+    if (finalExternalUrl) {
+      event.preventDefault();
+      if (finalExternalUrl.startsWith('http://') || finalExternalUrl.startsWith('https://') || finalExternalUrl.startsWith('mailto:')) {
+        shell.openExternal(finalExternalUrl).catch((err) => {
+          console.warn('[ExternalLink] Failed to open external URL on nav:', finalExternalUrl, err);
+        });
+      }
     }
-  });
+  };
+
+  win.webContents.on('will-navigate', handleNavigation);
+  win.webContents.on('will-redirect', handleNavigation);
 }
 
 // ---- network & proxy settings ---------------------------------------------
@@ -1243,9 +1280,10 @@ ipcMain.on('muse-export-request', () => exportChat());
 
 // 处理页面请求用系统默认浏览器打开外部链接
 ipcMain.on('open-external-url', (e, rawUrl) => {
-  if (typeof rawUrl === 'string' && (rawUrl.startsWith('http://') || rawUrl.startsWith('https://') || rawUrl.startsWith('mailto:'))) {
-    shell.openExternal(rawUrl).catch((err) => {
-      console.warn('[ExternalLink] Failed to open external URL from IPC:', rawUrl, err);
+  const target = extractExternalTargetUrl(rawUrl) || rawUrl;
+  if (typeof target === 'string' && (target.startsWith('http://') || target.startsWith('https://') || target.startsWith('mailto:'))) {
+    shell.openExternal(target).catch((err) => {
+      console.warn('[ExternalLink] Failed to open external URL from IPC:', target, err);
     });
   }
 });
