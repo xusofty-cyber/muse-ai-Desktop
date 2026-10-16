@@ -391,6 +391,19 @@
       <button class="action primary" id="btn-save-proxy">保存并立即生效</button>
     </div>
     <p id="proxy-msg" style="margin-top:10px; font-size:12px; min-height:18px;"></p>
+
+    <div class="section-title" id="sec-title-connector" style="margin-top:20px;">第三方连接器与安全授权 (Connectors & OAuth)</div>
+    <div class="auto-card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--text-main); margin-bottom:4px;" id="txt-conn-title">Google 账号连接与安全风控解除</div>
+      <div style="font-size:11.5px; color:var(--text-dim); line-height:1.45; margin-bottom:10px;" id="txt-conn-desc">
+        Google 官方安全规范（RFC 8252）禁止在桌面客户端内嵌窗口直接输入密码登录。建议在默认浏览器中登录 muse.ai 绑定 Google 账号，绑定后在客户端按 F5 刷新即可同步。若曾被 Google 风控拦截，可一键重置会话缓存。
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="action" id="btn-open-muse-browser" style="flex:1; min-width:180px; font-size:12px; padding:7px 0;">🌐 在默认浏览器打开 muse.ai</button>
+        <button class="action" id="btn-reset-google-cache" style="flex:1; min-width:180px; font-size:12px; padding:7px 0;">🧹 重置 Google 登录与风控缓存</button>
+      </div>
+      <div id="conn-msg" style="margin-top:8px; font-size:11.5px; min-height:16px;"></div>
+    </div>
   </div>
 
 <script>
@@ -457,6 +470,11 @@ const I18N_SETTINGS = {
     proxyHostLabel: 'Host:',
     proxyPortLabel: 'Port:',
     proxySaveBtn: 'Save & Apply Proxy Settings',
+    connectorSecTitle: 'Connectors & Third-Party Auth (第三方连接器与安全授权)',
+    connCardTitle: 'Google Account Connection & Security Unlock (Google 账号连接与安全风控解除)',
+    connCardDesc: 'Google policy (RFC 8252) blocks password entry inside embedded desktop windows. We recommend signing into muse.ai in your default browser to connect Google, then press F5 in Muse to sync. If previously blocked, you can reset Google session flags below.',
+    btnOpenMuseText: '🌐 Open muse.ai in Default Browser',
+    btnResetGoogleText: '🧹 Reset Google Session Cache',
   },
   'zh-CN': {
     tabHotkeys: '快捷键',
@@ -520,6 +538,11 @@ const I18N_SETTINGS = {
     proxyHostLabel: '代理服务器 (Host)',
     proxyPortLabel: '代理端口 (Port)',
     proxySaveBtn: '保存并立即生效',
+    connectorSecTitle: '第三方连接器与安全授权 (Connectors & OAuth)',
+    connCardTitle: 'Google 账号连接与安全风控解除',
+    connCardDesc: 'Google 官方安全规范（RFC 8252）禁止在桌面客户端内嵌窗口直接输入密码登录。建议在默认浏览器中登录 muse.ai 绑定 Google 账号，绑定后在客户端按 F5 刷新即可同步。若曾被 Google 风控拦截，可一键重置会话缓存。',
+    btnOpenMuseText: '🌐 在默认浏览器打开 muse.ai',
+    btnResetGoogleText: '🧹 重置 Google 登录与风控缓存',
   }
 };
 
@@ -654,6 +677,17 @@ function applySettingsLocale(loc) {
   if (lblProxyPort) lblProxyPort.textContent = t.proxyPortLabel;
   const btnSaveProxy = document.getElementById('btn-save-proxy');
   if (btnSaveProxy) btnSaveProxy.textContent = t.proxySaveBtn;
+
+  const secConn = document.getElementById('sec-title-connector');
+  if (secConn) secConn.textContent = t.connectorSecTitle;
+  const txtConnTitle = document.getElementById('txt-conn-title');
+  if (txtConnTitle) txtConnTitle.textContent = t.connCardTitle;
+  const txtConnDesc = document.getElementById('txt-conn-desc');
+  if (txtConnDesc) txtConnDesc.textContent = t.connCardDesc;
+  const btnOpenMuse = document.getElementById('btn-open-muse-browser');
+  if (btnOpenMuse) btnOpenMuse.textContent = t.btnOpenMuseText;
+  const btnResetGoogle = document.getElementById('btn-reset-google-cache');
+  if (btnResetGoogle) btnResetGoogle.textContent = t.btnResetGoogleText;
 }
 
 const api = window.hotkeyAPI;
@@ -1220,6 +1254,47 @@ document.getElementById('btn-save-proxy').onclick = async () => {
     pMsg.textContent = '保存出错: ' + err.message;
   }
 };
+
+const btnOpenMuseBrowser = document.getElementById('btn-open-muse-browser');
+if (btnOpenMuseBrowser) {
+  btnOpenMuseBrowser.onclick = () => {
+    if (window.connectorAPI && window.connectorAPI.openMuse) {
+      window.connectorAPI.openMuse();
+    }
+  };
+}
+
+const btnResetGoogleCache = document.getElementById('btn-reset-google-cache');
+if (btnResetGoogleCache) {
+  btnResetGoogleCache.onclick = async () => {
+    const cMsg = document.getElementById('conn-msg');
+    if (cMsg) {
+      cMsg.style.color = '#7aa2ff';
+      cMsg.textContent = '正在清理 Google 登录缓存与风控标记...';
+    }
+    try {
+      if (window.connectorAPI && window.connectorAPI.resetGoogleSession) {
+        const res = await window.connectorAPI.resetGoogleSession();
+        if (res && res.ok) {
+          if (cMsg) {
+            cMsg.style.color = '#7ee2a8';
+            cMsg.textContent = 'Google 会话缓存已成功重置，风控标记已解除！';
+          }
+        } else {
+          if (cMsg) {
+            cMsg.style.color = '#ff9a9a';
+            cMsg.textContent = '清理未发现相关缓存或执行失败。';
+          }
+        }
+      }
+    } catch (err) {
+      if (cMsg) {
+        cMsg.style.color = '#ff9a9a';
+        cMsg.textContent = '清理失败: ' + err.message;
+      }
+    }
+  };
+}
 
 if (window.settingsTabAPI) {
   window.settingsTabAPI.onSwitchTab((tabId) => {

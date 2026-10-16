@@ -56,4 +56,9 @@ contextBridge.exposeInMainWorld('localeAPI', {
   },
 });
 
+contextBridge.exposeInMainWorld('connectorAPI', {
+  openMuse: () => ipcRenderer.invoke('connector-open-muse'),
+  resetGoogleSession: () => ipcRenderer.invoke('google-session-reset'),
+});
+
 

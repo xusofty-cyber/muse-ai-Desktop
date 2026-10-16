@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeImage, clipboard, session, dialog, Notification, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeImage, clipboard, session, dialog, Notification, ipcMain, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -72,6 +72,7 @@ const I18N_MAIN = {
     muteSpeaker: (hk) => `Mute / unmute app sound  (${hk})`,
     customizeHotkeys: 'Customize hotkeys & settings…',
     networkProxy: 'Network & Proxy settings…',
+    resetGoogleSession: 'Reset Google Sign-in & Security Cache…',
     appearance: (cur) => `Appearance: ${cur}`,
     darkMode: 'Dark mode 🌙',
     lightMode: 'Light mode ☀️',
@@ -126,6 +127,7 @@ const I18N_MAIN = {
     muteSpeaker: (hk) => `应用声音静音 / 开关  (${hk})`,
     customizeHotkeys: '全局快捷键与高级偏好设置…',
     networkProxy: '网络代理配置 (TUN/系统)…',
+    resetGoogleSession: '重置 Google 登录与风控缓存…',
     appearance: (cur) => `主题外观: ${cur}`,
     darkMode: '深色模式 🌙',
     lightMode: '浅色模式 ☀️',
@@ -480,25 +482,43 @@ function setupExternalLinkHandler(win) {
     return { action: 'deny' };
   });
 
-  // 监听创建子窗口：为所有连接器/认证弹窗注入规范 UA 并支持快捷缩放
+  // 监听创建子窗口：支持快捷缩放，并在 Google 认证页面智能注入指引横幅及操作拦截
   win.webContents.on('did-create-window', (childWin) => {
     try {
       if (childWin && !childWin.isDestroyed()) {
         attachZoomShortcuts(childWin);
 
-        // 针对 Google 认证页面拟态为原生 Firefox UA，彻底绕过 Google 针对 Chromium 嵌入式 WebView 的安全阻断
-        const applyAppropriateUA = (targetUrl) => {
-          if (childWin.isDestroyed()) return;
-          if (targetUrl && (targetUrl.includes('accounts.google.com') || targetUrl.includes('myaccount.google.com'))) {
-            childWin.webContents.setUserAgent(FIREFOX_UA);
-          } else {
-            childWin.webContents.setUserAgent(CHROME_UA);
+        // 使用干净标准的原生 Chrome UA，消除指纹特征冲突
+        childWin.webContents.setUserAgent(CHROME_UA);
+
+        const checkAndInjectGoogleBanner = (targetUrl) => {
+          if (!childWin || childWin.isDestroyed()) return;
+          const urlStr = String(targetUrl || '');
+          if (urlStr.includes('accounts.google.com') || urlStr.includes('myaccount.google.com')) {
+            childWin.webContents.executeJavaScript(getGoogleAuthBannerScript(state.locale || 'en')).catch(() => {});
           }
         };
 
-        childWin.webContents.on('did-navigate', (event, navUrl) => applyAppropriateUA(navUrl));
-        childWin.webContents.on('did-navigate-in-page', (event, navUrl) => applyAppropriateUA(navUrl));
-        applyAppropriateUA(childWin.webContents.getURL());
+        childWin.webContents.on('did-navigate', (event, navUrl) => checkAndInjectGoogleBanner(navUrl));
+        childWin.webContents.on('did-navigate-in-page', (event, navUrl) => checkAndInjectGoogleBanner(navUrl));
+        childWin.webContents.on('dom-ready', () => checkAndInjectGoogleBanner(childWin.webContents.getURL()));
+        checkAndInjectGoogleBanner(childWin.webContents.getURL());
+
+        // 拦截横幅操作链接
+        childWin.webContents.on('will-navigate', async (e, navUrl) => {
+          if (navUrl.startsWith('muse-action://open-browser')) {
+            e.preventDefault();
+            shell.openExternal('https://muse.ai');
+            return;
+          }
+          if (navUrl.startsWith('muse-action://clear-google-cache')) {
+            e.preventDefault();
+            const ses = childWin.webContents.session;
+            await clearGoogleAuthSession(ses);
+            childWin.webContents.reload();
+            return;
+          }
+        });
       }
     } catch (e) {
       console.warn('[Window] Failed to setup child window:', e);
@@ -554,48 +574,130 @@ async function applyProxyToSession(targetSession) {
   }
 }
 
-// ---- Google OAuth / Connector Anti-Detection (Firefox UA Masking) ----------
-function applyGoogleAuthUAMask(targetSession) {
-  if (!targetSession || targetSession._googleUAMaskApplied) return;
-  targetSession._googleUAMaskApplied = true;
+// ---- Google OAuth / Connector Session Reset & Helper ------------------------
+async function clearGoogleAuthSession(targetSession) {
+  const ses = targetSession || session.fromPartition(partitionFor(state.activeProfileId));
+  try {
+    const cookies = await ses.cookies.get({});
+    for (const cookie of cookies) {
+      if (cookie.domain && (cookie.domain.includes('google.com') || cookie.domain.includes('googleapis.com'))) {
+        const protocol = cookie.secure ? 'https' : 'http';
+        const host = cookie.domain.replace(/^\./, '');
+        const cookieUrl = `${protocol}://${host}${cookie.path || '/'}`;
+        await ses.cookies.remove(cookieUrl, cookie.name);
+      }
+    }
+    await ses.clearStorageData({
+      origins: [
+        'https://accounts.google.com',
+        'https://myaccount.google.com',
+        'https://oauth2.googleapis.com',
+      ],
+      storages: ['cookies', 'localstorage', 'sessionstorage', 'indexdb', 'websql', 'serviceworkers', 'cachestorage'],
+    });
+    console.log('[GoogleAuth] Google session cache successfully cleared.');
+    return true;
+  } catch (err) {
+    console.error('[GoogleAuth] Failed to clear Google cache:', err);
+    return false;
+  }
+}
 
-  const filter = {
-    urls: [
-      '*://accounts.google.com/*',
-      '*://*.accounts.google.com/*',
-      '*://oauth2.googleapis.com/*',
-      '*://myaccount.google.com/*',
-    ],
-  };
+function getGoogleAuthBannerScript(locale) {
+  const isZh = locale === 'zh-CN';
+  const title = isZh ? 'Google 账号连接与安全引导' : 'Google Account Connection & Security Guide';
+  const tip = isZh
+    ? 'Google 官方安全机制（RFC 8252）全面禁止在任何桌面客户端内嵌窗口中输入密码登录。'
+    : 'Google security policy (RFC 8252) strictly blocks sign-in within embedded desktop windows.';
+  const recommendation = isZh
+    ? '官方推荐方案：在系统默认浏览器中登录 muse.ai 绑定 Google 账号，绑定后在客户端按 F5 刷新即可直接同步生效！'
+    : 'Official Recommendation: Log in to muse.ai in your default browser to connect your Google account, then press F5 in Muse to sync!';
+  const btnOpenBrowser = isZh ? '在默认浏览器打开 muse.ai' : 'Open muse.ai in Default Browser';
+  const btnClearCache = isZh ? '重置 Google 登录缓存' : 'Reset Google Cache';
+  const btnClose = isZh ? '关闭弹窗' : 'Close';
 
-  targetSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
-    const headers = { ...details.requestHeaders };
+  return `(() => {
+    if (document.getElementById('muse-google-auth-banner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'muse-google-auth-banner';
+    banner.innerHTML = \`
+      <div style="display:flex;align-items:flex-start;gap:12px;max-width:980px;margin:0 auto;">
+        <div style="font-size:20px;line-height:1;margin-top:2px;">⚠️</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:13px;color:#f3f4f6;margin-bottom:3px;display:flex;align-items:center;gap:6px;">
+            <span>\${${JSON.stringify(title)}}</span>
+            <span style="font-size:10px;background:#374151;color:#9ca3af;padding:1px 6px;border-radius:4px;font-weight:normal;">RFC 8252 标准</span>
+          </div>
+          <div style="font-size:12px;color:#d1d5db;line-height:1.45;margin-bottom:4px;">
+            \${${JSON.stringify(tip)}}
+          </div>
+          <div style="font-size:12px;color:#93c5fd;line-height:1.45;margin-bottom:8px;font-weight:500;">
+            \${${JSON.stringify(recommendation)}}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+            <a href="muse-action://open-browser" style="background:#2563eb;color:#ffffff;text-decoration:none;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:4px;box-shadow:0 1px 2px rgba(0,0,0,0.2);">
+              <span>🌐</span> \${${JSON.stringify(btnOpenBrowser)}}
+            </a>
+            <a href="muse-action://clear-google-cache" style="background:#374151;color:#e5e7eb;text-decoration:none;padding:5px 12px;border-radius:6px;font-size:12px;border:1px solid #4b5563;display:inline-flex;align-items:center;gap:4px;">
+              <span>🧹</span> \${${JSON.stringify(btnClearCache)}}
+            </a>
+            <button onclick="window.close()" style="background:transparent;color:#9ca3af;border:none;padding:5px 8px;font-size:12px;cursor:pointer;text-decoration:underline;">
+              \${${JSON.stringify(btnClose)}}
+            </button>
+          </div>
+        </div>
+      </div>
+    \`;
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#18181b;color:#f3f4f6;padding:12px 16px;border-bottom:1px solid #3f3f46;box-shadow:0 4px 16px rgba(0,0,0,0.5);z-index:2147483647;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;box-sizing:border-box;';
+    
+    const mountBanner = () => {
+      if (document.body && !document.getElementById('muse-google-auth-banner')) {
+        document.body.prepend(banner);
+        document.body.style.paddingTop = '110px';
+      }
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', mountBanner);
+    } else {
+      mountBanner();
+    }
+  })();`;
+}
 
-    // 1. 拟态为标准桌面端 Firefox 浏览器，直接绕过 Google 针对 Blink 的私有自动化嗅探
-    headers['User-Agent'] = FIREFOX_UA;
-
-    // 2. 彻底剥离 Chromium 专属的 Client Hints，确保请求特征与原生 Firefox 100% 吻合
-    delete headers['sec-ch-ua'];
-    delete headers['sec-ch-ua-mobile'];
-    delete headers['sec-ch-ua-platform'];
-    delete headers['sec-ch-ua-arch'];
-    delete headers['sec-ch-ua-bitness'];
-    delete headers['sec-ch-ua-full-version'];
-    delete headers['sec-ch-ua-full-version-list'];
-    delete headers['sec-ch-ua-model'];
-    delete headers['sec-ch-ua-platform-version'];
-
-    callback({ requestHeaders: headers });
+async function promptResetGoogleSession() {
+  const isZh = state.locale === 'zh-CN';
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    title: isZh ? '重置 Google 登录与风控缓存' : 'Reset Google Login Cache',
+    message: isZh 
+      ? '是否确认重置当前账号下的 Google 登录会话与风控缓存？'
+      : 'Reset Google sign-in session and security cache for the current profile?',
+    detail: isZh
+      ? '此操作将清除所有 Google 域名的 Cookie 和本地存储，解除 Google 对此会话的风控锁定。'
+      : 'This will clear all Google cookies and storage to unlock security flags on this session.',
+    buttons: isZh ? ['立即重置', '取消'] : ['Reset Now', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
   });
+
+  if (response === 0) {
+    const curSes = session.fromPartition(partitionFor(state.activeProfileId));
+    await clearGoogleAuthSession(curSes);
+    await clearGoogleAuthSession(session.defaultSession);
+    dialog.showMessageBox({
+      type: 'info',
+      title: isZh ? '重置完成' : 'Reset Completed',
+      message: isZh ? 'Google 登录缓存与风控标记已成功重置。' : 'Google session cache and security flags have been successfully reset.',
+      buttons: ['OK'],
+    });
+  }
 }
 
 async function applyProxySettings() {
   await applyProxyToSession(session.defaultSession);
-  applyGoogleAuthUAMask(session.defaultSession);
   for (const p of state.profiles) {
     const s = session.fromPartition(partitionFor(p.id));
     await applyProxyToSession(s);
-    applyGoogleAuthUAMask(s);
   }
 }
 
@@ -688,10 +790,9 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     return win;
   }
 
-  // 确保新窗口的 Session 立即继承全局统一的网络代理配置与 Google 认证防探测拟态
+  // 确保新窗口的 Session 立即继承全局统一的网络代理配置
   const ses = session.fromPartition(partitionFor(profileId));
   applyProxyToSession(ses);
-  applyGoogleAuthUAMask(ses);
 
   const saved = targetBounds || state.window || {};
   win = new BrowserWindow({
@@ -1413,6 +1514,18 @@ ipcMain.on('open-external-url', (e, rawUrl) => {
   }
 });
 
+// 第三方连接器引导与 Google 会话重置 IPC
+ipcMain.handle('connector-open-muse', () => {
+  return shell.openExternal('https://muse.ai');
+});
+
+ipcMain.handle('google-session-reset', async () => {
+  const curSes = session.fromPartition(partitionFor(state.activeProfileId));
+  const r1 = await clearGoogleAuthSession(curSes);
+  const r2 = await clearGoogleAuthSession(session.defaultSession);
+  return { ok: r1 || r2 };
+});
+
 // ---- downloads & right-click menu -------------------------------------------
 // Electron shows no context menu on its own, so links can only be clicked
 // (navigating to them) rather than saved. This adds Save link/image as,
@@ -1592,38 +1705,161 @@ function cmpVersions(a, b) {
   return 0;
 }
 
+let isCheckingUpdate = false;
+
 async function checkForUpdates(manual) {
-  if (!app.isPackaged) return; // dev mode: never self-update
+  if (isCheckingUpdate) {
+    if (manual) {
+      dialog.showMessageBox({
+        type: 'info',
+        title: '检查更新',
+        message: '正在检查版本更新，请稍候...',
+      });
+    }
+    return;
+  }
+  isCheckingUpdate = true;
+
   try {
-    const res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
+    const fetchFunc = (typeof net !== 'undefined' && net.fetch) ? net.fetch : fetch;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    const res = await fetchFunc(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
       headers: { 'User-Agent': 'muse-windows', Accept: 'application/vnd.github+json' },
+      signal: controller.signal,
     });
-    if (!res.ok) throw new Error(`release feed returned ${res.status}`);
+    clearTimeout(timeoutId);
+
+    if (!res.ok) throw new Error(`GitHub API HTTP ${res.status}`);
     const rel = await res.json();
     const latest = String(rel.tag_name || rel.name || '').replace(/^v/i, '');
-    if (!latest || cmpVersions(latest, app.getVersion()) <= 0) {
-      if (manual) notify('No updates', 'You are on the latest version.');
+    const current = app.getVersion();
+
+    if (!latest || cmpVersions(latest, current) <= 0) {
+      if (manual) {
+        dialog.showMessageBox({
+          type: 'info',
+          title: '检查版本更新',
+          message: `当前已是最新版本 (v${current})`,
+          detail: '暂无可用更新。',
+          buttons: ['确定'],
+        });
+      }
       return;
     }
-    if (pendingUpdate && pendingUpdate.version === latest) return; // already downloaded
+
+    const releaseUrl = rel.html_url || `https://github.com/${UPDATE_REPO}/releases/latest`;
     const asset = (rel.assets || []).find((a) => /^Muse-Portable-.*\.exe$/i.test(a.name || ''));
+
+    if (manual) {
+      const releaseNotes = (rel.body || '').trim();
+      const detailMsg = releaseNotes ? `\n\n更新日志：\n${releaseNotes.slice(0, 300)}${releaseNotes.length > 300 ? '...' : ''}` : '';
+      const buttons = asset ? ['前往 GitHub 下载', '后台下载便携版', '稍后再说'] : ['前往 GitHub 下载', '稍后再说'];
+      
+      const { response } = await dialog.showMessageBox({
+        type: 'info',
+        title: '发现新版本',
+        message: `发现新版本 v${latest} (当前版本 v${current})`,
+        detail: `有可用的新版本发布，建议及时更新。${detailMsg}`,
+        buttons,
+        defaultId: 0,
+        cancelId: buttons.length - 1,
+      });
+
+      if (response === 0) {
+        shell.openExternal(releaseUrl);
+        return;
+      } else if (response === 1 && asset) {
+        // 继续在后台下载便携版
+      } else {
+        return;
+      }
+    }
+
     if (!asset) {
-      if (manual) notify('Update found', `v${latest} is out, but the release has no portable exe attached.`);
+      if (manual) {
+        dialog.showMessageBox({
+          type: 'warning',
+          title: '更新提醒',
+          message: `v${latest} 已发布，但未找到便携单文件 (Portable)。`,
+          detail: '建议前往 GitHub Releases 页面下载安装包。',
+          buttons: ['前往 GitHub', '取消'],
+        }).then(({ response }) => {
+          if (response === 0) shell.openExternal(releaseUrl);
+        });
+      }
       return;
     }
-    notify('Downloading update', `Muse v${latest} is downloading in the background.`);
-    const dl = await fetch(asset.browser_download_url, { headers: { 'User-Agent': 'muse-windows' } });
-    if (!dl.ok) throw new Error(`download returned ${dl.status}`);
+
+    if (pendingUpdate && pendingUpdate.version === latest) {
+      if (manual) {
+        const { response } = await dialog.showMessageBox({
+          type: 'question',
+          title: '更新已就绪',
+          message: `Muse v${latest} 安装文件已下载完成。`,
+          detail: '是否立即重启应用以完成更新？',
+          buttons: ['立即重启更新', '稍后手动重启'],
+          defaultId: 0,
+        });
+        if (response === 0) {
+          installUpdateAndRestart();
+        }
+      }
+      return;
+    }
+
+    notify('正在下载更新', `Muse v${latest} 正在后台下载中...`);
+    const dlController = new AbortController();
+    const dlTimeout = setTimeout(() => dlController.abort(), 180000);
+    const dl = await fetchFunc(asset.browser_download_url, {
+      headers: { 'User-Agent': 'muse-windows' },
+      signal: dlController.signal,
+    });
+    clearTimeout(dlTimeout);
+    if (!dl.ok) throw new Error(`下载失败 HTTP ${dl.status}`);
     const buf = Buffer.from(await dl.arrayBuffer());
-    if (buf.length < 1024 || buf[0] !== 0x4d || buf[1] !== 0x5a) throw new Error('downloaded file is not a valid exe');
+    if (buf.length < 1024 || buf[0] !== 0x4d || buf[1] !== 0x5a) throw new Error('下载的文件不是合法的 Windows 可执行程序');
     const dest = path.join(app.getPath('temp'), asset.name);
     await fs.promises.writeFile(dest, buf);
     pendingUpdate = { version: latest, filePath: dest };
     updateDownloaded = true;
     buildTrayMenu();
-    notify('Update ready', `Muse v${latest} downloaded. Restart from the tray menu to install it.`);
+
+    if (manual) {
+      const { response } = await dialog.showMessageBox({
+        type: 'question',
+        title: '更新已就绪',
+        message: `Muse v${latest} 下载完成！`,
+        detail: '是否立即重启应用以完成更新？',
+        buttons: ['立即重启', '稍后再说'],
+        defaultId: 0,
+      });
+      if (response === 0) {
+        installUpdateAndRestart();
+      }
+    } else {
+      notify('更新已就绪', `Muse v${latest} 已下载完成，点击托盘菜单重启以安装。`, () => installUpdateAndRestart());
+    }
   } catch (e) {
-    if (manual) notify('Update check failed', String((e && e.message) || e));
+    const errMsg = String((e && e.message) || e);
+    console.warn('[UpdateCheck] Failed:', errMsg);
+    if (manual) {
+      dialog.showMessageBox({
+        type: 'error',
+        title: '检查更新失败',
+        message: '无法连接到更新服务器或网络连接超时。',
+        detail: `错误详情: ${errMsg}\n\n是否直接前往 GitHub Releases 页面查看并下载最新版本？`,
+        buttons: ['前往 GitHub 查看', '取消'],
+        defaultId: 0,
+      }).then(({ response }) => {
+        if (response === 0) {
+          shell.openExternal(`https://github.com/${UPDATE_REPO}/releases`);
+        }
+      });
+    }
+  } finally {
+    isCheckingUpdate = false;
   }
 }
 
@@ -1656,14 +1892,24 @@ function canWriteBesideExe() {
 function installUpdateAndRestart() {
   if (!pendingUpdate) return;
   if (!canWriteBesideExe()) {
-    notify('Update failed', 'The app folder is not writable. Download the new version from the GitHub releases page instead.');
+    dialog.showMessageBox({
+      type: 'warning',
+      title: '无法自动替换',
+      message: '当前应用程序目录没有写入权限（可能属于只读或安装版目录）。',
+      detail: '建议前往 GitHub Releases 页面下载安装包覆盖安装。',
+      buttons: ['前往 GitHub', '取消'],
+    }).then(({ response }) => {
+      if (response === 0) {
+        shell.openExternal(`https://github.com/${UPDATE_REPO}/releases`);
+      }
+    });
     return;
   }
   const scriptPath = path.join(app.getPath('temp'), 'muse-update.ps1');
   try {
     fs.writeFileSync(scriptPath, buildUpdateScript(process.execPath, pendingUpdate.filePath));
   } catch (e) {
-    notify('Update failed', 'Could not write the updater script: ' + String((e && e.message) || e));
+    dialog.showErrorBox('更新失败', '无法写入更新执行脚本: ' + String((e && e.message) || e));
     return;
   }
   try {
@@ -1671,7 +1917,7 @@ function installUpdateAndRestart() {
       detached: true, stdio: 'ignore',
     }).unref();
   } catch (e) {
-    notify('Update failed', String((e && e.message) || e));
+    dialog.showErrorBox('更新失败', String((e && e.message) || e));
     return;
   }
   app.quitting = true;
@@ -1836,6 +2082,7 @@ function buildTrayMenu() {
     { label: t.muteSpeaker(prettyHotkey(state.hotkeys.speaker)), click: toggleSpeaker },
     { label: t.customizeHotkeys, click: () => openHotkeySettings() },
     { label: t.networkProxy, click: () => openHotkeySettings('tab-proxy') },
+    { label: t.resetGoogleSession, click: promptResetGoogleSession },
     { type: 'separator' },
     {
       label: t.appearance(state.theme === 'light' ? t.lightMode : state.theme === 'system' ? t.systemMode : t.darkMode),
