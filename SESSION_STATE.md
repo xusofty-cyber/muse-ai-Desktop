@@ -49,23 +49,23 @@
    - 修复了 proxyRules 单代理规则拼写（`${type}://${host}:${port}`）；
    - 对 `-130 ERR_PROXY_CONNECTION_FAILED` 提供静默自动降级为自适应模式机制；
    - 对 `localStorage` 访问添加 try-catch 防御，避免沙箱报错中断 Dock 栏初始化。
-3. **多标签常驻与零重载秒切架构（Zero-Reload Tab Switch）落地**：
-   - 维护 `profileWindows = new Map()` 结构，每个账号对应独立的常驻 BrowserWindow；
-   - 切换账号通过切换窗口可见性与继承 Bounds 实现，耗时 `< 10ms`；
-   - 彻底告别切换时的 `closeWindows()` 销毁与重新 `loadURL`，保持会话与输入状态完全无感。
-4. **网络代理设备级统一与自动唤起验证**：
-   - 代理配置保存后直接持久化至 `app-state.json`，重启直接加载生效；
-   - 动态创建的账号窗口通过 `applyProxyToSession(ses)` 自动继承全局代理配置；
-   - 连接阻断时主动调用 `openHotkeySettings('tab-proxy')` 自动弹出配置面板。
+3. **外链点击黑屏彻底根治与安全路由（v1.5.3 证据）**：
+   - 移除 `setWindowOpenHandler` 中的 `win.loadURL(url)`，绝不覆盖销毁主窗口会话；
+   - 实现重定向包装外链提取器 `extractExternalTargetUrl`（支持 u/url/target/dest 等参数）；
+   - 监听 `will-navigate` 与 `will-redirect` 双事件，外链安全引导至系统默认浏览器；
+   - 在 Preload 捕获阶段优先拦截与安全调度，单元回归测试全部通过。
 
 ---
 
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - 零重载多标签秒切、自适应代理自愈、设备级代理全局统一与持久化方案全部落地并通过编译验证。
-   - `main` 分支已合并最新代码并推送到远端服务器 `origin/main`。
+   - 外链点击黑屏 Bug 彻底修复，版本升级至 `v1.5.3`。
+   - `main` 分支最新提交已推送到远端 `origin/main`（commit `1a89aa2`）。
+   - 发布标签 `v1.5.3` 已推送至远端，GitHub Actions 自动化多平台构建发布工作流已触发。
 2. **后续下一步**：
-   - [x] 分支提交并推送到远端 `origin/main`。
-   - [ ] 本地启动验证多账号网络连通性与异常自动唤起效果。
+   - [x] 代码修复与回归断言自测。
+   - [x] 合并至 `main` 分支并推送到远端。
+   - [x] 打上 `v1.5.3` 标签并推送触发 CI/CD 自动发布。
+   - [ ] 观察 GitHub Release 页面产物构建结果。
 
