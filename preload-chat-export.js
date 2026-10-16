@@ -1724,13 +1724,19 @@ function injectExportButton() {}
     }
   }
 
-  // 使用捕获阶段 (capture: true)，优先拦截网页中所有 a 标签点击
+  // 使用捕获阶段 (capture: true)，拦截聊天区域中的外部 a 标签点击
   document.addEventListener(
     'click',
     (e) => {
       try {
         const anchor = e.target && e.target.closest ? e.target.closest('a') : null;
         if (!anchor) return;
+
+        // 关键防御：如果点击发生在模态弹窗、设置面板或对话框内部，绝不拦截！交由页面自身逻辑处理
+        if (anchor.closest('[role="dialog"], [aria-modal="true"], [class*="dialog"], [class*="modal"], [class*="settings"]')) {
+          return;
+        }
+
         const rawHref = anchor.getAttribute('href') || anchor.href;
         if (!rawHref) return;
 
@@ -1746,6 +1752,11 @@ function injectExportButton() {}
           return;
         }
 
+        // 关键防御：如果是身份验证或连接器相关 URL，绝不拦截！
+        if (isInternalUrl(fullHref)) {
+          return;
+        }
+
         const externalTarget = extractTargetUrl(fullHref);
         if (externalTarget) {
           e.preventDefault();
@@ -1754,11 +1765,9 @@ function injectExportButton() {}
           return;
         }
 
-        if (!isInternalUrl(fullHref)) {
-          e.preventDefault();
-          e.stopPropagation();
-          ipcRenderer.send('open-external-url', fullHref);
-        }
+        e.preventDefault();
+        e.stopPropagation();
+        ipcRenderer.send('open-external-url', fullHref);
       } catch (err) {
         console.warn('[Preload] External link intercept error:', err);
       }

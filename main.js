@@ -371,6 +371,10 @@ function isInternalSiteUrl(rawUrl) {
 
 function isAuthOrConnectorUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') return false;
+  // 关键：允许空白弹窗占位符（现代前端异步打开 OAuth 弹窗的通用标准模式）
+  if (rawUrl === 'about:blank' || rawUrl === '' || rawUrl.startsWith('about:')) {
+    return true;
+  }
   try {
     const parsed = new URL(rawUrl);
     const host = parsed.hostname.toLowerCase();
@@ -400,6 +404,9 @@ function isAuthOrConnectorUrl(rawUrl) {
       'linkedin.com',
       'twitter.com',
       'x.com',
+      'plaid.com',
+      'functionhealth.com',
+      'healthex.com',
     ];
     if (authHosts.some((h) => host === h || host.endsWith('.' + h))) {
       return true;
@@ -441,11 +448,13 @@ function setupExternalLinkHandler(win) {
   win.webContents.setWindowOpenHandler((details) => {
     const { url, disposition, features } = details;
 
-    // 允许身份验证与连接器弹窗在应用内完成 OAuth 授权流程
+    // 允许身份验证、连接器弹窗以及所有显式弹窗（Popup）
     const isAuth = isAuthOrConnectorUrl(url);
-    const isPopupDisposition = disposition === 'new-window' || (typeof features === 'string' && (features.includes('width=') || features.includes('height=')));
+    const isPopup = disposition === 'new-window' ||
+                    (typeof features === 'string' && features.length > 0) ||
+                    url === 'about:blank' || url === '';
 
-    if (isAuth || isPopupDisposition) {
+    if (isAuth || isPopup) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
@@ -458,7 +467,7 @@ function setupExternalLinkHandler(win) {
       };
     }
 
-    // 检查是否为外部链接或包装的外链重定向
+    // 检查是否为外部链接或包装的外链重定向（由外部默认浏览器打开）
     const extracted = extractExternalTargetUrl(url);
     const finalExternalUrl = extracted || (!isInternalSiteUrl(url) ? url : null);
 
