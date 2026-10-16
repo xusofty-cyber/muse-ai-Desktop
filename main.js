@@ -174,9 +174,11 @@ app.commandLine.appendSwitch('ignore-certificate-errors');
 app.commandLine.appendSwitch('allow-insecure-localhost');
 // 关键：禁用后量子密钥协商(Kyber)与ECH拓展，解决Clash/代理软件在TLS 1.3 ClientHello拆包时触发的 net_error -100 (ERR_CONNECTION_CLOSED)
 app.commandLine.appendSwitch('disable-features', 'PostQuantumKeyAgreement,EncryptedClientHello');
+app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 app.commandLine.appendSwitch('ssl-version-min', 'tls1.2');
 
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+const FIREFOX_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0';
 app.userAgentFallback = CHROME_UA;
 
 app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
@@ -478,12 +480,25 @@ function setupExternalLinkHandler(win) {
     return { action: 'deny' };
   });
 
-  // 监听创建子窗口：为所有连接器/认证弹窗注入规范的 Chrome UA 并支持快捷缩放
+  // 监听创建子窗口：为所有连接器/认证弹窗注入规范 UA 并支持快捷缩放
   win.webContents.on('did-create-window', (childWin) => {
     try {
       if (childWin && !childWin.isDestroyed()) {
-        childWin.webContents.setUserAgent(CHROME_UA);
         attachZoomShortcuts(childWin);
+
+        // 针对 Google 认证页面拟态为原生 Firefox UA，彻底绕过 Google 针对 Chromium 嵌入式 WebView 的安全阻断
+        const applyAppropriateUA = (targetUrl) => {
+          if (childWin.isDestroyed()) return;
+          if (targetUrl && (targetUrl.includes('accounts.google.com') || targetUrl.includes('myaccount.google.com'))) {
+            childWin.webContents.setUserAgent(FIREFOX_UA);
+          } else {
+            childWin.webContents.setUserAgent(CHROME_UA);
+          }
+        };
+
+        childWin.webContents.on('did-navigate', (event, navUrl) => applyAppropriateUA(navUrl));
+        childWin.webContents.on('did-navigate-in-page', (event, navUrl) => applyAppropriateUA(navUrl));
+        applyAppropriateUA(childWin.webContents.getURL());
       }
     } catch (e) {
       console.warn('[Window] Failed to setup child window:', e);
@@ -539,11 +554,48 @@ async function applyProxyToSession(targetSession) {
   }
 }
 
+// ---- Google OAuth / Connector Anti-Detection (Firefox UA Masking) ----------
+function applyGoogleAuthUAMask(targetSession) {
+  if (!targetSession || targetSession._googleUAMaskApplied) return;
+  targetSession._googleUAMaskApplied = true;
+
+  const filter = {
+    urls: [
+      '*://accounts.google.com/*',
+      '*://*.accounts.google.com/*',
+      '*://oauth2.googleapis.com/*',
+      '*://myaccount.google.com/*',
+    ],
+  };
+
+  targetSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+    const headers = { ...details.requestHeaders };
+
+    // 1. 拟态为标准桌面端 Firefox 浏览器，直接绕过 Google 针对 Blink 的私有自动化嗅探
+    headers['User-Agent'] = FIREFOX_UA;
+
+    // 2. 彻底剥离 Chromium 专属的 Client Hints，确保请求特征与原生 Firefox 100% 吻合
+    delete headers['sec-ch-ua'];
+    delete headers['sec-ch-ua-mobile'];
+    delete headers['sec-ch-ua-platform'];
+    delete headers['sec-ch-ua-arch'];
+    delete headers['sec-ch-ua-bitness'];
+    delete headers['sec-ch-ua-full-version'];
+    delete headers['sec-ch-ua-full-version-list'];
+    delete headers['sec-ch-ua-model'];
+    delete headers['sec-ch-ua-platform-version'];
+
+    callback({ requestHeaders: headers });
+  });
+}
+
 async function applyProxySettings() {
   await applyProxyToSession(session.defaultSession);
+  applyGoogleAuthUAMask(session.defaultSession);
   for (const p of state.profiles) {
     const s = session.fromPartition(partitionFor(p.id));
     await applyProxyToSession(s);
+    applyGoogleAuthUAMask(s);
   }
 }
 
@@ -636,9 +688,10 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     return win;
   }
 
-  // 确保新窗口的 Session 立即继承全局统一的网络代理配置
+  // 确保新窗口的 Session 立即继承全局统一的网络代理配置与 Google 认证防探测拟态
   const ses = session.fromPartition(partitionFor(profileId));
   applyProxyToSession(ses);
+  applyGoogleAuthUAMask(ses);
 
   const saved = targetBounds || state.window || {};
   win = new BrowserWindow({
