@@ -60,23 +60,23 @@
    - 在 `preload-chat-export.js` 中增加模态防御，凡在 `[role="dialog"]`、`[aria-modal="true"]`、设置面板及模态弹窗内部发生的点击彻底放行，严禁任何拦截破坏网页原生行为；
    - 彻底根除“无法打开连接页面。请允许弹窗并重试”的错误。
 
-5. **消除未定义 API 崩溃与同步更新仓库源（v1.5.6 证据）**：
-   - 彻底移除 `overrideBrowserWindowOptions` 中对 Electron 未公开私有方法 `win.webContents.getWebPreferences` 的错误调用，根除主进程抛出 `TypeError` 崩溃弹窗的源头；
-   - 依据 Electron 规范，由子窗口原生自动继承父级会话环境，无需手动注入 partition；
-   - 将 `UPDATE_REPO` 同步更新为当前仓库 `xusofty-cyber/muse-ai-Desktop`，使客户端能正常检测新版发布。
+6. **Google OAuth 安全拦截攻克（v1.5.7 证据）**：
+   - 实施方案 A（Firefox UA 拟态与请求头脱敏）：针对发往 `accounts.google.com`、`myaccount.google.com` 及 `oauth2.googleapis.com` 的认证请求，统一将 User-Agent 拟态为标准桌面端 Firefox (`rv:132.0`)；
+   - 在主进程网络层全面剥离 Chromium 专属的 `sec-ch-ua` 系列 Client Hints，使请求特征与独立原生 Firefox 100% 吻合，直接绕过 Google 针对 Blink 嵌入式 WebView 的自动化环境嗅探；
+   - 增加 `--disable-blink-features=AutomationControlled` 隐藏自动化标志；
+   - 子窗口创建后通过 `did-navigate` 双向动态感知 Google 认证路由并无缝注入拟态 UA，彻底攻克“此浏览器或应用可能不安全”的拦截。
 
 ---
 
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - 连接器弹窗与崩溃问题彻底根治，版本升级至 `v1.5.6`。
-   - `main` 分支最新提交已推送到远端 `origin/main`（commit `fabb5f3`）。
-   - 发布标签 `v1.5.6` 已推送至远端，GitHub Actions 自动化多平台构建发布工作流已触发。
+   - Google 账号认证拦截方案 A 落地并经语法与请求拦截回归自测，版本升级至 `v1.5.7`。
+   - `main` 分支最新提交已推送到远端 `origin/main`（commit `0ea10b5`）。
+   - 发布标签 `v1.5.7` 已推送至远端，GitHub Actions 自动化多平台构建发布工作流已触发。
 2. **后续下一步**：
-   - [x] 移除 getWebPreferences 崩溃调用，规范弹窗选项。
-   - [x] 更新 UPDATE_REPO 仓库源地址。
+   - [x] 配置 Google OAuth Firefox UA 拟态与 Client Hints 脱敏。
    - [x] 合并至 `main` 分支并推送到远端。
-   - [x] 打上 `v1.5.6` 标签并推送触发 CI/CD 自动发布。
+   - [x] 打上 `v1.5.7` 标签并推送触发 CI/CD 自动发布。
    - [ ] 观察 GitHub Release 页面产物构建结果。
 
