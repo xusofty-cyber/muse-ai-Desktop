@@ -2,6 +2,28 @@ const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeI
 const path = require('path');
 const fs = require('fs');
 
+// ---- 核心加固 1 & 2: 单例锁前置 + 强制统一 UserData 目录 ------------------------
+// 1. 单例锁必须在任何文件读写与初始化之前执行，阻断第二实例引发的 SQLite/状态锁冲突与崩溃
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+  process.exit(0);
+}
+
+app.setName('Muse');
+if (process.platform === 'win32') {
+  // 2. 强制将 userData 锁定至 %APPDATA%\Muse，杜绝便携版（Portable）重定向到可执行文件同级目录导致会话空间分裂丢失
+  const fixedUserData = path.join(app.getPath('appData'), 'Muse');
+  app.setPath('userData', fixedUserData);
+
+  if (app.isPackaged) {
+    app.setAppUserModelId('ai.muse.desktop');
+  } else {
+    // 开发模式下使用 process.execPath 避免 Windows Toast 点击触发裸 electron.exe
+    app.setAppUserModelId(process.execPath);
+  }
+}
+
 const SITES = {
   muse: { name: 'Muse', url: 'https://muse.ai' },
   meta: { name: 'Meta AI', url: 'https://www.meta.ai/' },
@@ -171,17 +193,6 @@ let tray = null;
 let updateDownloaded = false;
 let pendingUpdate = null;
 
-app.setName('Muse');
-if (process.platform === 'win32') {
-  if (app.isPackaged) {
-    app.setAppUserModelId('ai.muse.desktop');
-  } else {
-    // 在开发模式下，若指定未注册系统快捷方式的 AUMID，Windows 点击通知时会退化为直接启动 node_modules\electron.exe (无参)
-    // 设置为 process.execPath 可使 Windows Toast 点击正确路由回当前运行实例
-    app.setAppUserModelId(process.execPath);
-  }
-}
-
 // Performance & Network flags
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
@@ -261,40 +272,85 @@ function defaultState() {
   };
 }
 const statePath = () => path.join(app.getPath('userData'), 'app-state.json');
-function loadState() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(statePath(), 'utf8'));
-    const merged = { ...defaultState(), ...raw };
-    merged.hotkeys = { ...DEFAULT_HOTKEYS, ...(raw.hotkeys || {}) };
-    merged.theme = raw.theme || 'dark';
-    merged.locale = (raw.locale === 'zh-CN' || raw.locale === 'en') ? raw.locale : detectDefaultLocale();
-    merged.ui = { ...defaultState().ui, ...(raw.ui || {}) };
-    merged.automation = {
-      ...defaultAutomation(),
-      ...(raw.automation || {}),
-      actions: { ...defaultAutomation().actions, ...((raw.automation && raw.automation.actions) || {}) },
-      sites: { ...((raw.automation && raw.automation.sites) || {}) },
-      siteActions: { ...((raw.automation && raw.automation.siteActions) || {}) },
-    };
-    merged.proxy = { ...defaultProxy(), ...(raw.proxy || {}) };
-    // 兼容历史老数据：若未显式指定 custom/direct，统一重置为 system 自适应模式
-    if (merged.proxy.mode !== 'custom' && merged.proxy.mode !== 'direct') {
-      merged.proxy.mode = 'system';
-      merged.proxy.enabled = false;
-    }
-    if (Array.isArray(merged.profiles) && merged.profiles.length > 0) {
-      merged.profiles = merged.profiles.map((p, idx) => ({
-        ...p,
-        color: p.color || AVATAR_COLORS[idx % AVATAR_COLORS.length],
-      }));
-    } else {
-      merged.profiles = [{ id: 'default', name: '账号 1', color: AVATAR_COLORS[0] }];
-    }
-    return merged;
-  } catch {
-    return defaultState();
+const stateBackupPath = () => path.join(app.getPath('userData'), 'app-state.json.bak');
+
+let isStateSafelyLoaded = false;
+
+function sanitizeAndMergeState(raw) {
+  const merged = { ...defaultState(), ...raw };
+  merged.hotkeys = { ...DEFAULT_HOTKEYS, ...(raw.hotkeys || {}) };
+  merged.theme = raw.theme || 'dark';
+  merged.locale = (raw.locale === 'zh-CN' || raw.locale === 'en') ? raw.locale : detectDefaultLocale();
+  merged.ui = { ...defaultState().ui, ...(raw.ui || {}) };
+  merged.automation = {
+    ...defaultAutomation(),
+    ...(raw.automation || {}),
+    actions: { ...defaultAutomation().actions, ...((raw.automation && raw.automation.actions) || {}) },
+    sites: { ...((raw.automation && raw.automation.sites) || {}) },
+    siteActions: { ...((raw.automation && raw.automation.siteActions) || {}) },
+  };
+  merged.proxy = { ...defaultProxy(), ...(raw.proxy || {}) };
+  // 兼容历史老数据：若未显式指定 custom/direct，统一重置为 system 自适应模式
+  if (merged.proxy.mode !== 'custom' && merged.proxy.mode !== 'direct') {
+    merged.proxy.mode = 'system';
+    merged.proxy.enabled = false;
   }
+  if (Array.isArray(merged.profiles) && merged.profiles.length > 0) {
+    merged.profiles = merged.profiles.map((p, idx) => ({
+      ...p,
+      color: p.color || AVATAR_COLORS[idx % AVATAR_COLORS.length],
+    }));
+  } else {
+    merged.profiles = [{ id: 'default', name: '账号 1', color: AVATAR_COLORS[0] }];
+  }
+  return merged;
 }
+
+function loadState() {
+  const primaryPath = statePath();
+  const backupPath = stateBackupPath();
+
+  // 1. 优先尝试读取主状态文件
+  try {
+    if (fs.existsSync(primaryPath)) {
+      const content = fs.readFileSync(primaryPath, 'utf8');
+      if (content && content.trim()) {
+        const raw = JSON.parse(content);
+        const parsed = sanitizeAndMergeState(raw);
+        isStateSafelyLoaded = true;
+        // 成功读取且包含 profiles，维护备份
+        if (parsed.profiles && parsed.profiles.length > 0) {
+          try { fs.copyFileSync(primaryPath, backupPath); } catch {}
+        }
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('[State] Main app-state.json corrupted or unreadable, attempting backup recovery:', err);
+  }
+
+  // 2. 主文件损坏或空文件时，触发容灾备份恢复，绝不直接抹空账号
+  try {
+    if (fs.existsSync(backupPath)) {
+      const backupContent = fs.readFileSync(backupPath, 'utf8');
+      if (backupContent && backupContent.trim()) {
+        const rawBackup = JSON.parse(backupContent);
+        const parsedBackup = sanitizeAndMergeState(rawBackup);
+        console.log('[State] Successfully restored profiles and settings from backup file.');
+        isStateSafelyLoaded = true;
+        try { fs.writeFileSync(primaryPath, JSON.stringify(parsedBackup, null, 2), 'utf8'); } catch {}
+        return parsedBackup;
+      }
+    }
+  } catch (backupErr) {
+    console.error('[State] Backup recovery also failed:', backupErr);
+  }
+
+  // 3. 首次启动主备均无时，采用默认状态
+  isStateSafelyLoaded = false;
+  return defaultState();
+}
+
 let state = loadState();
 const { nativeTheme } = require('electron');
 try {
@@ -303,14 +359,117 @@ try {
 if (!state.profiles.some((p) => p.id === state.activeProfileId)) {
   state.activeProfileId = state.profiles[0].id;
 }
+
+// 核心加固：原子写入与双备份，杜绝 0 字节截断损坏导致账号凭据与列表丢失
 function saveState() {
-  try { fs.writeFileSync(statePath(), JSON.stringify(state, null, 2)); } catch { /* ignore */ }
+  try {
+    const filePath = statePath();
+    const backupPath = stateBackupPath();
+    const tmpPath = filePath + '.tmp';
+    const content = JSON.stringify(state, null, 2);
+
+    // 1. 先安全落盘至临时文件
+    fs.writeFileSync(tmpPath, content, 'utf8');
+
+    // 2. 原子重命名替换
+    try {
+      fs.renameSync(tmpPath, filePath);
+    } catch {
+      fs.copyFileSync(tmpPath, filePath);
+      try { fs.unlinkSync(tmpPath); } catch {}
+    }
+
+    // 3. 含有有效账号时同步更新备份
+    if (state && Array.isArray(state.profiles) && state.profiles.length > 0) {
+      try { fs.copyFileSync(filePath, backupPath); } catch {}
+    }
+  } catch (err) {
+    console.error('[State] Failed to save state atomically:', err);
+  }
 }
-saveState();
+
+// 窗口 resize/move 等高频事件防抖版本，避免频繁磁盘 IO
+let saveStateDebounceTimer = null;
+function saveStateDebounced() {
+  if (saveStateDebounceTimer) clearTimeout(saveStateDebounceTimer);
+  saveStateDebounceTimer = setTimeout(() => {
+    saveState();
+  }, 300);
+}
+
+// 仅在明确安全加载或全新初始安装时执行首写，避免覆盖损坏现场
+if (isStateSafelyLoaded || !fs.existsSync(statePath())) {
+  saveState();
+}
 
 const activeProfile = () => state.profiles.find((p) => p.id === state.activeProfileId) || state.profiles[0];
 const partitionFor = (profileId) => `persist:muse-${profileId}`;
 const currentSite = () => SITES[state.site] || SITES.muse;
+
+// ---- 核心加固 4 & 5: Session Cookie 强持久化与安全刷盘 -----------------------
+const persistentCookieHooked = new Set();
+
+function setupSessionPersistence(profileId) {
+  if (!profileId || persistentCookieHooked.has(profileId)) return;
+  try {
+    const ses = session.fromPartition(partitionFor(profileId));
+    persistentCookieHooked.add(profileId);
+
+    // 监听 Cookie 变动：针对 Meta AI / Facebook / Muse 认证，若存在 session-only cookie（无过期时间）
+    // 自动补全长期有效时间（30天），阻止 Chromium 在退出应用时将其作为临时会话丢弃
+    ses.cookies.on('changed', (event, cookie, cause, removed) => {
+      if (removed) return;
+      const domain = (cookie.domain || '').toLowerCase();
+      const isTarget = domain.includes('meta.ai') || domain.includes('meta.com') ||
+                       domain.includes('facebook.com') || domain.includes('muse.ai');
+      // 如果属于认证域且是纯内存会话 Cookie（session: true 或没有 expirationDate）
+      if (isTarget && (cookie.session || !cookie.expirationDate)) {
+        const expirationDate = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+        const protocol = cookie.secure ? 'https' : 'http';
+        const host = domain.replace(/^\./, '');
+        const url = `${protocol}://${host}${cookie.path || '/'}`;
+        setTimeout(() => {
+          ses.cookies.set({
+            url,
+            name: cookie.name,
+            value: cookie.value,
+            domain: cookie.domain,
+            path: cookie.path,
+            secure: cookie.secure,
+            httpOnly: cookie.httpOnly,
+            sameSite: cookie.sameSite,
+            expirationDate,
+          }).catch(() => {});
+        }, 150);
+      }
+    });
+  } catch (err) {
+    console.warn(`[SessionPersistence] Failed to setup for ${profileId}:`, err);
+  }
+}
+
+async function flushAllSessions() {
+  try {
+    const promises = [];
+    if (state && Array.isArray(state.profiles)) {
+      for (const p of state.profiles) {
+        try {
+          const ses = session.fromPartition(partitionFor(p.id));
+          if (ses && ses.cookies && typeof ses.cookies.flushStore === 'function') {
+            promises.push(ses.cookies.flushStore().catch(() => {}));
+          }
+        } catch {}
+      }
+    }
+    if (session.defaultSession && typeof session.defaultSession.cookies.flushStore === 'function') {
+      promises.push(session.defaultSession.cookies.flushStore().catch(() => {}));
+    }
+    await Promise.all(promises);
+    console.log('[SessionFlush] All session cookies successfully flushed to disk.');
+  } catch (err) {
+    console.warn('[SessionFlush] Error flushing session cookies:', err);
+  }
+}
 
 function notify(title, body, onClick) {
   try {
@@ -883,7 +1042,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     const [width, height] = win.getSize();
     const [x, y] = win.getPosition();
     state.window = { width, height, x, y };
-    saveState();
+    saveStateDebounced();
   };
   win.on('resize', persistBounds);
   win.on('move', persistBounds);
@@ -990,9 +1149,15 @@ function switchAccount(id) {
   targetWin.show();
   targetWin.focus();
 
-  // 隐藏前一个窗口
+  // 隐藏前一个窗口并强制落盘会话 Cookie
   if (prevWin && prevWin !== targetWin && !prevWin.isDestroyed()) {
     prevWin.hide();
+    try {
+      const prevProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
+      if (prevProfile) {
+        session.fromPartition(partitionFor(prevProfile.id)).cookies.flushStore().catch(() => {});
+      }
+    } catch {}
   }
 
   buildTrayMenu();
@@ -1019,6 +1184,7 @@ function addProfile(customName) {
   saveState();
   setupDownloadHandler(id);
   setupPermissions(id);
+  setupSessionPersistence(id);
   applyProxyToSession(session.fromPartition(partitionFor(id)));
   switchAccount(id);
   notify('新增账号', `${profile.name} 已创建，已就绪独立会话环境。`);
@@ -2218,27 +2384,39 @@ function createTray() {
 }
 
 // ---- app lifecycle ----------------------------------------------------------
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-} else {
-  app.on('second-instance', showMainWindow);
+app.on('second-instance', showMainWindow);
 
-  app.whenReady().then(async () => {
-    console.log('[Init] Applying initial proxy settings...');
-    await applyProxySettings();
-    createMainWindow();
-    createTray();
-    registerHotkeys();
-    state.profiles.forEach((p) => { setupDownloadHandler(p.id); setupPermissions(p.id); });
-    setupAutoUpdate();
+app.whenReady().then(async () => {
+  console.log('[Init] Applying initial proxy settings...');
+  await applyProxySettings();
+  createMainWindow();
+  createTray();
+  registerHotkeys();
+  state.profiles.forEach((p) => {
+    setupDownloadHandler(p.id);
+    setupPermissions(p.id);
+    setupSessionPersistence(p.id);
   });
+  setupAutoUpdate();
+});
 
-  app.on('window-all-closed', () => {
-    // Keep running in the tray; quit explicitly from the tray menu.
-  });
+app.on('window-all-closed', () => {
+  // Keep running in the tray; quit explicitly from the tray menu.
+});
 
-  app.on('will-quit', () => {
-    globalShortcut.unregisterAll();
-  });
-}
+let isFlushingOnQuit = false;
+app.on('before-quit', async (e) => {
+  if (!isFlushingOnQuit) {
+    e.preventDefault();
+    isFlushingOnQuit = true;
+    console.log('[App] Flushing state and session cookies before exit...');
+    saveState();
+    await flushAllSessions();
+    app.quitting = true;
+    app.quit();
+  }
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
