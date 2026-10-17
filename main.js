@@ -92,6 +92,9 @@ const I18N_MAIN = {
     cut: 'Cut',
     copy: 'Copy',
     paste: 'Paste',
+    downloadComplete: 'Download complete',
+    downloadSaved: 'saved. Click to open the folder.',
+    downloadFailed: 'Download failed',
   },
   'zh-CN': {
     openMuse: '打开 Muse 主窗口',
@@ -147,6 +150,9 @@ const I18N_MAIN = {
     cut: '剪切',
     copy: '复制',
     paste: '粘贴',
+    downloadComplete: '下载完成',
+    downloadSaved: '已保存，点击查看文件。',
+    downloadFailed: '下载失败',
   },
 };
 const HOTKEY_ACTIONS = {
@@ -166,7 +172,15 @@ let updateDownloaded = false;
 let pendingUpdate = null;
 
 app.setName('Muse');
-app.setAppUserModelId('ai.muse.desktop');
+if (process.platform === 'win32') {
+  if (app.isPackaged) {
+    app.setAppUserModelId('ai.muse.desktop');
+  } else {
+    // 在开发模式下，若指定未注册系统快捷方式的 AUMID，Windows 点击通知时会退化为直接启动 node_modules\electron.exe (无参)
+    // 设置为 process.execPath 可使 Windows Toast 点击正确路由回当前运行实例
+    app.setAppUserModelId(process.execPath);
+  }
+}
 
 // Performance & Network flags
 app.commandLine.appendSwitch('enable-gpu-rasterization');
@@ -299,9 +313,27 @@ const partitionFor = (profileId) => `persist:muse-${profileId}`;
 const currentSite = () => SITES[state.site] || SITES.muse;
 
 function notify(title, body, onClick) {
-  const n = new Notification({ title, body });
-  if (onClick) n.on('click', onClick);
-  n.show();
+  try {
+    const iconPath = path.join(__dirname, 'assets', 'icon.png');
+    const n = new Notification({
+      title,
+      body,
+      icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    });
+    if (onClick) {
+      n.on('click', () => {
+        try {
+          showMainWindow();
+          onClick();
+        } catch (err) {
+          console.error('[Notify] click callback error:', err);
+        }
+      });
+    }
+    n.show();
+  } catch (err) {
+    console.error('[Notify] show notification error:', err);
+  }
 }
 
 // ---- windows ------------------------------------------------------------
@@ -1526,6 +1558,23 @@ ipcMain.handle('google-session-reset', async () => {
   return { ok: r1 || r2 };
 });
 
+// 下载文件交互与目录打开 IPC
+ipcMain.handle('download:open-folder', (e, filePath) => {
+  if (filePath && typeof filePath === 'string' && fs.existsSync(filePath)) {
+    shell.showItemInFolder(filePath);
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle('download:open-file', async (e, filePath) => {
+  if (filePath && typeof filePath === 'string' && fs.existsSync(filePath)) {
+    await shell.openPath(filePath);
+    return true;
+  }
+  return false;
+});
+
 // ---- downloads & right-click menu -------------------------------------------
 // Electron shows no context menu on its own, so links can only be clicked
 // (navigating to them) rather than saved. This adds Save link/image as,
@@ -1539,13 +1588,39 @@ function setupDownloadHandler(profileId) {
       title: 'Save file',
       defaultPath: path.join(app.getPath('downloads'), fileName),
     });
-    item.on('done', (e, state) => {
-      if (state === 'completed') {
-        notify('Download complete', `${fileName} saved. Click to open the folder.`, () =>
-          shell.showItemInFolder(item.getSavePath())
-        );
-      } else if (state !== 'cancelled') {
-        notify(`Download ${state}`, fileName);
+    item.on('done', (e, downloadState) => {
+      const savePath = item.getSavePath();
+      const fileSize = item.getTotalBytes();
+      const isSuccess = downloadState === 'completed';
+      const isForeground = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized();
+
+      if (isForeground) {
+        // 方案A：主窗口在前台且可见时，直接通过应用内精致 Toast 呈现，不打扰系统桌面
+        mainWindow.webContents.send('download:completed', {
+          state: downloadState,
+          fileName,
+          savePath,
+          fileSize,
+        });
+      } else {
+        // 方案A：主窗口处于后台或最小化到托盘时，使用 Windows 系统通知兜底
+        const t = I18N_MAIN[state.locale] || I18N_MAIN['zh-CN'] || I18N_MAIN.en;
+        if (isSuccess) {
+          notify(
+            t.downloadComplete,
+            `${fileName} ${t.downloadSaved}`,
+            () => {
+              if (savePath && fs.existsSync(savePath)) {
+                shell.showItemInFolder(savePath);
+              }
+            }
+          );
+        } else if (downloadState !== 'cancelled') {
+          notify(
+            t.downloadFailed,
+            `${fileName} (${downloadState})`
+          );
+        }
       }
     });
   });

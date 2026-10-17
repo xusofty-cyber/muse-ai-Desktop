@@ -60,6 +60,11 @@ const I18N_RENDERER = {
     badgeAll: '⚡ Auto Allow: ALL',
     badgeOn: '⚡ Auto Allow: ON',
     badgePaused: '⚡ Auto Allow: PAUSED',
+    downloadCompleteTitle: 'Download Completed',
+    downloadFailedTitle: 'Download Failed',
+    openFolder: 'Open Folder',
+    openFile: 'Open File',
+    closeToast: 'Close',
   },
   'zh-CN': {
     expandDock: '展开多账号栏',
@@ -102,6 +107,11 @@ const I18N_RENDERER = {
     badgeAll: '⚡ 自动同意: 全部',
     badgeOn: '⚡ 自动同意: 开启',
     badgePaused: '⚡ 自动同意: 暂停',
+    downloadCompleteTitle: '下载已完成',
+    downloadFailedTitle: '下载失败',
+    openFolder: '打开所在文件夹',
+    openFile: '打开文件',
+    closeToast: '关闭',
   },
 };
 
@@ -1774,5 +1784,190 @@ function injectExportButton() {}
     },
     true
   );
+
+  // ---- In-App Download Toast Component (Scheme A) ------------------------
+  function formatBytes(bytes) {
+    if (!bytes || typeof bytes !== 'number' || bytes <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    let size = bytes;
+    while (size >= 1024 && i < units.length - 1) {
+      size /= 1024;
+      i++;
+    }
+    return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+  }
+
+  function showDownloadToast(data) {
+    try {
+      const { state, fileName, savePath, fileSize } = data || {};
+      const isSuccess = state === 'completed';
+      const t = getT();
+
+      let container = document.getElementById('muse-download-toast-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'muse-download-toast-container';
+        container.style.cssText = `
+          position: fixed;
+          right: 24px;
+          bottom: 24px;
+          z-index: 2147483647;
+          display: flex;
+          flex-direction: column-reverse;
+          gap: 10px;
+          pointer-events: none;
+          max-width: 380px;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        `;
+        (document.body || document.documentElement).appendChild(container);
+      }
+
+      const isLight = currentTheme === 'light';
+      const toast = document.createElement('div');
+      toast.className = `muse-download-toast ${isLight ? 'light-mode' : 'dark-mode'}`;
+      toast.style.cssText = `
+        pointer-events: auto;
+        min-width: 300px;
+        max-width: 360px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: ${isLight ? 'rgba(255, 255, 255, 0.94)' : 'rgba(24, 28, 38, 0.94)'};
+        color: ${isLight ? '#1e293b' : '#f1f5f9'};
+        border: 1px solid ${isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.12)'};
+        box-shadow: 0 12px 32px rgba(0, 0, 0, ${isLight ? '0.15' : '0.45'});
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        transform: translateY(20px) scale(0.96);
+        opacity: 0;
+        transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      `;
+
+      const formattedSize = formatBytes(fileSize);
+      const sizeHtml = formattedSize ? `<span style="font-size:11px;opacity:0.65;font-weight:400;margin-left:6px;">(${formattedSize})</span>` : '';
+
+      const header = document.createElement('div');
+      header.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: 8px;';
+      header.innerHTML = `
+        <div style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:${isSuccess ? '#10b981' : '#ef4444'};">
+          <span>${isSuccess ? '✓' : '⚠'}</span>
+          <span>${isSuccess ? t.downloadCompleteTitle : t.downloadFailedTitle}</span>
+          ${sizeHtml}
+        </div>
+        <button class="muse-toast-close" title="${t.closeToast}" style="background:none;border:none;cursor:pointer;color:inherit;opacity:0.6;font-size:16px;padding:0 2px;line-height:1;display:flex;align-items:center;">&times;</button>
+      `;
+
+      const body = document.createElement('div');
+      body.style.cssText = `
+        font-size: 12.5px;
+        color: ${isLight ? '#334155' : '#cbd5e1'};
+        word-break: break-all;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-weight: 500;
+      `;
+      body.title = fileName || '';
+      body.textContent = fileName || '';
+
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display: flex; gap: 8px; margin-top: 4px;';
+
+      if (isSuccess && savePath) {
+        const btnFolder = document.createElement('button');
+        btnFolder.textContent = t.openFolder;
+        btnFolder.style.cssText = `
+          flex: 1;
+          padding: 6px 10px;
+          font-size: 11.5px;
+          font-weight: 600;
+          border-radius: 7px;
+          border: none;
+          cursor: pointer;
+          background: #3b82f6;
+          color: #ffffff;
+          transition: background 0.15s ease;
+        `;
+        btnFolder.onmouseenter = () => { btnFolder.style.background = '#2563eb'; };
+        btnFolder.onmouseleave = () => { btnFolder.style.background = '#3b82f6'; };
+        btnFolder.onclick = () => {
+          ipcRenderer.invoke('download:open-folder', savePath);
+          removeToast();
+        };
+        actions.appendChild(btnFolder);
+
+        const btnFile = document.createElement('button');
+        btnFile.textContent = t.openFile;
+        btnFile.style.cssText = `
+          padding: 6px 10px;
+          font-size: 11.5px;
+          font-weight: 600;
+          border-radius: 7px;
+          border: 1px solid ${isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)'};
+          cursor: pointer;
+          background: ${isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)'};
+          color: inherit;
+          transition: background 0.15s ease;
+        `;
+        btnFile.onmouseenter = () => { btnFile.style.background = isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)'; };
+        btnFile.onmouseleave = () => { btnFile.style.background = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)'; };
+        btnFile.onclick = () => {
+          ipcRenderer.invoke('download:open-file', savePath);
+          removeToast();
+        };
+        actions.appendChild(btnFile);
+      }
+
+      toast.appendChild(header);
+      toast.appendChild(body);
+      if (isSuccess && savePath) toast.appendChild(actions);
+
+      container.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.style.transform = 'translateY(0) scale(1)';
+        toast.style.opacity = '1';
+      });
+
+      let dismissTimer = null;
+      function startDismiss() {
+        dismissTimer = setTimeout(removeToast, 6000);
+      }
+      function stopDismiss() {
+        if (dismissTimer) clearTimeout(dismissTimer);
+      }
+
+      function removeToast() {
+        stopDismiss();
+        toast.style.transform = 'translateY(16px) scale(0.96)';
+        toast.style.opacity = '0';
+        setTimeout(() => {
+          if (toast.parentNode) toast.parentNode.removeChild(toast);
+        }, 280);
+      }
+
+      toast.onmouseenter = stopDismiss;
+      toast.onmouseleave = startDismiss;
+      startDismiss();
+
+      const closeBtn = header.querySelector('.muse-toast-close');
+      if (closeBtn) {
+        closeBtn.onclick = (e) => {
+          e.stopPropagation();
+          removeToast();
+        };
+      }
+    } catch (e) {
+      console.warn('[Preload] showDownloadToast error:', e);
+    }
+  }
+
+  ipcRenderer.on('download:completed', (e, data) => {
+    showDownloadToast(data);
+  });
 })();
+
 
