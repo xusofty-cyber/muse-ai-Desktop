@@ -64,9 +64,12 @@ const I18N_MAIN = {
     openMuse: 'Open Muse',
     quickChat: (hk) => `Quick chat  (${hk})`,
     switchTo: (name, hk) => `Switch to ${name}  (${hk})`,
-    metaAccounts: 'Meta AI Accounts',
-    nextMetaAccount: (hk) => `Next Meta AI account  (${hk})`,
-    addMetaAccount: 'Add Meta AI account…',
+    metaAccounts: 'Accounts',
+    multiAccounts: 'Accounts',
+    nextMetaAccount: (hk) => `Next account  (${hk})`,
+    nextAccount: (hk) => `Next account  (${hk})`,
+    addMetaAccount: 'Add account…',
+    addAccount: 'Add account…',
     automationMenu: 'Automation / Auto-Allow',
     masterAutomation: (hk) => `Master Automation  (${hk})`,
     allowAllActions: 'Allow all actions',
@@ -122,9 +125,12 @@ const I18N_MAIN = {
     openMuse: '打开 Muse 主窗口',
     quickChat: (hk) => `快捷会话窗口  (${hk})`,
     switchTo: (name, hk) => `切换至 ${name}  (${hk})`,
-    metaAccounts: 'Meta AI 多账号',
-    nextMetaAccount: (hk) => `下一个 Meta AI 账号  (${hk})`,
-    addMetaAccount: '添加 Meta AI 账号…',
+    metaAccounts: '多账号管理',
+    multiAccounts: '多账号管理',
+    nextMetaAccount: (hk) => `下一个账号  (${hk})`,
+    nextAccount: (hk) => `下一个账号  (${hk})`,
+    addMetaAccount: '添加新账号…',
+    addAccount: '添加新账号…',
     automationMenu: '自动化审批 (Auto-Allow)',
     masterAutomation: (hk) => `总控开关  (${hk})`,
     allowAllActions: '一键允许所有行为',
@@ -1187,71 +1193,34 @@ async function signOut() {
 function toggleSite() {
   state.site = state.site === 'muse' ? 'meta' : 'muse';
   saveState();
-  // Reuse the existing window when possible. This keeps the switch feeling
-  // like changing tabs instead of restarting the app.
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setTitle(`${currentSite().name} (Muse desktop)`);
-    mainWindow.loadURL(currentSite().url);
-    if (quickWindow && !quickWindow.isDestroyed()) {
-      quickWindow.setTitle(`${currentSite().name} quick chat`);
-      quickWindow.loadURL(currentSite().url);
+  for (const [id, win] of profileWindows.entries()) {
+    if (win && !win.isDestroyed()) {
+      win.setTitle(`${currentSite().name} (Muse desktop)`);
+      win.loadURL(currentSite().url);
     }
-    showMainWindow();
-  } else {
-    createMainWindow();
-    showMainWindow();
   }
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    quickWindow.setTitle(`${currentSite().name} quick chat`);
+    quickWindow.loadURL(currentSite().url);
+  }
+  showMainWindow();
   buildTrayMenu();
+  notify('切换站点', `已切换至 ${currentSite().name} (${currentSite().url})`);
 }
 
 function switchNextMetaAccount() {
-  if (!state.profiles.length) return;
-  const current = state.profiles.findIndex((p) => p.id === state.activeProfileId);
-  const next = state.profiles[(current + 1) % state.profiles.length];
-  switchMetaAccount(next.id);
+  nextAccount();
 }
 
 function addMetaAccount() {
-  const id = `p${Date.now()}`;
-  const profile = { id, name: `Meta AI Account ${state.profiles.length + 1}` };
-  state.profiles.push(profile);
-  state.activeProfileId = id;
-  state.site = 'meta';
-  saveState();
-  setupDownloadHandler(id);
-  setupPermissions(id);
-  closeWindows();
-  createMainWindow();
-  showMainWindow();
-  buildTrayMenu();
-  notify('New Meta AI account', `${profile.name} created. Sign in to Meta AI. Your other saved sessions remain untouched.`);
+  addProfile();
 }
 
 function switchMetaAccount() {
-  if (!state.profiles.length) return;
-  const current = state.profiles.findIndex((p) => p.id === state.activeProfileId);
-  const next = state.profiles[(current + 1) % state.profiles.length];
-  switchMetaAccountById(next.id);
+  nextAccount();
 }
 
 function switchMetaAccountById(id) {
-  if (!state.profiles.some((p) => p.id === id)) return;
-  if (id === state.activeProfileId) {
-    if (state.site !== 'meta') {
-      state.site = 'meta';
-      saveState();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.setTitle(`${currentSite().name} (Muse desktop)`);
-        mainWindow.loadURL(currentSite().url);
-      } else {
-        createMainWindow();
-      }
-      showMainWindow();
-    }
-    buildTrayMenu();
-    return;
-  }
-  state.site = 'meta';
   switchProfile(id);
 }
 
@@ -2186,24 +2155,17 @@ function buildTrayMenu() {
     }
   } catch { /* ignore */ }
 
-  const metaAccounts = state.profiles.map((p) => ({
-    label: p.name,
-    type: 'radio',
-    checked: p.id === state.activeProfileId && state.site === 'meta',
-    click: () => switchMetaAccountById(p.id),
-  }));
-
   const template = [
     { label: t.openMuse, click: showMainWindow },
     { label: t.quickChat(prettyHotkey(state.hotkeys.quick)), click: toggleQuickWindow },
     { label: t.switchTo(otherSite.name, prettyHotkey(state.hotkeys.site)), click: toggleSite },
     {
-      label: t.metaAccounts,
+      label: t.multiAccounts,
       submenu: [
-        ...metaAccounts,
+        ...profileItems,
         { type: 'separator' },
-        { label: t.nextMetaAccount(prettyHotkey(state.hotkeys.metaAccount)), click: switchMetaAccount },
-        { label: t.addMetaAccount, click: addMetaAccount },
+        { label: t.nextAccount(prettyHotkey(state.hotkeys.metaAccount)), click: nextAccount },
+        { label: t.addAccount, click: () => addProfile() },
       ],
     },
     { type: 'separator' },
