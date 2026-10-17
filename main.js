@@ -407,44 +407,16 @@ const partitionFor = (profileId) => `persist:muse-${profileId}`;
 const currentSite = () => SITES[state.site] || SITES.muse;
 
 // ---- 核心加固 4 & 5: Session Cookie 强持久化与安全刷盘 -----------------------
-const persistentCookieHooked = new Set();
+let sessionFlushTimer = null;
 
 function setupSessionPersistence(profileId) {
-  if (!profileId || persistentCookieHooked.has(profileId)) return;
-  try {
-    const ses = session.fromPartition(partitionFor(profileId));
-    persistentCookieHooked.add(profileId);
-
-    // 监听 Cookie 变动：针对 Meta AI / Facebook / Muse 认证，若存在 session-only cookie（无过期时间）
-    // 自动补全长期有效时间（30天），阻止 Chromium 在退出应用时将其作为临时会话丢弃
-    ses.cookies.on('changed', (event, cookie, cause, removed) => {
-      if (removed) return;
-      const domain = (cookie.domain || '').toLowerCase();
-      const isTarget = domain.includes('meta.ai') || domain.includes('meta.com') ||
-                       domain.includes('facebook.com') || domain.includes('muse.ai');
-      // 如果属于认证域且是纯内存会话 Cookie（session: true 或没有 expirationDate）
-      if (isTarget && (cookie.session || !cookie.expirationDate)) {
-        const expirationDate = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
-        const protocol = cookie.secure ? 'https' : 'http';
-        const host = domain.replace(/^\./, '');
-        const url = `${protocol}://${host}${cookie.path || '/'}`;
-        setTimeout(() => {
-          ses.cookies.set({
-            url,
-            name: cookie.name,
-            value: cookie.value,
-            domain: cookie.domain,
-            path: cookie.path,
-            secure: cookie.secure,
-            httpOnly: cookie.httpOnly,
-            sameSite: cookie.sameSite,
-            expirationDate,
-          }).catch(() => {});
-        }, 150);
-      }
-    });
-  } catch (err) {
-    console.warn(`[SessionPersistence] Failed to setup for ${profileId}:`, err);
+  if (!profileId) return;
+  // 建立定时安全刷盘：每 5 分钟将持久分区的会话与认证 Cookie 落盘至 SQLite 存储
+  // 严禁监听 cookies.on('changed') 篡改临时会话 Cookie 或 CSRF 令牌，避免破坏 OAuth 握手与被服务端踢出
+  if (!sessionFlushTimer) {
+    sessionFlushTimer = setInterval(() => {
+      flushAllSessions().catch(() => {});
+    }, 5 * 60 * 1000);
   }
 }
 
@@ -557,6 +529,7 @@ function isInternalSiteUrl(rawUrl) {
     const host = parsed.hostname.toLowerCase();
     if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
     if (host === 'meta.ai' || host.endsWith('.meta.ai')) return true;
+    if (host === 'meta.com' || host.endsWith('.meta.com')) return true;
     if (parsed.protocol === 'file:') return true;
     return false;
   } catch {
@@ -576,13 +549,18 @@ function isAuthOrConnectorUrl(rawUrl) {
     const pathname = parsed.pathname.toLowerCase();
     const search = parsed.search.toLowerCase();
 
-    // 1. 常见第三方连接器与 OAuth 认证域名
+    // 1. Meta / Facebook / Instagram 家族认证域名及通用 OAuth 域名
     const authHosts = [
-      'accounts.google.com',
-      'appleid.apple.com',
+      'meta.com',
       'auth.meta.com',
       'account.meta.com',
+      'family.meta.com',
+      'work.meta.com',
       'facebook.com',
+      'fb.com',
+      'instagram.com',
+      'accounts.google.com',
+      'appleid.apple.com',
       'github.com',
       'spotify.com',
       'accounts.spotify.com',
@@ -607,16 +585,22 @@ function isAuthOrConnectorUrl(rawUrl) {
       return true;
     }
 
-    // 2. 内部站点的连接器中转授权与登录路由
+    // 2. 内部站点的连接器中转授权与登录路由（含认证错误回调、状态码与授权换码）
     const isInternal = host === 'muse.ai' || host.endsWith('.muse.ai') ||
-                       host === 'meta.ai' || host.endsWith('.meta.ai');
+                       host === 'meta.ai' || host.endsWith('.meta.ai') ||
+                       host === 'meta.com' || host.endsWith('.meta.com');
     if (isInternal) {
       if (
         pathname.includes('/connector') ||
         pathname.includes('/auth') ||
         pathname.includes('/oauth') ||
         pathname.includes('/login') ||
-        search.includes('connector')
+        pathname.includes('/signin') ||
+        search.includes('connector') ||
+        search.includes('error=') ||
+        search.includes('code=') ||
+        search.includes('state=') ||
+        search.includes('token=')
       ) {
         return true;
       }
