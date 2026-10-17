@@ -11,6 +11,7 @@ if (!gotLock) {
 }
 
 app.setName('Muse');
+const APP_ICON_PATH = path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
 if (process.platform === 'win32') {
   // 2. 强制将 userData 锁定至 %APPDATA%\Muse，杜绝便携版（Portable）重定向到可执行文件同级目录导致会话空间分裂丢失
   const fixedUserData = path.join(app.getPath('appData'), 'Muse');
@@ -21,6 +22,29 @@ if (process.platform === 'win32') {
   } else {
     // 开发模式下使用 process.execPath 避免 Windows Toast 点击触发裸 electron.exe
     app.setAppUserModelId(process.execPath);
+  }
+
+  // 修复便携版或旧版本在开始菜单残留的死链快捷方式（指向已删除的 Temp 目录），防止任务栏图标回退到通用空白图标
+  try {
+    const startMenuLnk = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Muse.lnk');
+    if (fs.existsSync(startMenuLnk)) {
+      const lnk = shell.readShortcutLink(startMenuLnk);
+      if (lnk && lnk.target && !fs.existsSync(lnk.target)) {
+        const realExe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+        if (realExe && fs.existsSync(realExe)) {
+          shell.writeShortcutLink(startMenuLnk, 'update', {
+            target: realExe,
+            icon: realExe,
+            iconIndex: 0,
+            appUserModelId: 'ai.muse.desktop',
+          });
+        } else {
+          fs.unlinkSync(startMenuLnk);
+        }
+      }
+    }
+  } catch (err) {
+    // 忽略快捷方式容错异常
   }
 }
 
@@ -981,6 +1005,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     height: saved.height || 800,
     x: typeof saved.x === 'number' ? saved.x : undefined,
     y: typeof saved.y === 'number' ? saved.y : undefined,
+    icon: APP_ICON_PATH,
     title: `${currentSite().name} (Muse desktop)`,
     autoHideMenuBar: true,
     backgroundColor: '#141414',
@@ -990,6 +1015,9 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
       partition: partitionFor(profileId),
     },
   });
+  if (process.platform === 'win32' && fs.existsSync(APP_ICON_PATH)) {
+    win.setIcon(APP_ICON_PATH);
+  }
 
   win.webContents.setUserAgent(CHROME_UA);
   win.loadURL(currentSite().url);
@@ -1057,6 +1085,7 @@ function createQuickWindow() {
   quickWindow = new BrowserWindow({
     width: 430,
     height: 600,
+    icon: APP_ICON_PATH,
     title: `${currentSite().name} quick chat`,
     frame: false,
     alwaysOnTop: true,
@@ -1417,6 +1446,7 @@ function openHotkeySettings(initialTab) {
   hotkeyWindow = new BrowserWindow({
     width: 480,
     height: 660,
+    icon: APP_ICON_PATH,
     title: 'Customize hotkeys & settings',
     resizable: false,
     minimizable: false,
@@ -1424,6 +1454,9 @@ function openHotkeySettings(initialTab) {
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload-settings.js') },
   });
+  if (process.platform === 'win32' && fs.existsSync(APP_ICON_PATH)) {
+    hotkeyWindow.setIcon(APP_ICON_PATH);
+  }
   hotkeyWindow.loadFile(path.join(__dirname, 'hotkeys.html'));
   hotkeyWindow.webContents.on('did-finish-load', () => {
     if (initialTab) hotkeyWindow.webContents.send('switch-tab', initialTab);
