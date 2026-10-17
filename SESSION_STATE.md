@@ -68,15 +68,31 @@
 
 ---
 
+7. **下载提示不友好与空白 Electron 窗口根治（v1.5.9 证据）**：
+   - **根因消除**：在 Windows 开发模式下，设置 `app.setAppUserModelId(process.execPath)`，彻底消除因 Windows 找不到快捷方式退化执行无参 `node_modules\electron.exe` 弹出默认空白界面的缺陷；
+   - **方案 A 落地（双层提示机制）**：主窗口前台可见时显示应用内高质感 Toast，后台时使用 Windows 系统通知兜底，文案中英双语对齐；已合并发布至 `v1.5.9`。
+
+8. **账号自动退出登录与持久化加固（v1.5.10 证据）**：
+   - **单例锁最前置**：将 `app.requestSingleInstanceLock()` 移至 `main.js` 最顶部执行，阻断多实例并发竞争锁坏 SQLite 数据库；
+   - **UserData 路径统一**：在 Windows 上强制锁定为 `%APPDATA%\Muse`，彻底消除便携版（Portable）与安装版数据分裂漂移；
+   - **状态读写原子化与双备份**：采用 `tmp + renameSync` 原子写入与防抖，并在主文件损坏时自动从 `.bak` 备份恢复，严禁抹除账号；
+   - **Session Cookie 刷盘**：在 `before-quit` 与账号切换时对全部存活 session 显式调用 `flushStore()`；
+   - 已合并至 `main` 主分支并发布标签 `v1.5.10`。
+
+9. **Meta 登录 CSRF Token 失效与外链重定向根治（v1.5.11 证据）**：
+   - **根因消除**：彻底废除 `setupSessionPersistence` 中监听 `ses.cookies.on('changed')` 强行篡改会话 Cookie 的逻辑，杜绝并发覆写 Meta 握手 CSRF Token 导致的 `CSRF token expired or missing` 及账号被 Meta 服务端降级踢出；改为 5 分钟定时安全调用原生无害的 `flushAllSessions()` 落盘；
+   - **认证放行与域名补全**：在 `isAuthOrConnectorUrl` 中扩充 Meta 家族域名（`meta.com`, `auth.meta.com`, `account.meta.com`, `facebook.com`, `fb.com`, `instagram.com`），并放行 `error=`, `code=`, `state=`, `token=` 等认证回调参数；在 `isInternalSiteUrl` 中将 `meta.com` 纳入内部受信任域；
+   - **测试证据**：Node.js 语法校验 Exit Code 0，全矩阵 URL 路由与认证判定单元回归测试全部 PASS。
+
+---
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - Google 账号认证拦截方案 A 落地并经语法与请求拦截回归自测，版本升级至 `v1.5.7`。
-   - `main` 分支最新提交已推送到远端 `origin/main`（commit `0ea10b5`）。
-   - 发布标签 `v1.5.7` 已推送至远端，GitHub Actions 自动化多平台构建发布工作流已触发。
+   - 修复已完成并提交至临时分支 `fix/meta-login-csrf-and-navigation`（commit `bde0dd3`）。
 2. **后续下一步**：
-   - [x] 配置 Google OAuth Firefox UA 拟态与 Client Hints 脱敏。
-   - [x] 合并至 `main` 分支并推送到远端。
-   - [x] 打上 `v1.5.7` 标签并推送触发 CI/CD 自动发布。
-   - [ ] 观察 GitHub Release 页面产物构建结果。
+   - [x] 完成代码修复与单元回归自测全部通过。
+   - [ ] 征询用户授权合并至 `main` 主分支并发布版本 `v1.5.11`。
+
+
 
