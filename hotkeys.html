@@ -820,22 +820,42 @@ function renderAutomationUI() {
         ['code_execution', 'Code'],
         ['media_permissions', 'Media']
       ];
-      div.innerHTML = `
-        <div style="flex:1;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <strong>${host}</strong>
-            <input type="checkbox" ${allowed ? 'checked' : ''} class="toggle-switch site-master" title="Always allow on this website">
-          </div>
-          <div style="display:flex; flex-wrap:wrap; gap:7px 10px; margin-top:6px;">
-            ${actionDefs.map(([key, label]) => `
-              <label style="display:flex; align-items:center; gap:4px; color:#b9bfcc; font-size:11px;">
-                <input type="checkbox" data-action="${key}" ${rules[key] !== undefined ? (rules[key] ? 'checked' : '') : (autoState.actions?.[key] ? 'checked' : '')}>
-                ${label}
-              </label>`).join('')}
-          </div>
-        </div>
-        <button class="site-delete" style="background:none; border:none; color:#ff9a9a; cursor:pointer; font-size:13px;">✕</button>
-      `;
+      // 用 DOM API 构建且 host 一律走 textContent (v1.5.14): 此前 host 未转义
+      // 拼进 innerHTML, 是「站点键入库 -> 设置页执行」的存储型 XSS 链一环。
+      const body = document.createElement('div');
+      body.style.flex = '1';
+      const head = document.createElement('div');
+      head.style.cssText = 'display:flex; align-items:center; gap:8px;';
+      const strong = document.createElement('strong');
+      strong.textContent = host;
+      const master = document.createElement('input');
+      master.type = 'checkbox';
+      master.className = 'toggle-switch site-master';
+      master.title = 'Always allow on this website';
+      master.checked = !!allowed;
+      head.appendChild(strong);
+      head.appendChild(master);
+      const acts = document.createElement('div');
+      acts.style.cssText = 'display:flex; flex-wrap:wrap; gap:7px 10px; margin-top:6px;';
+      for (const [key, label] of actionDefs) {
+        const lab = document.createElement('label');
+        lab.style.cssText = 'display:flex; align-items:center; gap:4px; color:#b9bfcc; font-size:11px;';
+        const inp = document.createElement('input');
+        inp.type = 'checkbox';
+        inp.dataset.action = key;
+        inp.checked = rules[key] !== undefined ? !!rules[key] : !!(autoState.actions && autoState.actions[key]);
+        lab.appendChild(inp);
+        lab.appendChild(document.createTextNode(' ' + label));
+        acts.appendChild(lab);
+      }
+      body.appendChild(head);
+      body.appendChild(acts);
+      const delBtnEl = document.createElement('button');
+      delBtnEl.className = 'site-delete';
+      delBtnEl.style.cssText = 'background:none; border:none; color:#ff9a9a; cursor:pointer; font-size:13px;';
+      delBtnEl.textContent = '✕';
+      div.appendChild(body);
+      div.appendChild(delBtnEl);
       const chk = div.querySelector('.site-master');
       chk.onchange = (e) => {
         const checked = e.target.checked;

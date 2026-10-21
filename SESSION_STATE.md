@@ -99,10 +99,20 @@
    - **修复落地**：新增 `sanitizeWindowBounds`（加载时钳制尺寸/坐标）与 `ensureBoundsVisible`（显示前按当前全部显示器校验交叠、屏幕外自动居中主屏）；`persistBounds` 在最小化/隐藏时不再落盘，并新增按账号分开的 `windowByProfile` 几何存储（全局 `window` 保留兼容）；新建/复用/切换窗口的全部 setBounds 入口统一过校验；新增 `showWindowSafely`（修几何→restore→show→moveTop→focus→返回真实可见性），`showMainWindow` 在 show 后仍不可见时销毁楔死窗口并以安全几何重建；`createMainWindow` 的 ready-to-show 改为捕获本次创建的窗口对象（原闭包引用全局 mainWindow，切账号竞态下会 show 错窗）；profile 窗口新增 `closed` 清理（Map 与 mainWindow 同步置空）；主窗口/设置窗口 `setIcon` 平台条件由 `win32` 放宽为非 darwin，Linux X11 同步生效；`package.json` Linux 配置对齐桌面匹配：`executableName: "muse"` 与 `desktop.StartupWMClass: "muse"`，使 .desktop 文件名、图标名与窗口 app_id 三者一致。
    - **测试证据**：`node --check` 对 main.js / preload-chat-export.js / preload-settings.js 全部通过；以 Electron 桩加载 main.js 并预置被写坏的 app-state.json（width 40 / height 99999 / x -99999 等）做冒烟测试 9 项全 PASS：坏几何加载即被钳制并写回、屏幕外坐标自动居中主屏、屏幕内坐标原样保留、无坐标居中、垃圾值清空。Ubuntu 实机（Wayland/Xorg 双会话、Dock 图标归并、多账号秒切唤回）待真机复核后发布 v1.5.13。
 
+12. **评审 P0 第一批修复（v1.5.14 证据）**：
+   - **背景**：v1.5.13 合并后由 5 位专家并行评审 main，共 5 条 P0 / 9 条 P1 / 16 条 P2；本批按报告顺序修安全止血三条 + 快捷窗串号 + v1.5.13 自愈缺陷，其余 P1/P2 留待后续批次。
+   - **P0-1 证书**：删除 `ignore-certificate-errors` 与 `allow-insecure-localhost` 开关，删除 `certificate-error` 无条件 `callback(true)` 放行，恢复 Chromium 默认证书校验。
+   - **P0-2 更新器**：自更新全链路加 `isPortableWindowsBuild()`（win32 + PORTABLE_EXECUTABLE_FILE）门控——非便携形态不启动后台检查、手动检查改为对话框引导至 Releases 页、install 入口二次设防；下载后强制校验 GitHub 资产 `digest` 的 SHA-256（缺失/不符即中止）；落盘文件名改 basename 防路径越界；PowerShell spawn 补 `error` 监听。
+   - **P0-3 权限倒置**：聊天 preload 删除 `automationAPI`、`museExport` 两个主世界桥，`offlineAPI` 仅在 file:// 页面暴露；聊天抓取改为「主进程经 IPC 点名 → preload 隔离世界执行 → 回传结果」（scrapeChatViaPreload，30s 超时）；主进程新增 `isTrustedIpcSender`（自有窗口 + 主 frame + https muse/meta 或 file://）并接入全部 29 处 IPC 注册（静态审计 0 未守卫）；`automation-set/toggle-site/set-site-action` 的站点键加 `isValidHostname` 校验，`proxy-set` 对 custom 模式加 type/port/host 字段校验；`hotkeys.html` 站点规则列表改 DOM API + textContent 构建，断掉存储型 XSS 链。
+   - **P0-4 快捷窗串号**：quickWindow 创建时显式绑定 partition 并记录所属 profile；`switchAccount` 与 `toggleQuickWindow` 在账号不一致时先销毁再按当前账号重建。
+   - **自愈修正（回应评审对 v1.5.13 的意见）**：showMainWindow 不再同步判死，改为 250ms+250ms 两段异步复查（先居中重试、仍不可见才重建）；ensureBoundsVisible 居中改以主屏为基准，可见判据升级为「标题栏 40px 落在可用区且交叠面积 ≥30%」；persistBounds 落盘改为存真实尺寸（钳制只留给加载/显示校验），并跳过最大化状态。
+   - **顺带**：package.json 升 1.5.14，package-lock 两处版本字段由漂移的 1.4.1 同步为 1.5.14。
+   - **测试证据**：`node --check` 三个 JS 全过；IPC 守卫静态审计 29/29 覆盖；Electron 桩冒烟 11 项全 PASS（标题栏飘出居中、只剩边缘居中、正常保留、屏幕外居中、hostname 合法/XSS/空格/前导横线/无后缀/空 六类判定）；hotkeys.html 内联脚本编译检查通过。Ubuntu/Windows 实机回归（证书校验开启后代理场景、便携版更新 digest 校验、快捷窗切号、设置页站点列表渲染）待真机复核。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - `v1.5.13` 修复（Ubuntu 多账号窗口唤不回 + Dock 图标匹配）已完成代码与桩冒烟测试，待 Ubuntu 实机复核后合并发布。
+   - `v1.5.13` 已合并 main（d2ba306），正式发版与 Ubuntu 实机复核待进行；`v1.5.14` 第一批修复（评审 P0 安全止血 + 快捷窗串号 + 自愈修正）已完成代码与桩冒烟测试，在分支 fix/p0-security-and-session-batch1 待合并与实机回归。
 2. **后续下一步**：
    - [x] 完成代码修复与语法校验。
    - [x] 合并至 `main` 主分支并推送到远端。

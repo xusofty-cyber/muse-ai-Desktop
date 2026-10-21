@@ -227,8 +227,6 @@ let pendingUpdate = null;
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('disable-quic');
-app.commandLine.appendSwitch('ignore-certificate-errors');
-app.commandLine.appendSwitch('allow-insecure-localhost');
 // 关键：禁用后量子密钥协商(Kyber)与ECH拓展，解决Clash/代理软件在TLS 1.3 ClientHello拆包时触发的 net_error -100 (ERR_CONNECTION_CLOSED)
 app.commandLine.appendSwitch('disable-features', 'PostQuantumKeyAgreement,EncryptedClientHello');
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
@@ -238,10 +236,10 @@ const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 
 const FIREFOX_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0';
 app.userAgentFallback = CHROME_UA;
 
-app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
-  event.preventDefault();
-  callback(true);
-});
+// 安全 (v1.5.14): 已删除 ignore-certificate-errors 开关与 certificate-error
+// 无条件放行回调。旧实现等于对所有域名废掉 TLS 校验, 承载 OAuth 登录与多账号
+// 会话的客户端一旦走被劫持的代理/Wi-Fi 即可被中间人窃取全部 Cookie。
+// 本地代理的证书问题应在系统信任库层面解决, 不在应用内全局关检。
 
 // ---- persisted state ----------------------------------------------------
 const AVATAR_COLORS = [
@@ -277,7 +275,13 @@ function ensureBoundsVisible(bounds, displays) {
   const b = sanitizeWindowBounds(bounds);
   let list = displays;
   if (!list) {
-    try { list = require('electron').screen.getAllDisplays(); } catch { list = []; }
+    try {
+      const scr = require('electron').screen;
+      const all = scr.getAllDisplays();
+      const primary = scr.getPrimaryDisplay();
+      // getAllDisplays()[0] 不保证是主屏; 居中兜底必须以主屏为基准并排在首位
+      list = primary ? [primary, ...all.filter((d) => d.id !== primary.id)] : all;
+    } catch { list = []; }
   }
   if (!list || !list.length) return b;
   const width = b.width || 1200;
@@ -288,7 +292,12 @@ function ensureBoundsVisible(bounds, displays) {
       if (!wa) return false;
       const overlapX = Math.min(b.x + width, wa.x + wa.width) - Math.max(b.x, wa.x);
       const overlapY = Math.min(b.y + height, wa.y + wa.height) - Math.max(b.y, wa.y);
-      return overlapX >= 120 && overlapY >= 80;
+      if (overlapX <= 0 || overlapY <= 0) return false;
+      // 标题栏 (顶部 40px) 必须落在可用区内, 且交叠面积 >= 窗口的 30%:
+      // 只剩一条边在屏内的窗口对用户等于不存在, 不能判为可见
+      const titleVisible = (b.y + 40 > wa.y) && (b.y < wa.y + wa.height) && overlapX >= 120;
+      const areaRatio = (overlapX * overlapY) / (width * height);
+      return titleVisible && areaRatio >= 0.3;
     });
     if (visible) { b.width = width; b.height = height; return b; }
   }
@@ -1120,11 +1129,15 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
 
   const persistBounds = () => {
     if (!win || win.isDestroyed()) return;
-    // 最小化/隐藏状态下的几何是假值 (合成器占位坐标), 绝不落盘
-    if (win.isMinimized() || !win.isVisible()) return;
+    // 最小化/隐藏状态下的几何是假值 (合成器占位坐标), 绝不落盘;
+    // 最大化时的尺寸也不是普通窗口几何, 一并跳过, 避免还原后得到近全屏窗口
+    if (win.isMinimized() || !win.isVisible() || win.isMaximized()) return;
     const [width, height] = win.getSize();
     const [x, y] = win.getPosition();
-    const clean = sanitizeWindowBounds({ width, height, x, y });
+    // 落盘存用户真实尺寸 (仅做有限性/退化过滤); 尺寸钳制只在加载与显示校验时做,
+    // 否则用户的小窗口会被越存越大 (v1.5.13 的副作用, 本版修正)
+    if (!(width >= 50 && height >= 50) || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    const clean = { width: Math.round(width), height: Math.round(height), x: Math.round(x), y: Math.round(y) };
     state.window = clean;
     if (!state.windowByProfile || typeof state.windowByProfile !== 'object') state.windowByProfile = {};
     state.windowByProfile[profileId] = clean;
@@ -1171,7 +1184,20 @@ function createMainWindow() {
   });
 }
 
+let quickWindowProfileId = null;
+function destroyQuickWindow() {
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    try { quickWindow.removeAllListeners('closed'); } catch {}
+    try { quickWindow.destroy(); } catch {}
+  }
+  quickWindow = null;
+  quickWindowProfileId = null;
+}
+
 function createQuickWindow() {
+  // partition 必须显式绑定创建瞬间的活动账号; 此前用 webPrefs() 的隐含值
+  // 在创建后即冻结, 切账号后快捷窗仍以旧账号登录态工作 (串号, 评审 P0-4)
+  quickWindowProfileId = state.activeProfileId;
   quickWindow = new BrowserWindow({
     width: 430,
     height: 600,
@@ -1183,7 +1209,7 @@ function createQuickWindow() {
     resizable: true,
     show: false,
     backgroundColor: '#141414',
-    webPreferences: webPrefs(),
+    webPreferences: { ...webPrefs(), partition: partitionFor(state.activeProfileId) },
   });
   quickWindow.webContents.setUserAgent(CHROME_UA);
   quickWindow.loadURL(currentSite().url);
@@ -1191,7 +1217,7 @@ function createQuickWindow() {
   setupExternalLinkHandler(quickWindow);
   // Spotlight-style: hide when focus is lost.
   quickWindow.on('blur', () => { if (quickWindow) quickWindow.hide(); });
-  quickWindow.on('closed', () => { quickWindow = null; });
+  quickWindow.on('closed', () => { quickWindow = null; quickWindowProfileId = null; });
 }
 
 function closeWindows() {
@@ -1199,6 +1225,7 @@ function closeWindows() {
     quickWindow.removeAllListeners('closed');
     quickWindow.close();
     quickWindow = null;
+    quickWindowProfileId = null;
   }
   for (const win of profileWindows.values()) {
     if (win && !win.isDestroyed()) {
@@ -1211,6 +1238,8 @@ function closeWindows() {
 }
 
 function toggleQuickWindow() {
+  // 绑定的账号与当前活动账号不一致时先销毁, 下一句按当前账号重建
+  if (quickWindow && quickWindowProfileId !== state.activeProfileId) destroyQuickWindow();
   if (!quickWindow) createQuickWindow();
   if (quickWindow.isVisible()) {
     quickWindow.hide();
@@ -1232,21 +1261,31 @@ function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     mainWindow = getOrCreateProfileWindow(state.activeProfileId);
   }
-  if (!showWindowSafely(mainWindow)) {
-    // 窗口对象已楔死 (show 后仍不可见): 销毁并以安全几何重建活动账号窗口。
-    // 托盘单击/菜单打开主窗口/切换站点/二次启动全部汇聚到这里, 这里必须有兜底,
-    // 否则任何一种唤回操作都会一起失效, 只能靠彻底退出应用自救。
-    try {
-      const stale = mainWindow;
-      if (profileWindows.get(state.activeProfileId) === stale) {
-        profileWindows.delete(state.activeProfileId);
-      }
-      stale.removeAllListeners('close');
-      stale.destroy();
-    } catch {}
-    mainWindow = getOrCreateProfileWindow(state.activeProfileId);
-    showWindowSafely(mainWindow);
-  }
+  if (showWindowSafely(mainWindow)) return;
+  // 不能在 show() 的同一同步 tick 里以 isVisible() 判死: Wayland/VMware 合成器
+  // 异步映射、窗口位于其他工作区时, 健康窗口也会短暂返回 false, 立即销毁会
+  // 丢掉该账号未发送的输入 (v1.5.13 评审意见)。改为两段异步复查: 250ms 后
+  // 仍不可见先居中重试, 再过 250ms 仍不可见才判定楔死并重建。
+  const win = mainWindow;
+  setTimeout(() => {
+    if (!win || win.isDestroyed() || mainWindow !== win || win.isVisible()) return;
+    try { win.setBounds(ensureBoundsVisible(win.getBounds())); } catch {}
+    win.show();
+    win.focus();
+    setTimeout(() => {
+      if (!win || win.isDestroyed() || mainWindow !== win || win.isVisible()) return;
+      try {
+        if (profileWindows.get(state.activeProfileId) === win) {
+          profileWindows.delete(state.activeProfileId);
+        }
+        win.removeAllListeners('close');
+        win.destroy();
+      } catch {}
+      if (mainWindow === win) mainWindow = null;
+      mainWindow = getOrCreateProfileWindow(state.activeProfileId);
+      showWindowSafely(mainWindow);
+    }, 250);
+  }, 250);
 }
 
 // ---- profiles & accounts (Zero-Reload Multi-Tab Switching) ---------------
@@ -1268,6 +1307,10 @@ function switchAccount(id) {
   mainWindow = targetWin;
 
   showWindowSafely(targetWin);
+
+  // 快捷窗的 partition 在创建时绑定, 切账号后必须销毁, 否则它会继续以
+  // 上一个账号的登录态响应 (评审 P0-4); 下次打开时按新账号重建
+  if (quickWindowProfileId !== id) destroyQuickWindow();
 
   // 隐藏前一个窗口并强制落盘会话 Cookie
   if (prevWin && prevWin !== targetWin && !prevWin.isDestroyed()) {
@@ -1565,7 +1608,38 @@ function openHotkeySettings(initialTab) {
   hotkeyWindow.on('closed', () => { hotkeyWindow = null; });
 }
 
-ipcMain.handle('hotkeys-get', () => {
+// ---- IPC 来源校验 (v1.5.14, 评审 P0-3) --------------------------------------
+// 此前全部 ipcMain 通道零 sender 校验, 且聊天 preload 把 automationAPI 等桥
+// 暴露给网页主世界: 任何进入窗口的页面 (含弹窗放行的第三方站点) 都能调用
+// 改代理/删账号/全开 Auto-Allow 等特权通道。现在统一门禁: 只接受本应用自有
+// 窗口 (账号窗/快捷窗/设置窗, 不含 OAuth 等子弹窗) 的主 frame, 且页面必须是
+// https 的 muse.ai/meta.ai 或本地 file:// 页面 (离线页/设置页)。
+function isValidHostname(name) {
+  if (!name || typeof name !== 'string') return false;
+  const h = name.trim().toLowerCase();
+  return h.length <= 253 && /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(h);
+}
+
+function isTrustedIpcSender(e) {
+  try {
+    if (!e || !e.sender || (typeof e.sender.isDestroyed === 'function' && e.sender.isDestroyed())) return false;
+    const frame = e.senderFrame;
+    if (!frame || frame !== e.sender.mainFrame) return false;
+    const owned = [mainWindow, quickWindow, hotkeyWindow, ...profileWindows.values()];
+    if (!owned.some((w) => w && !w.isDestroyed() && w.webContents === e.sender)) return false;
+    const raw = frame.url || '';
+    if (raw.startsWith('file://')) return true;
+    const u = new URL(raw);
+    if (u.protocol !== 'https:') return false;
+    const h = u.hostname.toLowerCase();
+    return h === 'muse.ai' || h.endsWith('.muse.ai') || h === 'meta.ai' || h.endsWith('.meta.ai');
+  } catch { return false; }
+}
+
+const denyUntrusted = (e) => !isTrustedIpcSender(e);
+
+ipcMain.handle('hotkeys-get', (e) => {
+  if (denyUntrusted(e)) return undefined;
   const currentLabels = HOTKEY_LABELS[state.locale] || HOTKEY_LABELS.en;
   return {
     bindings: { ...state.hotkeys },
@@ -1573,15 +1647,16 @@ ipcMain.handle('hotkeys-get', () => {
     defaults: { ...DEFAULT_HOTKEYS },
   };
 });
-ipcMain.handle('hotkeys-set', (e, bindings) => applyHotkeys(bindings || {}));
+ipcMain.handle('hotkeys-set', (e, bindings) => (denyUntrusted(e) ? { ok: false, error: 'untrusted sender' } : applyHotkeys(bindings || {})));
 
 // Automation IPC handlers
-ipcMain.handle('automation-get', () => ({
+ipcMain.handle('automation-get', (e) => (denyUntrusted(e) ? undefined : ({
   ...state.automation,
   currentSiteUrl: mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.getURL() : '',
-}));
+})));
 
 ipcMain.handle('automation-set', (e, updates) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (!updates || typeof updates !== 'object') return { ok: false };
   if (typeof updates.enabled === 'boolean') state.automation.enabled = updates.enabled;
   if (typeof updates.autoAllowAll === 'boolean') state.automation.autoAllowAll = updates.autoAllowAll;
@@ -1590,10 +1665,15 @@ ipcMain.handle('automation-set', (e, updates) => {
     state.automation.actions = { ...state.automation.actions, ...updates.actions };
   }
   if (updates.sites && typeof updates.sites === 'object') {
-    state.automation.sites = { ...updates.sites };
+    // 站点键必须是合法 hostname: 脏键会被持久化并在设置页渲染 (评审 P0-3 的 XSS 链)
+    state.automation.sites = Object.fromEntries(
+      Object.entries(updates.sites).filter(([k]) => isValidHostname(k)).map(([k, v]) => [k.toLowerCase(), !!v])
+    );
   }
   if (updates.siteActions && typeof updates.siteActions === 'object') {
-    state.automation.siteActions = { ...updates.siteActions };
+    state.automation.siteActions = Object.fromEntries(
+      Object.entries(updates.siteActions).filter(([k]) => isValidHostname(k)).map(([k, v]) => [k.toLowerCase(), (v && typeof v === 'object') ? v : {}])
+    );
   }
   saveState();
   buildTrayMenu();
@@ -1601,13 +1681,15 @@ ipcMain.handle('automation-set', (e, updates) => {
   return { ok: true, state: state.automation };
 });
 
-ipcMain.handle('automation-toggle', () => {
+ipcMain.handle('automation-toggle', (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   toggleAutomationMaster();
   return { ok: true, enabled: state.automation.enabled };
 });
 
 ipcMain.handle('automation-toggle-site', (e, hostname, enabled) => {
-  if (!hostname) return { ok: false, error: 'No hostname provided' };
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!isValidHostname(hostname)) return { ok: false, error: 'Invalid hostname' };
   const norm = hostname.toLowerCase();
   if (typeof enabled === 'boolean') {
     state.automation.sites[norm] = enabled;
@@ -1622,7 +1704,8 @@ ipcMain.handle('automation-toggle-site', (e, hostname, enabled) => {
 });
 
 ipcMain.handle('automation-set-site-action', (e, hostname, actionKey, enabled) => {
-  if (!hostname || state.automation.actions[actionKey] === undefined) return { ok: false, error: 'Unknown site or action' };
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!isValidHostname(hostname) || state.automation.actions[actionKey] === undefined) return { ok: false, error: 'Unknown site or action' };
   const norm = String(hostname).toLowerCase();
   state.automation.siteActions[norm] = { ...(state.automation.siteActions[norm] || {}), [actionKey]: !!enabled };
   saveState();
@@ -1632,6 +1715,7 @@ ipcMain.handle('automation-set-site-action', (e, hostname, actionKey, enabled) =
 });
 
 ipcMain.handle('automation-set-action', (e, actionKey, enabled) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (state.automation.actions[actionKey] !== undefined) {
     state.automation.actions[actionKey] = !!enabled;
     saveState();
@@ -1643,27 +1727,31 @@ ipcMain.handle('automation-set-action', (e, actionKey, enabled) => {
 });
 
 ipcMain.handle('open-settings', (e, tab) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   openHotkeySettings(tab);
   return { ok: true };
 });
 
 // 多账号管理 IPC handlers
-ipcMain.handle('account:get-state', () => ({
+ipcMain.handle('account:get-state', (e) => (denyUntrusted(e) ? undefined : ({
   profiles: state.profiles,
   activeProfileId: state.activeProfileId,
-}));
+})));
 
 ipcMain.handle('account:switch', (e, { id }) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   switchAccount(id);
   return { ok: true };
 });
 
 ipcMain.handle('account:add', (e, { name }) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   addProfile(name);
   return { ok: true };
 });
 
 ipcMain.handle('account:rename', (e, { id, name }) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   const p = state.profiles.find((item) => item.id === id);
   if (p) {
     p.name = (name && name.trim()) || p.name;
@@ -1676,6 +1764,7 @@ ipcMain.handle('account:rename', (e, { id, name }) => {
 });
 
 ipcMain.handle('account:sign-out', async (e, { id }) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   const targetId = id || state.activeProfileId;
   const targetSession = session.fromPartition(partitionFor(targetId));
   try {
@@ -1692,6 +1781,7 @@ ipcMain.handle('account:sign-out', async (e, { id }) => {
 });
 
 ipcMain.handle('account:delete', async (e, { id }) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (state.profiles.length <= 1) {
     return { ok: false, error: '至少保留一个账号' };
   }
@@ -1722,12 +1812,24 @@ ipcMain.handle('account:delete', async (e, { id }) => {
 });
 
 // 网络与代理配置 IPC handlers
-ipcMain.handle('proxy-get', () => {
+ipcMain.handle('proxy-get', (e) => {
+  if (denyUntrusted(e)) return undefined;
   return state.proxy || defaultProxy();
 });
 
 ipcMain.handle('proxy-set', async (e, config) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (!config || typeof config !== 'object') return { ok: false, error: 'Invalid proxy configuration' };
+  // 字段级校验: host/type/port 将被拼进 proxyRules, 脏值可注入额外代理规则 (评审 P2)
+  if (config.mode === 'custom') {
+    if (!['http', 'https', 'socks5'].includes(String(config.type || 'http'))) return { ok: false, error: 'Invalid proxy type' };
+    const port = Number(config.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return { ok: false, error: 'Invalid proxy port' };
+    const host = String(config.host || '');
+    const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(host);
+    if (!isIp && !isValidHostname(host) && host !== 'localhost') return { ok: false, error: 'Invalid proxy host' };
+    config = { ...config, port };
+  }
   state.proxy = {
     ...defaultProxy(),
     ...config,
@@ -1747,11 +1849,13 @@ ipcMain.handle('proxy-set', async (e, config) => {
 });
 
 // 主题与外观配置 IPC handlers
-ipcMain.handle('theme-get', () => {
+ipcMain.handle('theme-get', (e) => {
+  if (denyUntrusted(e)) return undefined;
   return state.theme || 'dark';
 });
 
 ipcMain.handle('theme-set', (e, newTheme) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (['dark', 'light', 'system'].includes(newTheme)) {
     setAppTheme(newTheme);
     return { ok: true, theme: state.theme };
@@ -1759,11 +1863,13 @@ ipcMain.handle('theme-set', (e, newTheme) => {
   return { ok: false, error: 'Invalid theme' };
 });
 
-ipcMain.handle('ui-settings-get', () => {
+ipcMain.handle('ui-settings-get', (e) => {
+  if (denyUntrusted(e)) return undefined;
   return state.ui || { autoHideButtons: true };
 });
 
 ipcMain.handle('ui-settings-set', (e, newUI) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (newUI && typeof newUI === 'object') {
     state.ui = { ...(state.ui || {}), ...newUI };
     saveState();
@@ -1774,11 +1880,13 @@ ipcMain.handle('ui-settings-set', (e, newUI) => {
   return { ok: false, error: 'Invalid UI settings' };
 });
 
-ipcMain.handle('locale-get', () => {
+ipcMain.handle('locale-get', (e) => {
+  if (denyUntrusted(e)) return undefined;
   return state.locale || 'en';
 });
 
 ipcMain.handle('locale-set', (e, newLocale) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (['en', 'zh-CN'].includes(newLocale)) {
     setAppLocale(newLocale);
     return { ok: true, locale: state.locale };
@@ -1787,10 +1895,11 @@ ipcMain.handle('locale-set', (e, newLocale) => {
 });
 
 // Floating "Export chat" button in the page asks the main process to export.
-ipcMain.on('muse-export-request', () => exportChat());
+ipcMain.on('muse-export-request', (e) => { if (!denyUntrusted(e)) exportChat(); });
 
 // 处理页面请求用系统默认浏览器打开外部链接
 ipcMain.on('open-external-url', (e, rawUrl) => {
+  if (denyUntrusted(e)) return;
   const target = extractExternalTargetUrl(rawUrl) || rawUrl;
   if (typeof target === 'string' && (target.startsWith('http://') || target.startsWith('https://') || target.startsWith('mailto:'))) {
     shell.openExternal(target).catch((err) => {
@@ -1800,11 +1909,13 @@ ipcMain.on('open-external-url', (e, rawUrl) => {
 });
 
 // 第三方连接器引导与 Google 会话重置 IPC
-ipcMain.handle('connector-open-muse', () => {
+ipcMain.handle('connector-open-muse', (e) => {
+  if (denyUntrusted(e)) return undefined;
   return shell.openExternal('https://muse.ai');
 });
 
-ipcMain.handle('google-session-reset', async () => {
+ipcMain.handle('google-session-reset', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   const curSes = session.fromPartition(partitionFor(state.activeProfileId));
   const r1 = await clearGoogleAuthSession(curSes);
   const r2 = await clearGoogleAuthSession(session.defaultSession);
@@ -1813,6 +1924,7 @@ ipcMain.handle('google-session-reset', async () => {
 
 // 下载文件交互与目录打开 IPC
 ipcMain.handle('download:open-folder', (e, filePath) => {
+  if (denyUntrusted(e)) return false;
   if (filePath && typeof filePath === 'string' && fs.existsSync(filePath)) {
     shell.showItemInFolder(filePath);
     return true;
@@ -1821,6 +1933,7 @@ ipcMain.handle('download:open-folder', (e, filePath) => {
 });
 
 ipcMain.handle('download:open-file', async (e, filePath) => {
+  if (denyUntrusted(e)) return false;
   if (filePath && typeof filePath === 'string' && fs.existsSync(filePath)) {
     await shell.openPath(filePath);
     return true;
@@ -1981,9 +2094,7 @@ async function exportChat() {
   }
   let data = null;
   try {
-    data = await win.webContents.executeJavaScript(
-      'window.museExport ? window.museExport.scrape() : null'
-    );
+    data = await scrapeChatViaPreload(win);
   } catch {
     data = null;
   }
@@ -2016,6 +2127,30 @@ async function exportChat() {
   );
 }
 
+// 经 preload 隔离世界执行聊天抓取 (v1.5.14): 此前主进程用 executeJavaScript
+// 调主世界的 window.museExport, 等于必须把抓取桥暴露给网页主世界, 页面脚本
+// 可见可调用。现在桥已删除, 改为主进程发请求、preload 在隔离世界抓取后回传。
+function scrapeChatViaPreload(win, timeoutMs = 30000) {
+  return new Promise((resolve) => {
+    const wc = win.webContents;
+    let settled = false;
+    const done = (val) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      ipcMain.removeListener('muse-export:result', onResult);
+      resolve(val);
+    };
+    const onResult = (e, payload) => {
+      if (e.sender !== wc) return;
+      done(payload && payload.ok ? payload.data : null);
+    };
+    const timer = setTimeout(() => done(null), timeoutMs);
+    ipcMain.on('muse-export:result', onResult);
+    wc.send('muse-export:scrape');
+  });
+}
+
 // ---- portable self-update -----------------------------------------------------
 // electron-updater doesn't support the portable target, so the portable build
 // updates itself: check the GitHub releases feed, download the new portable
@@ -2035,7 +2170,27 @@ function cmpVersions(a, b) {
 
 let isCheckingUpdate = false;
 
+// 应用内自更新只适用于 Windows 便携版: 它替换的是 PORTABLE_EXECUTABLE_FILE
+// 指向的单文件。此前无门控三平台都跑, Linux/mac 会下载 Windows exe 再调
+// 不存在的 powershell; NSIS 安装版则会被便携版 exe 原地替换造成版本错位。
+function isPortableWindowsBuild() {
+  return process.platform === 'win32' && !!process.env.PORTABLE_EXECUTABLE_FILE;
+}
+
 async function checkForUpdates(manual) {
+  if (!isPortableWindowsBuild()) {
+    if (manual) {
+      const { response } = await dialog.showMessageBox({
+        type: 'info',
+        title: '检查版本更新',
+        message: '当前安装方式不支持应用内自动更新。',
+        detail: '请前往 GitHub Releases 页面下载与您系统匹配的最新安装包。',
+        buttons: ['前往 GitHub Releases', '取消'],
+      });
+      if (response === 0) shell.openExternal(`https://github.com/${UPDATE_REPO}/releases/latest`);
+    }
+    return;
+  }
   if (isCheckingUpdate) {
     if (manual) {
       dialog.showMessageBox({
@@ -2148,7 +2303,14 @@ async function checkForUpdates(manual) {
     if (!dl.ok) throw new Error(`下载失败 HTTP ${dl.status}`);
     const buf = Buffer.from(await dl.arrayBuffer());
     if (buf.length < 1024 || buf[0] !== 0x4d || buf[1] !== 0x5a) throw new Error('下载的文件不是合法的 Windows 可执行程序');
-    const dest = path.join(app.getPath('temp'), asset.name);
+    // 真实性校验 (v1.5.14): GitHub API 为每个资产提供 sha256 digest, 下载后
+    // 必须比对一致; 缺失或不匹配一律中止, 绝不进入待安装状态
+    const expectedDigest = String(asset.digest || '').replace(/^sha256:/i, '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(expectedDigest)) throw new Error('发布资产缺少 SHA-256 摘要, 已中止更新');
+    const actualDigest = require('crypto').createHash('sha256').update(buf).digest('hex');
+    if (actualDigest !== expectedDigest) throw new Error('更新文件 SHA-256 校验不通过, 已中止更新');
+    // 文件名只取 basename, 防止资产名中的路径成分越出临时目录
+    const dest = path.join(app.getPath('temp'), path.basename(String(asset.name || 'Muse-Portable.exe')));
     await fs.promises.writeFile(dest, buf);
     pendingUpdate = { version: latest, filePath: dest };
     updateDownloaded = true;
@@ -2219,6 +2381,7 @@ function canWriteBesideExe() {
 
 function installUpdateAndRestart() {
   if (!pendingUpdate) return;
+  if (!isPortableWindowsBuild()) return;
   if (!canWriteBesideExe()) {
     dialog.showMessageBox({
       type: 'warning',
@@ -2241,9 +2404,14 @@ function installUpdateAndRestart() {
     return;
   }
   try {
-    require('child_process').spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
+    const child = require('child_process').spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
       detached: true, stdio: 'ignore',
-    }).unref();
+    });
+    // 未监听的 error 事件会以异常抛进主进程 (如 powershell 不存在时), 必须接住
+    child.on('error', (err) => {
+      dialog.showErrorBox('更新失败', String((err && err.message) || err));
+    });
+    child.unref();
   } catch (e) {
     dialog.showErrorBox('更新失败', String((e && e.message) || e));
     return;
@@ -2253,7 +2421,9 @@ function installUpdateAndRestart() {
 }
 
 function setupAutoUpdate() {
-  // First check shortly after launch, then every 6 hours. Manual check lives in the tray menu.
+  // 仅 Windows 便携版有应用内自更新; 其他平台/安装形态不启动后台检查,
+  // 手动检查走 checkForUpdates 内的 Releases 页引导。
+  if (!isPortableWindowsBuild()) return;
   setTimeout(() => checkForUpdates(false), 30_000);
   setInterval(() => checkForUpdates(false), 6 * 3600_000);
 }
@@ -2502,4 +2672,4 @@ app.on('will-quit', () => {
 });
 
 // 仅供本地冒烟测试引用内部纯函数; Electron 运行时忽略该导出。
-try { module.exports = { sanitizeWindowBounds, ensureBoundsVisible }; } catch {}
+try { module.exports = { sanitizeWindowBounds, ensureBoundsVisible, isValidHostname, isTrustedIpcSender }; } catch {}
