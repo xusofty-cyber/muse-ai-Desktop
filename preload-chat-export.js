@@ -6,10 +6,15 @@
 // paginated history into the DOM (restored afterwards).
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('offlineAPI', {
-  selfHealToSystem: () => ipcRenderer.invoke('proxy-set', { mode: 'system', enabled: false }),
-  openProxySettings: () => ipcRenderer.invoke('open-settings', 'tab-proxy'),
-});
+// 桥暴露最小化 (v1.5.14, 评审 P0-3): offlineAPI 只供本地离线页 (file://)
+// 使用; 远程页面 (muse.ai/meta.ai 及其子 frame) 零暴露, 页面主世界脚本
+// 不应能触达任何应用控制通道。
+if (window.location && window.location.protocol === 'file:') {
+  contextBridge.exposeInMainWorld('offlineAPI', {
+    selfHealToSystem: () => ipcRenderer.invoke('proxy-set', { mode: 'system', enabled: false }),
+    openProxySettings: () => ipcRenderer.invoke('open-settings', 'tab-proxy'),
+  });
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -640,21 +645,18 @@ async function scrapeChat() {
   };
 }
 
-contextBridge.exposeInMainWorld('museExport', {
-  scrape: () => scrapeChat(),
-});
-
-contextBridge.exposeInMainWorld('automationAPI', {
-  get: () => ipcRenderer.invoke('automation-get'),
-  set: (updates) => ipcRenderer.invoke('automation-set', updates),
-  toggle: () => ipcRenderer.invoke('automation-toggle'),
-  toggleSite: (hostname, enabled) => ipcRenderer.invoke('automation-toggle-site', hostname, enabled),
-  setAction: (actionKey, enabled) => ipcRenderer.invoke('automation-set-action', actionKey, enabled),
-  setSiteAction: (hostname, actionKey, enabled) => ipcRenderer.invoke('automation-set-site-action', hostname, actionKey, enabled),
-  openSettings: () => ipcRenderer.invoke('open-settings'),
-  onChanged: (callback) => {
-    ipcRenderer.on('automation-changed', (e, state) => callback(state));
-  },
+// v1.5.14 (评审 P0-3): museExport 与 automationAPI 桥已整体删除。
+// 此前它们把聊天抓取与 Auto-Allow 最高敏感开关暴露给网页主世界, 任意页面
+// 脚本一行调用即可全开自动审批。本 preload 自身的功能全部走隔离世界的
+// ipcRenderer 直连 (Dock/Popover/自动化引擎均是), 无需向主世界暴露任何 API。
+// 聊天抓取改由主进程经 IPC 点名触发, 在本隔离世界执行后回传结果:
+ipcRenderer.on('muse-export:scrape', async () => {
+  try {
+    const data = await scrapeChat();
+    ipcRenderer.send('muse-export:result', { ok: true, data });
+  } catch (err) {
+    ipcRenderer.send('muse-export:result', { ok: false, error: String((err && err.message) || err) });
+  }
 });
 
 // ---- Automation On-Screen Widget & Auto-Approval Engine --------------------
