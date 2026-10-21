@@ -9,6 +9,14 @@ const fs = require('fs');
 // 因此 setName 与 win32 的 setPath 必须在 requestSingleInstanceLock 之前完成;
 // 锁本身仍在任何文件读写与业务初始化之前获取。
 app.setName('Muse');
+if (process.platform === 'linux') {
+  // Linux 桌面身份 (v1.5.18): Wayland 下 GNOME 按 app_id 找 <app_id>.desktop
+  // 归并窗口与图标; 不显式设置时 app_id 取 app 名 'Muse', 与 muse.desktop
+  // 对不上 → Dock 齿轮图标。此处按 Electron 文档显式钉死为 'muse'。
+  // (X11 侧 WM_CLASS class 实测为可执行名首字母大写 'Muse', 不受此 API
+  // 影响, 由 package.json 中 desktop.entry.StartupWMClass='Muse' 对齐。)
+  try { app.setDesktopName('muse'); } catch {}
+}
 if (process.platform === 'win32') {
   const fixedUserData = path.join(app.getPath('appData'), 'Muse');
   app.setPath('userData', fixedUserData);

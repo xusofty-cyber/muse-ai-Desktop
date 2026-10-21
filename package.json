@@ -53,7 +53,7 @@
       "executableName": "muse",
       "desktop": {
         "entry": {
-          "StartupWMClass": "muse"
+          "StartupWMClass": "Muse"
         }
       },
       "category": "Network;Chat;Utility",
@@ -91,6 +91,7 @@
   "name": "muse-desktop",
   "private": true,
   "productName": "Muse",
+  "desktopName": "muse",
   "scripts": {
     "dist": "electron-builder --win portable nsis",
     "dist:win": "electron-builder --win portable nsis",
@@ -99,5 +100,5 @@
     "dist:mac": "electron-builder --mac dmg zip",
     "start": "electron ."
   },
-  "version": "1.5.17"
+  "version": "1.5.18"
 }
