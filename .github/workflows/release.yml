@@ -23,6 +23,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 发版防呆: tag 必须等于 v<package.json version>, 不一致直接失败,
+      # 避免打出 v1.5.16 的 tag 却装着 1.5.15 的包 (评审 P1-7)
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME}" != "v${PKG_VERSION}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version v${PKG_VERSION}"
+            exit 1
+          fi
+          echo "Tag matches package.json version v${PKG_VERSION}"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -30,7 +43,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       # Windows 打包发布 (NSIS 安装包 + Portable 便携单文件)
       - name: Build and Publish (Windows)
@@ -60,3 +73,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+  # 三端构建全部成功后, 把草稿 Release 转为正式发布 (配合 package.json 的
+  # releaseType: draft)。任何一端失败, Release 保持草稿, 用户下不到半成品。
+  finalize:
+    name: Publish Release
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Undraft the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --repo "${GITHUB_REPOSITORY}"
