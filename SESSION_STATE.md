@@ -146,6 +146,14 @@
    - **修复**：package.json 改为 `"desktop": { "entry": { "StartupWMClass": "muse" } }`，语义不变（生成的 .desktop 文件仍含 StartupWMClass=muse，Dock 归并修复不受影响）；版本号保持 1.5.17（该版本从未成功发布过）。
    - **测试证据**：用仓库 node_modules 内 electron-builder 26.15.3 自带 validateConfiguration 实测三种形态——旧写法 INVALID（与 CI 报错一致）、entry 写法 VALID、删除 desktop 亦 VALID；改后对真实 package.json 复验 VALID。git diff 仅此一处（3 行）。
 
+17. **v1.5.17 实机回归修复（v1.5.18）：Ubuntu 图标仍为齿轮**：
+   - **现象**：用户安装 v1.5.17 后 Ubuntu 活动概览/Dock 中运行窗口仍是灰齿轮、与紫猫启动器双条目（v1.5.12 原始症状未愈）。
+   - **取证**：下载已发布 .deb 解包核对——`/usr/share/applications/muse.desktop`（Icon=muse、StartupWMClass=muse、Exec=/opt/Muse/muse）与 `hicolor/1024x1024/apps/muse.png` 均正确，安装侧无问题。进而在本机 Xvfb 下运行已发布二进制并以自写 X11 探针读窗口属性：主窗口 **WM_CLASS instance='muse'、class='Muse'**——class 是可执行名首字母大写，GNOME 大小写敏感匹配 `StartupWMClass=muse` 失败，此为根因（v1.5.13 的 StartupWMClass 按可执行名写了小写，对错了对象）。同法实测 `app.setDesktopName` 与 package.json `desktopName` 均不改变 X11 WM_CLASS class（该 API 管 Wayland app_id 与 portal 身份）。
+   - **修复**：①package.json `desktop.entry.StartupWMClass` 改为 `'Muse'`（与实测 WM_CLASS class 逐字对齐，X11 归并）；②main.js 在 setName 后、ready 前加 Linux 分支 `app.setDesktopName('muse')`，并在 package.json 顶层加 `desktopName: "muse"`，把 Wayland app_id 显式钉死为 muse（与 muse.desktop 一致，不再依赖 app 名推导）；③版本升 1.5.18。
+   - **测试证据**：electron-builder 配置校验 VALID；`node --check` 三文件全过；以恢复后的真实配置重新 dir 构建，产物可执行名为 muse（配置生效），Xvfb 复测 WM_CLASS 与上表一致（instance=muse/class=Muse），与新 StartupWMClass 精确匹配。Wayland app_id 无法在本机 X 环境直接观测，按 Electron 官方 API 契约设置，待用户 Ubuntu（Wayland）实机终验。
+   - **过程教训**：取证时 `asar extract-file` 在仓库目录执行会把解出的精简 package.json 覆盖工作区原件（后续两次本地构建因此缺 build 配置、产物名变 muse-desktop），已用 git 恢复并逐行核对 diff；今后解包一律在 /tmp 进行。
+   - **追加修复（同日，用户澄清登录地址问题）**：用户明确 Muse AI 登录地址只有 https://muse.ai、不是 Meta AI。核查：代码默认站点恒为 muse、应用内地址均为 muse.ai，无写错；但站点选择随 app-state.json 跨版本保留，旧版切到过 meta 的用户升级后每次启动仍直达 meta.ai，与用户现象吻合。main.js 在 `loadState()` 后加一次性迁移：`siteResetV1518` 未置位时强制 `state.site='muse'` 并置位，落盘复用既有守卫首写（状态损坏时不覆盖、下一启动重试）；置位后用户主动切换照常保存。端到端实测（dir 构建 + 预置状态文件真机运行）：老状态（site=meta、无标记）首启后状态文件变为 site=muse 且标记为 true；标记已置位且 site=meta 时保持 meta 不干预，两用例均 PASS。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：

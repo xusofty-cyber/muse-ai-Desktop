@@ -9,6 +9,14 @@ const fs = require('fs');
 // 因此 setName 与 win32 的 setPath 必须在 requestSingleInstanceLock 之前完成;
 // 锁本身仍在任何文件读写与业务初始化之前获取。
 app.setName('Muse');
+if (process.platform === 'linux') {
+  // Linux 桌面身份 (v1.5.18): Wayland 下 GNOME 按 app_id 找 <app_id>.desktop
+  // 归并窗口与图标; 不显式设置时 app_id 取 app 名 'Muse', 与 muse.desktop
+  // 对不上 → Dock 齿轮图标。此处按 Electron 文档显式钉死为 'muse'。
+  // (X11 侧 WM_CLASS class 实测为可执行名首字母大写 'Muse', 不受此 API
+  // 影响, 由 package.json 中 desktop.entry.StartupWMClass='Muse' 对齐。)
+  try { app.setDesktopName('muse'); } catch {}
+}
 if (process.platform === 'win32') {
   const fixedUserData = path.join(app.getPath('appData'), 'Muse');
   app.setPath('userData', fixedUserData);
@@ -478,6 +486,15 @@ function loadState() {
 }
 
 let state = loadState();
+// 一次性迁移 (v1.5.18): 站点选择会随 app-state.json 跨版本保留, 旧版本里切到
+// Meta AI 的用户升级后每次启动仍直达 meta.ai, 而 Muse AI 的登录地址只有
+// https://muse.ai 。首次运行本版时把站点强制扳回 muse; 落盘交给下方既有的
+// 守卫首写 (仅安全加载时), 状态损坏时不覆盖现场、下一启动重试迁移。迁移标记
+// 置位后不再干预, 用户之后主动切换站点的选择照常保存。
+if (state.siteResetV1518 !== true) {
+  state.site = 'muse';
+  state.siteResetV1518 = true;
+}
 const { nativeTheme } = require('electron');
 try {
   nativeTheme.themeSource = state.theme || 'dark';
