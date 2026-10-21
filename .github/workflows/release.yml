@@ -46,6 +46,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # macOS 图标修复: 仓库 icon.png 仅 256x256, electron-builder 生成 .icns
+      # 要求源图至少 512x512, mac 任务此前连续多版无产物疑与此有关。
+      # 构建前用 macOS 自带 sips 放大到 1024x1024 (源图替换为 1024 后此步无害)。
+      - name: Prepare macOS icon (>=512px for icns)
+        if: matrix.os == 'macos-latest'
+        run: sips -z 1024 1024 assets/icon.png
+
       # macOS 打包发布 (DMG + ZIP)
       - name: Build and Publish (macOS)
         if: matrix.os == 'macos-latest'
