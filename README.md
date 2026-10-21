@@ -1,4 +1,4 @@
-# Muse for Desktop (Windows, macOS, Linux)
+# Muse ai for Desktop (Windows, macOS, Linux)
 
 <div align="center">
 
