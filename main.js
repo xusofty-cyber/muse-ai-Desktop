@@ -249,6 +249,57 @@ const AVATAR_COLORS = [
   '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'
 ];
 
+// ---- 窗口几何安全 (Ubuntu 多账号窗口唤不回根治) --------------------------------
+// 背景: 全部账号共用一份 state.window 且从不校验, 多窗口 resize/move 竞写、
+// 最小化/隐藏瞬间或虚拟机分辨率变化都可能把屏幕外坐标/异常尺寸持久化,
+// 之后 showMainWindow 只做 show/focus, 窗口逻辑上已显示、物理上永不可见。
+// 因此: 加载时钳制 -> 落盘时过滤 -> 显示前按当前屏幕二次校验并居中兜底。
+const MIN_WIN_WIDTH = 800;
+const MIN_WIN_HEIGHT = 560;
+
+function sanitizeWindowBounds(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const out = {};
+  const w = Number(raw.width);
+  const h = Number(raw.height);
+  if (Number.isFinite(w)) out.width = Math.min(Math.max(Math.round(w), MIN_WIN_WIDTH), 7680);
+  if (Number.isFinite(h)) out.height = Math.min(Math.max(Math.round(h), MIN_WIN_HEIGHT), 4320);
+  const x = Number(raw.x);
+  const y = Number(raw.y);
+  if (Number.isFinite(x) && Math.abs(x) < 20000) out.x = Math.round(x);
+  if (Number.isFinite(y) && Math.abs(y) < 20000) out.y = Math.round(y);
+  return out;
+}
+
+// 确保 bounds 与至少一块显示器的可用区有足够交叠; 否则居中到主屏。
+// displays 可注入 (display.bounds/workArea), 缺省实时读取 screen。
+function ensureBoundsVisible(bounds, displays) {
+  const b = sanitizeWindowBounds(bounds);
+  let list = displays;
+  if (!list) {
+    try { list = require('electron').screen.getAllDisplays(); } catch { list = []; }
+  }
+  if (!list || !list.length) return b;
+  const width = b.width || 1200;
+  const height = b.height || 800;
+  if (typeof b.x === 'number' && typeof b.y === 'number') {
+    const visible = list.some((d) => {
+      const wa = (d && (d.workArea || d.bounds)) || null;
+      if (!wa) return false;
+      const overlapX = Math.min(b.x + width, wa.x + wa.width) - Math.max(b.x, wa.x);
+      const overlapY = Math.min(b.y + height, wa.y + wa.height) - Math.max(b.y, wa.y);
+      return overlapX >= 120 && overlapY >= 80;
+    });
+    if (visible) { b.width = width; b.height = height; return b; }
+  }
+  const wa = (list[0] && (list[0].workArea || list[0].bounds)) || { x: 0, y: 0, width: 1920, height: 1080 };
+  b.width = Math.min(width, wa.width);
+  b.height = Math.min(height, wa.height);
+  b.x = Math.round(wa.x + (wa.width - b.width) / 2);
+  b.y = Math.round(wa.y + (wa.height - b.height) / 2);
+  return b;
+}
+
 function defaultProxy() {
   return {
     mode: 'system', // 'system' (自适应系统/TUN网卡), 'custom' (手动指定覆盖), 'direct' (直连)
@@ -288,6 +339,7 @@ function detectDefaultLocale() {
 function defaultState() {
   return {
     window: {},
+    windowByProfile: {},
     site: 'muse',
     profiles: [{ id: 'default', name: '账号 1', color: AVATAR_COLORS[0] }],
     activeProfileId: 'default',
@@ -320,6 +372,15 @@ function sanitizeAndMergeState(raw) {
     siteActions: { ...((raw.automation && raw.automation.siteActions) || {}) },
   };
   merged.proxy = { ...defaultProxy(), ...(raw.proxy || {}) };
+  // 窗口几何必须钳制后再用: 历史坏值 (屏幕外/负尺寸) 不得重放进新会话
+  merged.window = sanitizeWindowBounds(raw.window || {});
+  const wbp = {};
+  if (raw.windowByProfile && typeof raw.windowByProfile === 'object') {
+    for (const [pid, b] of Object.entries(raw.windowByProfile)) {
+      if (b && typeof b === 'object') wbp[pid] = sanitizeWindowBounds(b);
+    }
+  }
+  merged.windowByProfile = wbp;
   // 兼容历史老数据：若未显式指定 custom/direct，统一重置为 system 自适应模式
   if (merged.proxy.mode !== 'custom' && merged.proxy.mode !== 'direct') {
     merged.proxy.mode = 'system';
@@ -991,7 +1052,7 @@ function setUIAutoHide(enabled) {
 function getOrCreateProfileWindow(profileId, targetBounds) {
   let win = profileWindows.get(profileId);
   if (win && !win.isDestroyed()) {
-    if (targetBounds) win.setBounds(targetBounds);
+    if (targetBounds) win.setBounds(ensureBoundsVisible(targetBounds));
     return win;
   }
 
@@ -999,7 +1060,9 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
   const ses = session.fromPartition(partitionFor(profileId));
   applyProxyToSession(ses);
 
-  const saved = targetBounds || state.window || {};
+  const saved = ensureBoundsVisible(
+    targetBounds || (state.windowByProfile && state.windowByProfile[profileId]) || state.window || {}
+  );
   win = new BrowserWindow({
     width: saved.width || 1200,
     height: saved.height || 800,
@@ -1015,7 +1078,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
       partition: partitionFor(profileId),
     },
   });
-  if (process.platform === 'win32' && fs.existsSync(APP_ICON_PATH)) {
+  if (process.platform !== 'darwin' && fs.existsSync(APP_ICON_PATH)) {
     win.setIcon(APP_ICON_PATH);
   }
 
@@ -1057,9 +1120,14 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
 
   const persistBounds = () => {
     if (!win || win.isDestroyed()) return;
+    // 最小化/隐藏状态下的几何是假值 (合成器占位坐标), 绝不落盘
+    if (win.isMinimized() || !win.isVisible()) return;
     const [width, height] = win.getSize();
     const [x, y] = win.getPosition();
-    state.window = { width, height, x, y };
+    const clean = sanitizeWindowBounds({ width, height, x, y });
+    state.window = clean;
+    if (!state.windowByProfile || typeof state.windowByProfile !== 'object') state.windowByProfile = {};
+    state.windowByProfile[profileId] = clean;
     saveStateDebounced();
   };
   win.on('resize', persistBounds);
@@ -1072,13 +1140,35 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     }
   });
 
+  win.on('closed', () => {
+    if (profileWindows.get(profileId) === win) profileWindows.delete(profileId);
+    if (mainWindow === win) mainWindow = null;
+  });
+
   profileWindows.set(profileId, win);
   return win;
 }
 
+// 统一的窗口唤回动作: 先修几何 -> 恢复最小化 -> show -> 置顶聚焦,
+// 并返回 show 后是否真的可见, 供调用方在楔死时走重建兜底。
+function showWindowSafely(win) {
+  if (!win || win.isDestroyed()) return false;
+  try { win.setBounds(ensureBoundsVisible(win.getBounds())); } catch {}
+  if (win.isMinimized()) win.restore();
+  win.show();
+  try { win.moveTop(); } catch {}
+  win.focus();
+  return win.isVisible();
+}
+
 function createMainWindow() {
-  mainWindow = getOrCreateProfileWindow(state.activeProfileId);
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  const win = getOrCreateProfileWindow(state.activeProfileId);
+  mainWindow = win;
+  // 注意: 必须捕获本次创建的 win 本身; 引用全局 mainWindow 会在首屏未加载完
+  // 就切账号时把 ready-to-show 的 show() 打到错误窗口上。
+  win.once('ready-to-show', () => {
+    if (mainWindow === win) showWindowSafely(win);
+  });
 }
 
 function createQuickWindow() {
@@ -1142,9 +1232,21 @@ function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     mainWindow = getOrCreateProfileWindow(state.activeProfileId);
   }
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
+  if (!showWindowSafely(mainWindow)) {
+    // 窗口对象已楔死 (show 后仍不可见): 销毁并以安全几何重建活动账号窗口。
+    // 托盘单击/菜单打开主窗口/切换站点/二次启动全部汇聚到这里, 这里必须有兜底,
+    // 否则任何一种唤回操作都会一起失效, 只能靠彻底退出应用自救。
+    try {
+      const stale = mainWindow;
+      if (profileWindows.get(state.activeProfileId) === stale) {
+        profileWindows.delete(state.activeProfileId);
+      }
+      stale.removeAllListeners('close');
+      stale.destroy();
+    } catch {}
+    mainWindow = getOrCreateProfileWindow(state.activeProfileId);
+    showWindowSafely(mainWindow);
+  }
 }
 
 // ---- profiles & accounts (Zero-Reload Multi-Tab Switching) ---------------
@@ -1165,8 +1267,7 @@ function switchAccount(id) {
   const targetWin = getOrCreateProfileWindow(id, currentBounds);
   mainWindow = targetWin;
 
-  targetWin.show();
-  targetWin.focus();
+  showWindowSafely(targetWin);
 
   // 隐藏前一个窗口并强制落盘会话 Cookie
   if (prevWin && prevWin !== targetWin && !prevWin.isDestroyed()) {
@@ -1454,7 +1555,7 @@ function openHotkeySettings(initialTab) {
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload-settings.js') },
   });
-  if (process.platform === 'win32' && fs.existsSync(APP_ICON_PATH)) {
+  if (process.platform !== 'darwin' && fs.existsSync(APP_ICON_PATH)) {
     hotkeyWindow.setIcon(APP_ICON_PATH);
   }
   hotkeyWindow.loadFile(path.join(__dirname, 'hotkeys.html'));
@@ -2399,3 +2500,6 @@ app.on('before-quit', async (e) => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
 });
+
+// 仅供本地冒烟测试引用内部纯函数; Electron 运行时忽略该导出。
+try { module.exports = { sanitizeWindowBounds, ensureBoundsVisible }; } catch {}
