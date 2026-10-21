@@ -635,6 +635,14 @@ function extractExternalTargetUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   try {
     const parsed = new URL(rawUrl);
+    // 只解包已知跳转站的重定向参数 (v1.5.17 加固, 评审 P2): 此前任意 URL 的
+    // ?u=/?url= 参数都会被解包直达, 页面可借此绕过外链提示把用户带到钓鱼站
+    const REDIRECTOR_HOSTS = new Set([
+      'www.google.com', 'google.com', 'www.bing.com', 'bing.com',
+      'duckduckgo.com', 'html.duckduckgo.com', 'l.facebook.com',
+      'out.reddit.com', 'www.youtube.com',
+    ]);
+    if (!REDIRECTOR_HOSTS.has(parsed.hostname.toLowerCase())) return null;
     // 识别常见重定向跳转参数
     const redirectKeys = ['u', 'url', 'target', 'dest', 'destination', 'link', 'href', 'q'];
     for (const key of redirectKeys) {
@@ -667,7 +675,9 @@ function isInternalSiteUrl(rawUrl) {
     if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
     if (host === 'meta.ai' || host.endsWith('.meta.ai')) return true;
     if (host === 'meta.com' || host.endsWith('.meta.com')) return true;
-    if (parsed.protocol === 'file:') return true;
+    // file: 不再归为内部站点 (v1.5.17, 评审 P2): 旧归类让任意本地 HTML 能在
+    // 挂有特权 preload 的窗口内被当作内部页面放行导航。应用自身页面都由主
+    // 进程直接 loadURL/loadFile 打开, 不经过链接/导航拦截, 不受此改动影响。
     return false;
   } catch {
     return false;
@@ -971,9 +981,9 @@ function getGoogleAuthBannerScript(locale) {
   const btnClose = isZh ? '关闭弹窗' : 'Close';
 
   return `(() => {
-    if (document.getElementById('muse-google-auth-banner')) return;
+    if (document.getElementById('google-auth-guide')) return;
     const banner = document.createElement('div');
-    banner.id = 'muse-google-auth-banner';
+    banner.id = 'google-auth-guide';
     banner.innerHTML = \`
       <div style="display:flex;align-items:flex-start;gap:12px;max-width:980px;margin:0 auto;">
         <div style="font-size:20px;line-height:1;margin-top:2px;">⚠️</div>
@@ -1005,7 +1015,7 @@ function getGoogleAuthBannerScript(locale) {
     banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#18181b;color:#f3f4f6;padding:12px 16px;border-bottom:1px solid #3f3f46;box-shadow:0 4px 16px rgba(0,0,0,0.5);z-index:2147483647;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;box-sizing:border-box;';
     
     const mountBanner = () => {
-      if (document.body && !document.getElementById('muse-google-auth-banner')) {
+      if (document.body && !document.getElementById('google-auth-guide')) {
         document.body.prepend(banner);
         document.body.style.paddingTop = '110px';
       }
@@ -1036,8 +1046,9 @@ async function promptResetGoogleSession() {
 
   if (response === 0) {
     const curSes = session.fromPartition(partitionFor(state.activeProfileId));
+    // 只清活动账号分区 (v1.5.17 一致性修正): defaultSession 不承载任何账号
+    // 窗口, 此前顺带清它纯属无效动作, 还会误导「已重置」的判断
     await clearGoogleAuthSession(curSes);
-    await clearGoogleAuthSession(session.defaultSession);
     dialog.showMessageBox({
       type: 'info',
       title: isZh ? '重置完成' : 'Reset Completed',
@@ -1727,7 +1738,7 @@ function setupPermissions(profileId) {
 // a tiny shim in the page's own JS world wraps getUserMedia, tracks the
 // streams the site creates, and flips their audio tracks on/off.
 const MIC_SHIM = `(() => {
-  if (window.__museMic) return;
+  if (window.__micCtl) return;
   const st = { muted: false, streams: new Set() };
   const apply = () => st.streams.forEach((s) => {
     try { s.getAudioTracks().forEach((t) => { t.enabled = !st.muted; }); } catch {}
@@ -1743,7 +1754,7 @@ const MIC_SHIM = `(() => {
       return stream;
     };
   }
-  window.__museMic = {
+  window.__micCtl = {
     toggle: () => { st.muted = !st.muted; apply(); return st.muted; },
     get: () => st.muted,
   };
@@ -1759,7 +1770,7 @@ async function toggleMic() {
   if (!w) return;
   try {
     const muted = await w.webContents.executeJavaScript(
-      '(() => { const m = window.__museMic; return m ? m.toggle() : null; })()'
+      '(() => { const m = window.__micCtl; return m ? m.toggle() : null; })()'
     );
     if (muted === null || muted === undefined) {
       notify('Mic control not ready', 'The page is still loading. Try again in a moment.');
@@ -2173,8 +2184,7 @@ ipcMain.handle('google-session-reset', async (e) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   const curSes = session.fromPartition(partitionFor(state.activeProfileId));
   const r1 = await clearGoogleAuthSession(curSes);
-  const r2 = await clearGoogleAuthSession(session.defaultSession);
-  return { ok: r1 || r2 };
+  return { ok: r1 };
 });
 
 // 下载文件交互与目录打开 IPC
@@ -2282,6 +2292,22 @@ function roleLabel(role) {
   return role === 'user' ? 'User' : role === 'assistant' ? 'Assistant' : 'Unknown';
 }
 
+// 导出完整性告警 (v1.5.17): 虚拟列表可能丢早期消息、发言人可能为推算,
+// 这些不确定性必须写进导出文件本身, 而不是静默产出「看似完整」的数据
+function exportWarnings(data) {
+  const warnings = [];
+  const stats = data && data.stats;
+  if (stats) {
+    if (stats.reachedTop === false) {
+      warnings.push('未能确认已滚动到对话顶部, 早期消息可能缺失 (虚拟列表限制)。');
+    }
+    if (stats.guessedRoles > 0) {
+      warnings.push(`有 ${stats.guessedRoles} 条消息的发言人是按对话交替规律推算的, 可能不准确。`);
+    }
+  }
+  return warnings;
+}
+
 function exportMarkdown(data) {
   const lines = [
     `# ${data.title || 'Chat export'}`,
@@ -2294,6 +2320,7 @@ function exportMarkdown(data) {
     '---',
     '',
   ];
+  for (const w of exportWarnings(data)) lines.push(`> ⚠ ${w}`, '');
   for (const m of data.messages) {
     lines.push(`## ${roleLabel(m.role)}${m.timestamp ? ` (${m.timestamp})` : ''}`, '', m.text, '');
   }
@@ -2309,6 +2336,8 @@ function exportJSON(data) {
         profile: activeProfile().name,
         scrapedAt: data.scrapedAt,
         messageCount: data.messages.length,
+        stats: data.stats || null,
+        warnings: exportWarnings(data),
       },
       messages: data.messages,
     },
@@ -2338,13 +2367,20 @@ body{font-family:system-ui,sans-serif;max-width:800px;margin:2rem auto;padding:0
 .ts{opacity:.6}
 .text{line-height:1.5;overflow-wrap:anywhere}
 .meta{opacity:.6;font-size:.8rem;margin-bottom:2rem}
-</style></head><body><h1>${escapeHTML(data.title || 'Chat export')}</h1><div class="meta">Exported ${escapeHTML(data.scrapedAt)} from ${escapeHTML(data.url)} (${data.messages.length} messages)</div>${bubbles}</body></html>`;
+</style></head><body><h1>${escapeHTML(data.title || 'Chat export')}</h1><div class="meta">Exported ${escapeHTML(data.scrapedAt)} from ${escapeHTML(data.url)} (${data.messages.length} messages)</div>${exportWarnings(data).map((w) => `<div class="meta">\u26a0 ${escapeHTML(w)}</div>`).join('')}${bubbles}</body></html>`;
 }
 
 async function exportChat() {
-  const win = BrowserWindow.getFocusedWindow() || mainWindow;
-  if (!win) {
+  // 永远导出活动账号的主窗口 (v1.5.17, 评审 P2): 旧实现取焦点窗口, 焦点在
+  // 快速窗/设置窗时会导错会话或静默无结果且不给提示
+  const win = profileWindows.get(state.activeProfileId);
+  if (!win || win.isDestroyed()) {
     notify('Nothing to export', 'Open Muse first, then export the chat.');
+    return;
+  }
+  const pageUrl = (() => { try { return win.webContents.getURL(); } catch { return ''; } })();
+  if (!/^https:\/\/(.+\.)?(muse\.ai|meta\.ai)(\/|$)/.test(pageUrl)) {
+    notify('当前页面不是聊天页', '活动账号窗口当前不在 Muse / Meta AI 聊天页面, 无法导出。');
     return;
   }
   let data = null;

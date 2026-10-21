@@ -130,7 +130,7 @@ function applyLocale(locale) {
     if (typeof window.__museRenderDock === 'function') {
       window.__museRenderDock();
     }
-    const pop = document.getElementById('muse-settings-popover');
+    const pop = document.getElementById('acct-settings-pop');
     if (pop && pop.style.display === 'flex' && typeof window.__museRenderSettingsPopoverContent === 'function') {
       window.__museRenderSettingsPopoverContent();
     }
@@ -139,12 +139,12 @@ function applyLocale(locale) {
 
 
 function injectThemeStyles() {
-  if (document.getElementById('muse-theme-autohide-styles')) return;
+  if (document.getElementById('ui-autohide-styles')) return;
   const style = document.createElement('style');
-  style.id = 'muse-theme-autohide-styles';
+  style.id = 'ui-autohide-styles';
   style.textContent = `
     /* Left-Bottom Integrated Settings Popover & Controls */
-    #muse-settings-popover {
+    #acct-settings-pop {
       position: fixed;
       left: 56px;
       bottom: 14px;
@@ -170,14 +170,14 @@ function injectThemeStyles() {
       from { opacity: 0; transform: translateY(8px) scale(0.96); }
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
-    .muse-popover-header {
+    .acct-popover-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
       padding-bottom: 8px;
     }
-    .muse-popover-title {
+    .acct-popover-title {
       font-weight: 700;
       font-size: 13.5px;
       color: #fff;
@@ -185,7 +185,7 @@ function injectThemeStyles() {
       align-items: center;
       gap: 6px;
     }
-    .muse-popover-close {
+    .acct-popover-close {
       background: none;
       border: none;
       color: #8a909d;
@@ -195,11 +195,11 @@ function injectThemeStyles() {
       border-radius: 4px;
       transition: all 0.15s;
     }
-    .muse-popover-close:hover {
+    .acct-popover-close:hover {
       background: rgba(255, 255, 255, 0.1);
       color: #fff;
     }
-    .muse-pop-badge {
+    .acct-pop-badge {
       display: inline-flex;
       align-items: center;
       gap: 4px;
@@ -211,41 +211,41 @@ function injectThemeStyles() {
       color: #60a5fa;
       border: 1px solid rgba(59, 130, 246, 0.3);
     }
-    .muse-pop-badge.on {
+    .acct-pop-badge.on {
       background: rgba(16, 185, 129, 0.15);
       color: #34d399;
       border-color: rgba(16, 185, 129, 0.3);
     }
-    .muse-pop-badge.paused {
+    .acct-pop-badge.paused {
       background: rgba(245, 158, 11, 0.15);
       color: #fbbf24;
       border-color: rgba(245, 158, 11, 0.3);
     }
-    .muse-pop-badge.off {
+    .acct-pop-badge.off {
       background: rgba(107, 114, 128, 0.15);
       color: #9ca3af;
       border-color: rgba(107, 114, 128, 0.3);
     }
-    .muse-pop-row {
+    .acct-pop-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 4px 0;
     }
-    .muse-pop-row label {
+    .acct-pop-row label {
       cursor: pointer;
       display: flex;
       align-items: center;
       gap: 6px;
       font-size: 12px;
     }
-    .muse-pop-card {
+    .acct-pop-card {
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 8px;
       padding: 8px 10px;
     }
-    .muse-pop-btn {
+    .acct-pop-btn {
       width: 100%;
       padding: 6px 10px;
       background: rgba(255, 255, 255, 0.06);
@@ -260,97 +260,97 @@ function injectThemeStyles() {
       gap: 6px;
       transition: all 0.15s;
     }
-    .muse-pop-btn:hover {
+    .acct-pop-btn:hover {
       background: rgba(255, 255, 255, 0.12);
       border-color: rgba(255, 255, 255, 0.2);
       color: #fff;
     }
-    .muse-pop-btn.primary {
+    .acct-pop-btn.primary {
       background: #3b5bfd;
       border-color: #3b5bfd;
       color: #fff;
     }
-    .muse-pop-btn.primary:hover {
+    .acct-pop-btn.primary:hover {
       background: #2b49e0;
     }
 
     /* Light Mode Theme Overrides */
-    [data-muse-theme="light"] #muse-settings-popover {
+    [data-ui-theme="light"] #acct-settings-pop {
       background: rgba(255, 255, 255, 0.98) !important;
       color: #1e293b !important;
       border-color: rgba(0, 0, 0, 0.14) !important;
       box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05) !important;
     }
-    [data-muse-theme="light"] .muse-popover-header {
+    [data-ui-theme="light"] .acct-popover-header {
       border-bottom-color: rgba(0, 0, 0, 0.08) !important;
     }
-    [data-muse-theme="light"] .muse-popover-title {
+    [data-ui-theme="light"] .acct-popover-title {
       color: #0f172a !important;
     }
-    [data-muse-theme="light"] .muse-popover-close {
+    [data-ui-theme="light"] .acct-popover-close {
       color: #64748b !important;
     }
-    [data-muse-theme="light"] .muse-popover-close:hover {
+    [data-ui-theme="light"] .acct-popover-close:hover {
       background: rgba(0, 0, 0, 0.06) !important;
       color: #0f172a !important;
     }
-    [data-muse-theme="light"] .muse-pop-card {
+    [data-ui-theme="light"] .acct-pop-card {
       background: #f8fafc !important;
       border-color: #e2e8f0 !important;
     }
-    [data-muse-theme="light"] .muse-pop-row label {
+    [data-ui-theme="light"] .acct-pop-row label {
       color: #334155 !important;
     }
-    [data-muse-theme="light"] .muse-pop-btn {
+    [data-ui-theme="light"] .acct-pop-btn {
       background: #f1f5f9 !important;
       border-color: #cbd5e1 !important;
       color: #1e293b !important;
     }
-    [data-muse-theme="light"] .muse-pop-btn:hover {
+    [data-ui-theme="light"] .acct-pop-btn:hover {
       background: #e2e8f0 !important;
       color: #0f172a !important;
     }
-    [data-muse-theme="light"] #muse-account-dock {
+    [data-ui-theme="light"] #acct-dock {
       background: rgba(255, 255, 255, 0.94) !important;
       border-color: rgba(0, 0, 0, 0.1) !important;
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1) !important;
     }
-    [data-muse-theme="light"] .muse-dock-collapse-btn {
+    [data-ui-theme="light"] .acct-dock-collapse-btn {
       color: #64748b !important;
     }
-    [data-muse-theme="light"] .muse-dock-collapse-btn:hover {
+    [data-ui-theme="light"] .acct-dock-collapse-btn:hover {
       color: #0f172a !important;
       background: rgba(0, 0, 0, 0.06) !important;
     }
-    [data-muse-theme="light"] .muse-dock-add-btn {
+    [data-ui-theme="light"] .acct-dock-add-btn {
       background: rgba(0, 0, 0, 0.06) !important;
       border-color: rgba(0, 0, 0, 0.1) !important;
       color: #334155 !important;
     }
-    [data-muse-theme="light"] .muse-dock-add-btn:hover {
+    [data-ui-theme="light"] .acct-dock-add-btn:hover {
       background: rgba(0, 0, 0, 0.1) !important;
       color: #0f172a !important;
     }
-    [data-muse-theme="light"] .muse-context-menu {
+    [data-ui-theme="light"] .acct-context-menu {
       background: #ffffff !important;
       border-color: #e2e8f0 !important;
       color: #1e293b !important;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
     }
-    [data-muse-theme="light"] .muse-context-item {
+    [data-ui-theme="light"] .acct-context-item {
       color: #334155 !important;
     }
-    [data-muse-theme="light"] .muse-context-item:hover {
+    [data-ui-theme="light"] .acct-context-item:hover {
       background: #f1f5f9 !important;
       color: #0f172a !important;
     }
-    [data-muse-theme="light"] .muse-modal-card {
+    [data-ui-theme="light"] .acct-modal-card {
       background: #ffffff !important;
       border-color: #e2e8f0 !important;
       color: #0f172a !important;
       box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15) !important;
     }
-    [data-muse-theme="light"] .muse-modal-input {
+    [data-ui-theme="light"] .acct-modal-input {
       background: #f8fafc !important;
       border-color: #cbd5e1 !important;
       color: #0f172a !important;
@@ -363,9 +363,9 @@ function applyTheme(theme) {
   currentTheme = (theme === 'light') ? 'light' : 'dark';
   const root = document.documentElement || document.body;
   if (root) {
-    root.setAttribute('data-muse-theme', currentTheme);
+    root.setAttribute('data-ui-theme', currentTheme);
   }
-  const themeBtn = document.getElementById('muse-dock-theme-toggle');
+  const themeBtn = document.getElementById('acct-dock-theme-toggle');
   if (themeBtn) {
     const t = getT();
     themeBtn.innerHTML = currentTheme === 'light' ? '☀️' : '🌙';
@@ -552,6 +552,7 @@ function fixRoles(messages) {
   // Chats alternate user/assistant. Fill 'unknown' from neighbours; a chat
   // almost always opens with the user.
   const out = messages.map((m) => ({ ...m }));
+  const beforeRoles = messages.map((m) => m.role);
   for (let i = 0; i < out.length; i++) {
     if (out[i].role !== 'unknown') continue;
     const prev = i > 0 ? out[i - 1].role : null;
@@ -571,6 +572,10 @@ function fixRoles(messages) {
       }
     }
   }
+  // 被交替规律填充的发言人打上 guessed 标记, 导出时如实标注 (v1.5.17)
+  out.forEach((m, i) => {
+    if (beforeRoles[i] === 'unknown' && m.role !== 'unknown') m.guessed = true;
+  });
   return out;
 }
 
@@ -594,37 +599,71 @@ function findScroller() {
 
 async function scrapeChat() {
   // Coax paginated history into the DOM, then restore the view.
+  // 增量收集 (v1.5.17, 评审 P2): 聊天是虚拟列表, 屏外消息会被卸载出 DOM。
+  // 旧实现上滚几下后只读一次最终 DOM, 被卸载的早期消息静默丢失且导出无
+  // 任何提示。现在边滚边收集去重, 并记录是否真正到达顶部以便如实标注。
+  const collected = new Map();
+  let method = 'attributes';
+  let reachedTop = false;
+  const collectNow = () => {
+    const rootEl = document.querySelector('main') || document.body;
+    let els = attributeMessages();
+    if (!els.length) {
+      els = structuralMessages(rootEl);
+      if (els.length) method = 'structural';
+    }
+    for (const el of els) {
+      const text = cleanMarkdown(nodeToMarkdown(el));
+      if (!text) continue;
+      const key = `${text.length}|${text.slice(0, 200)}`;
+      if (!collected.has(key)) {
+        collected.set(key, { role: classifyRole(el), text, timestamp: timestampOf(el) });
+      }
+    }
+  };
+
   const scroller = findScroller();
   if (scroller) {
     try {
       let lastH = scroller.scrollHeight;
-      for (let i = 0; i < 4; i++) {
+      let stableTop = 0;
+      for (let i = 0; i < 12; i++) {
         scroller.scrollTop = 0;
-        await sleep(650);
-        if (scroller.scrollHeight <= lastH + 50) break;
+        await sleep(500);
+        collectNow();
+        if (scroller.scrollHeight <= lastH + 50) {
+          if (++stableTop >= 2) { reachedTop = true; break; }
+        } else {
+          stableTop = 0;
+        }
         lastH = scroller.scrollHeight;
       }
+      if (scroller.scrollTop <= 0) reachedTop = true;
+      let lastTop = -1;
+      for (let i = 0; i < 80; i++) {
+        collectNow();
+        if (scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 5) break;
+        scroller.scrollTop = Math.min(
+          scroller.scrollTop + Math.floor(scroller.clientHeight * 0.9),
+          scroller.scrollHeight
+        );
+        await sleep(250);
+        if (scroller.scrollTop === lastTop) break;
+        lastTop = scroller.scrollTop;
+      }
+      collectNow();
       scroller.scrollTop = scroller.scrollHeight;
     } catch {
       /* scrolling is best-effort */
     }
+  } else {
+    collectNow();
   }
 
-  const root = document.querySelector('main') || document.body;
-  let els = attributeMessages();
-  let method = 'attributes';
-  if (!els.length) {
-    els = structuralMessages(root);
-    method = 'structural';
-  }
-
-  let messages = els.map((el) => ({
-    role: classifyRole(el),
-    text: cleanMarkdown(nodeToMarkdown(el)),
-    timestamp: timestampOf(el),
-  })).filter((m) => m.text.length > 0);
+  let messages = [...collected.values()];
 
   if (!messages.length) {
+    const root = document.querySelector('main') || document.body;
     // Last resort: whole readable text of the content area.
     const text = cleanMarkdown(nodeToMarkdown(root)).slice(0, 500000);
     if (text.length > 100) {
@@ -641,6 +680,11 @@ async function scrapeChat() {
     url: location.href,
     title: document.title,
     scrapedAt: new Date().toISOString(),
+    stats: {
+      reachedTop,
+      guessedRoles: messages.filter((mm) => mm.guessed).length,
+      total: messages.length,
+    },
     messages,
   };
 }
@@ -704,10 +748,10 @@ ipcRenderer.on('muse-export:scrape', async () => {
   let panelContainer = null;
 
   function showToast(text) {
-    let toast = document.getElementById('muse-auto-toast');
+    let toast = document.getElementById('acct-toast');
     if (!toast) {
       toast = document.createElement('div');
-      toast.id = 'muse-auto-toast';
+      toast.id = 'acct-toast';
       Object.assign(toast.style, {
         position: 'fixed',
         bottom: '20px',
@@ -748,11 +792,11 @@ ipcRenderer.on('muse-export:scrape', async () => {
     if (!parent) return null;
 
     popoverContainer = document.createElement('div');
-    popoverContainer.id = 'muse-settings-popover';
+    popoverContainer.id = 'acct-settings-pop';
     parent.appendChild(popoverContainer);
 
     document.addEventListener('click', (e) => {
-      const settingsBtn = document.getElementById('muse-dock-settings-btn');
+      const settingsBtn = document.getElementById('acct-dock-settings-btn');
       if (popoverContainer && !popoverContainer.contains(e.target) && (!settingsBtn || !settingsBtn.contains(e.target))) {
         popoverContainer.style.display = 'none';
       }
@@ -798,37 +842,37 @@ ipcRenderer.on('muse-export:scrape', async () => {
     const meta = getAutoBadgeMeta();
 
     pop.innerHTML = `
-      <div class="muse-popover-header">
-        <div class="muse-popover-title">
+      <div class="acct-popover-header">
+        <div class="acct-popover-title">
           <span>${t.popoverTitle}</span>
         </div>
-        <button class="muse-popover-close" id="muse-pop-close-btn" title="Close">✕</button>
+        <button class="acct-popover-close" id="acct-pop-close-btn" title="Close">✕</button>
       </div>
 
       <!-- 自动化审批区块 -->
-      <div class="muse-pop-card">
+      <div class="acct-pop-card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <span style="font-weight:600; font-size:12px;">${t.autoAllowTitle}</span>
-          <span class="muse-pop-badge ${meta.cls}">${meta.text}</span>
+          <span class="acct-pop-badge ${meta.cls}">${meta.text}</span>
         </div>
 
-        <div class="muse-pop-row">
+        <div class="acct-pop-row">
           <label>
-            <input type="checkbox" id="muse-pop-chk-master" ${autoState.enabled ? 'checked' : ''}>
+            <input type="checkbox" id="acct-pop-chk-master" ${autoState.enabled ? 'checked' : ''}>
             <span>${t.masterSwitch}</span>
           </label>
         </div>
 
-        <div class="muse-pop-row">
+        <div class="acct-pop-row">
           <label>
-            <input type="checkbox" id="muse-pop-chk-allowall" ${autoState.autoAllowAll ? 'checked' : ''}>
+            <input type="checkbox" id="acct-pop-chk-allowall" ${autoState.autoAllowAll ? 'checked' : ''}>
             <span>${t.allowAll}</span>
           </label>
         </div>
 
-        <div class="muse-pop-row">
+        <div class="acct-pop-row">
           <label>
-            <input type="checkbox" id="muse-pop-chk-site" ${siteAllowed ? 'checked' : ''}>
+            <input type="checkbox" id="acct-pop-chk-site" ${siteAllowed ? 'checked' : ''}>
             <span>${t.enableOnSite(hostname)}</span>
           </label>
         </div>
@@ -837,19 +881,19 @@ ipcRenderer.on('muse-export:scrape', async () => {
         <div style="margin-top:6px; padding-top:6px; border-top:1px dashed rgba(255,255,255,0.1); display:flex; flex-direction:column; gap:4px;">
           <div style="font-size:11px; color:#8a909d; font-weight:600;">${t.actionScope}</div>
           <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
-            <input type="checkbox" id="muse-pop-act-connectors" ${isActionAllowed('connectors') ? 'checked' : ''}>
+            <input type="checkbox" id="acct-pop-act-connectors" ${isActionAllowed('connectors') ? 'checked' : ''}>
             <span>${t.actConnectors}</span>
           </label>
           <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
-            <input type="checkbox" id="muse-pop-act-file" ${isActionAllowed('file_access') ? 'checked' : ''}>
+            <input type="checkbox" id="acct-pop-act-file" ${isActionAllowed('file_access') ? 'checked' : ''}>
             <span>${t.actFile}</span>
           </label>
           <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
-            <input type="checkbox" id="muse-pop-act-links" ${isActionAllowed('external_links') ? 'checked' : ''}>
+            <input type="checkbox" id="acct-pop-act-links" ${isActionAllowed('external_links') ? 'checked' : ''}>
             <span>${t.actLinks}</span>
           </label>
           <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; cursor:pointer;">
-            <input type="checkbox" id="muse-pop-act-code" ${isActionAllowed('code_execution') ? 'checked' : ''}>
+            <input type="checkbox" id="acct-pop-act-code" ${isActionAllowed('code_execution') ? 'checked' : ''}>
             <span>${t.actCode}</span>
           </label>
         </div>
@@ -857,69 +901,69 @@ ipcRenderer.on('muse-export:scrape', async () => {
 
       <!-- 外观与快捷入口区块 -->
       <div style="display:flex; gap:6px;">
-        <button class="muse-pop-btn" id="muse-pop-theme-btn" style="flex:1;">
+        <button class="acct-pop-btn" id="acct-pop-theme-btn" style="flex:1;">
           <span>${currentTheme === 'light' ? t.themeBtnLight : t.themeBtnDark}</span>
         </button>
-        <button class="muse-pop-btn" id="muse-pop-proxy-btn" style="flex:1;">
+        <button class="acct-pop-btn" id="acct-pop-proxy-btn" style="flex:1;">
           <span>${t.proxyBtn}</span>
         </button>
-        <button class="muse-pop-btn" id="muse-pop-lang-btn" style="flex:1;">
+        <button class="acct-pop-btn" id="acct-pop-lang-btn" style="flex:1;">
           <span>${currentLocale === 'zh-CN' ? '🌐 EN' : '🌐 中文'}</span>
         </button>
       </div>
 
       <!-- 打开完整设置 -->
-      <button class="muse-pop-btn primary" id="muse-pop-full-settings">
+      <button class="acct-pop-btn primary" id="acct-pop-full-settings">
         <span>${t.fullSettingsBtn}</span>
       </button>
     `;
 
     // 绑定事件
-    pop.querySelector('#muse-pop-close-btn').onclick = () => { pop.style.display = 'none'; };
+    pop.querySelector('#acct-pop-close-btn').onclick = () => { pop.style.display = 'none'; };
 
-    pop.querySelector('#muse-pop-chk-master').onchange = (e) => {
+    pop.querySelector('#acct-pop-chk-master').onchange = (e) => {
       ipcRenderer.invoke('automation-set', { enabled: e.target.checked });
     };
 
-    pop.querySelector('#muse-pop-chk-allowall').onchange = (e) => {
+    pop.querySelector('#acct-pop-chk-allowall').onchange = (e) => {
       ipcRenderer.invoke('automation-set', { autoAllowAll: e.target.checked });
     };
 
-    pop.querySelector('#muse-pop-chk-site').onchange = (e) => {
+    pop.querySelector('#acct-pop-chk-site').onchange = (e) => {
       ipcRenderer.invoke('automation-toggle-site', hostname, e.target.checked);
     };
 
-    pop.querySelector('#muse-pop-act-connectors').onchange = (e) => {
+    pop.querySelector('#acct-pop-act-connectors').onchange = (e) => {
       ipcRenderer.invoke('automation-set-site-action', hostname, 'connectors', e.target.checked);
     };
-    pop.querySelector('#muse-pop-act-file').onchange = (e) => {
+    pop.querySelector('#acct-pop-act-file').onchange = (e) => {
       ipcRenderer.invoke('automation-set-site-action', hostname, 'file_access', e.target.checked);
     };
-    pop.querySelector('#muse-pop-act-links').onchange = (e) => {
+    pop.querySelector('#acct-pop-act-links').onchange = (e) => {
       ipcRenderer.invoke('automation-set-site-action', hostname, 'external_links', e.target.checked);
     };
-    pop.querySelector('#muse-pop-act-code').onchange = (e) => {
+    pop.querySelector('#acct-pop-act-code').onchange = (e) => {
       ipcRenderer.invoke('automation-set-site-action', hostname, 'code_execution', e.target.checked);
     };
 
-    pop.querySelector('#muse-pop-theme-btn').onclick = () => {
+    pop.querySelector('#acct-pop-theme-btn').onclick = () => {
       const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
       ipcRenderer.invoke('theme-set', nextTheme).catch(() => {});
       pop.style.display = 'none';
     };
 
-    pop.querySelector('#muse-pop-proxy-btn').onclick = () => {
+    pop.querySelector('#acct-pop-proxy-btn').onclick = () => {
       ipcRenderer.invoke('open-settings', 'tab-proxy');
       pop.style.display = 'none';
     };
 
-    pop.querySelector('#muse-pop-lang-btn').onclick = () => {
+    pop.querySelector('#acct-pop-lang-btn').onclick = () => {
       const nextLocale = currentLocale === 'zh-CN' ? 'en' : 'zh-CN';
       ipcRenderer.invoke('locale-set', nextLocale).catch(() => {});
       pop.style.display = 'none';
     };
 
-    pop.querySelector('#muse-pop-full-settings').onclick = () => {
+    pop.querySelector('#acct-pop-full-settings').onclick = () => {
       ipcRenderer.invoke('open-settings');
       pop.style.display = 'none';
     };
@@ -929,7 +973,7 @@ ipcRenderer.on('muse-export:scrape', async () => {
 
   function updateWidgetUI() {
     // 同步 Dock 上设置按钮的指示点
-    const dot = document.getElementById('muse-dock-settings-dot');
+    const dot = document.getElementById('acct-dock-settings-dot');
     if (dot) {
       const meta = getAutoBadgeMeta();
       dot.style.background = meta.borderColor;
@@ -1072,7 +1116,7 @@ function injectExportButton() {}
 (function initAccountDock() {
   let isCollapsed = false;
   try {
-    isCollapsed = localStorage.getItem('muse_dock_collapsed') === '1';
+    isCollapsed = localStorage.getItem('acct_dock_collapsed') === '1';
   } catch {}
 
   let dockState = {
@@ -1111,11 +1155,11 @@ function injectExportButton() {}
   }
 
   function injectDockStyles() {
-    if (document.getElementById('muse-account-dock-styles')) return;
+    if (document.getElementById('acct-dock-styles')) return;
     const style = document.createElement('style');
-    style.id = 'muse-account-dock-styles';
+    style.id = 'acct-dock-styles';
     style.textContent = `
-      #muse-account-dock {
+      #acct-dock {
         position: fixed;
         left: 10px;
         bottom: 14px;
@@ -1134,15 +1178,15 @@ function injectExportButton() {}
         transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
-      #muse-account-dock.collapsed {
+      #acct-dock.collapsed {
         transform: translateX(-34px);
         opacity: 0.55;
       }
-      #muse-account-dock.collapsed:hover {
+      #acct-dock.collapsed:hover {
         transform: translateX(0);
         opacity: 1;
       }
-      .muse-dock-collapse-btn {
+      .acct-dock-collapse-btn {
         width: 22px;
         height: 16px;
         display: flex;
@@ -1155,11 +1199,11 @@ function injectExportButton() {}
         transition: color 0.15s, background 0.15s;
         font-size: 10px;
       }
-      .muse-dock-collapse-btn:hover {
+      .acct-dock-collapse-btn:hover {
         color: #fff;
         background: rgba(255, 255, 255, 0.12);
       }
-      .muse-dock-list {
+      .acct-dock-list {
         display: flex;
         flex-direction: column;
         gap: 8px;
@@ -1168,10 +1212,10 @@ function injectExportButton() {}
         padding: 2px;
         scrollbar-width: none;
       }
-      .muse-dock-list::-webkit-scrollbar {
+      .acct-dock-list::-webkit-scrollbar {
         display: none;
       }
-      .muse-dock-item {
+      .acct-dock-item {
         position: relative;
         width: 36px;
         height: 36px;
@@ -1186,13 +1230,13 @@ function injectExportButton() {}
         transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
         flex-shrink: 0;
       }
-      .muse-dock-item:hover {
+      .acct-dock-item:hover {
         transform: scale(1.1);
       }
-      .muse-dock-item.active {
+      .acct-dock-item.active {
         box-shadow: 0 0 0 2.5px #fff, 0 4px 12px rgba(0, 0, 0, 0.4);
       }
-      .muse-dock-item.active::after {
+      .acct-dock-item.active::after {
         content: '';
         position: absolute;
         right: -3px;
@@ -1203,7 +1247,7 @@ function injectExportButton() {}
         border: 2px solid #141416;
         border-radius: 50%;
       }
-      .muse-dock-tooltip {
+      .acct-dock-tooltip {
         position: absolute;
         left: calc(100% + 10px);
         top: 50%;
@@ -1227,12 +1271,12 @@ function injectExportButton() {}
         gap: 6px;
         z-index: 2147483645;
       }
-      .muse-dock-item:hover .muse-dock-tooltip {
+      .acct-dock-item:hover .acct-dock-tooltip {
         opacity: 1;
         visibility: visible;
         transform: translateY(-50%) translateX(0);
       }
-      .muse-dock-tooltip-badge {
+      .acct-dock-tooltip-badge {
         font-size: 10px;
         padding: 1px 4px;
         border-radius: 4px;
@@ -1240,11 +1284,11 @@ function injectExportButton() {}
         color: #34d399;
         font-weight: 500;
       }
-      .muse-dock-tooltip-hint {
+      .acct-dock-tooltip-hint {
         font-size: 10px;
         color: rgba(255, 255, 255, 0.4);
       }
-      .muse-dock-add-btn {
+      .acct-dock-add-btn {
         width: 32px;
         height: 32px;
         border-radius: 50%;
@@ -1259,13 +1303,13 @@ function injectExportButton() {}
         margin-top: 6px;
         transition: all 0.2s;
       }
-      .muse-dock-add-btn:hover {
+      .acct-dock-add-btn:hover {
         background: rgba(255, 255, 255, 0.15);
         color: #fff;
         border-color: rgba(255, 255, 255, 0.5);
         transform: scale(1.08);
       }
-      .muse-context-menu {
+      .acct-context-menu {
         position: fixed;
         z-index: 2147483647;
         background: rgba(28, 28, 34, 0.96);
@@ -1282,7 +1326,7 @@ function injectExportButton() {}
         flex-direction: column;
         gap: 2px;
       }
-      .muse-context-item {
+      .acct-context-item {
         padding: 7px 10px;
         border-radius: 6px;
         cursor: pointer;
@@ -1291,18 +1335,18 @@ function injectExportButton() {}
         gap: 8px;
         transition: background 0.15s;
       }
-      .muse-context-item:hover {
+      .acct-context-item:hover {
         background: rgba(255, 255, 255, 0.1);
         color: #fff;
       }
-      .muse-context-item.danger {
+      .acct-context-item.danger {
         color: #f87171;
       }
-      .muse-context-item.danger:hover {
+      .acct-context-item.danger:hover {
         background: rgba(239, 68, 68, 0.2);
         color: #fca5a5;
       }
-      .muse-modal-overlay {
+      .acct-modal-overlay {
         position: fixed;
         inset: 0;
         z-index: 2147483646;
@@ -1312,7 +1356,7 @@ function injectExportButton() {}
         align-items: center;
         justify-content: center;
       }
-      .muse-modal-card {
+      .acct-modal-card {
         background: #1c1c22;
         border: 1px solid rgba(255, 255, 255, 0.15);
         border-radius: 16px;
@@ -1322,12 +1366,12 @@ function injectExportButton() {}
         color: #fff;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
-      .muse-modal-title {
+      .acct-modal-title {
         font-size: 15px;
         font-weight: 600;
         margin-bottom: 12px;
       }
-      .muse-modal-input {
+      .acct-modal-input {
         width: 100%;
         box-sizing: border-box;
         padding: 9px 12px;
@@ -1339,16 +1383,16 @@ function injectExportButton() {}
         outline: none;
         margin-bottom: 16px;
       }
-      .muse-modal-input:focus {
+      .acct-modal-input:focus {
         border-color: #3b82f6;
         box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
       }
-      .muse-modal-actions {
+      .acct-modal-actions {
         display: flex;
         justify-content: flex-end;
         gap: 8px;
       }
-      .muse-modal-btn {
+      .acct-modal-btn {
         padding: 6px 14px;
         border-radius: 8px;
         font-size: 13px;
@@ -1357,20 +1401,20 @@ function injectExportButton() {}
         font-weight: 500;
         transition: all 0.15s;
       }
-      .muse-modal-btn.cancel {
+      .acct-modal-btn.cancel {
         background: transparent;
         border-color: rgba(255, 255, 255, 0.15);
         color: #ccc;
       }
-      .muse-modal-btn.cancel:hover {
+      .acct-modal-btn.cancel:hover {
         background: rgba(255, 255, 255, 0.08);
         color: #fff;
       }
-      .muse-modal-btn.confirm {
+      .acct-modal-btn.confirm {
         background: #3b82f6;
         color: #fff;
       }
-      .muse-modal-btn.confirm:hover {
+      .acct-modal-btn.confirm:hover {
         background: #2563eb;
       }
     `;
@@ -1381,30 +1425,30 @@ function injectExportButton() {}
     closeModal();
     const t = getT();
     const overlay = document.createElement('div');
-    overlay.className = 'muse-modal-overlay';
+    overlay.className = 'acct-modal-overlay';
 
     const card = document.createElement('div');
-    card.className = 'muse-modal-card';
+    card.className = 'acct-modal-card';
 
     const titleEl = document.createElement('div');
-    titleEl.className = 'muse-modal-title';
+    titleEl.className = 'acct-modal-title';
     titleEl.textContent = title;
 
     const input = document.createElement('input');
-    input.className = 'muse-modal-input';
+    input.className = 'acct-modal-input';
     input.value = initialValue || '';
     input.placeholder = t.addAccountPlaceholder;
 
     const actions = document.createElement('div');
-    actions.className = 'muse-modal-actions';
+    actions.className = 'acct-modal-actions';
 
     const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'muse-modal-btn cancel';
+    cancelBtn.className = 'acct-modal-btn cancel';
     cancelBtn.textContent = t.cancel;
     cancelBtn.onclick = closeModal;
 
     const confirmBtn = document.createElement('button');
-    confirmBtn.className = 'muse-modal-btn confirm';
+    confirmBtn.className = 'acct-modal-btn confirm';
     confirmBtn.textContent = t.confirm;
     confirmBtn.onclick = () => {
       const val = input.value.trim();
@@ -1439,11 +1483,11 @@ function injectExportButton() {}
     const t = getT();
 
     const menu = document.createElement('div');
-    menu.className = 'muse-context-menu';
+    menu.className = 'acct-context-menu';
 
     // 1. 修改备注
     const renameItem = document.createElement('div');
-    renameItem.className = 'muse-context-item';
+    renameItem.className = 'acct-context-item';
     renameItem.innerHTML = `<span>✏️</span><span>${t.renameAccount}</span>`;
     renameItem.onclick = () => {
       closeContextMenu();
@@ -1457,7 +1501,7 @@ function injectExportButton() {}
 
     // 2. 退出登录
     const signOutItem = document.createElement('div');
-    signOutItem.className = 'muse-context-item';
+    signOutItem.className = 'acct-context-item';
     signOutItem.innerHTML = `<span>🚪</span><span>${t.signOutAccount}</span>`;
     signOutItem.onclick = () => {
       closeContextMenu();
@@ -1470,7 +1514,7 @@ function injectExportButton() {}
     // 3. 删除账号
     if (dockState.profiles.length > 1) {
       const deleteItem = document.createElement('div');
-      deleteItem.className = 'muse-context-item danger';
+      deleteItem.className = 'acct-context-item danger';
       deleteItem.innerHTML = `<span>🗑️</span><span>${t.deleteAccount}</span>`;
       deleteItem.onclick = () => {
         closeContextMenu();
@@ -1483,7 +1527,7 @@ function injectExportButton() {}
 
     // 4. 网络代理设置
     const proxyItem = document.createElement('div');
-    proxyItem.className = 'muse-context-item';
+    proxyItem.className = 'acct-context-item';
     proxyItem.innerHTML = `<span>🌐</span><span>${t.networkProxy}</span>`;
     proxyItem.onclick = () => {
       closeContextMenu();
@@ -1504,7 +1548,7 @@ function injectExportButton() {}
 
     if (!dockContainer) {
       dockContainer = document.createElement('div');
-      dockContainer.id = 'muse-account-dock';
+      dockContainer.id = 'acct-dock';
       parent.appendChild(dockContainer);
     } else if (!dockContainer.parentNode) {
       parent.appendChild(dockContainer);
@@ -1520,20 +1564,20 @@ function injectExportButton() {}
 
     // 折叠按钮
     const collapseBtn = document.createElement('div');
-    collapseBtn.className = 'muse-dock-collapse-btn';
+    collapseBtn.className = 'acct-dock-collapse-btn';
     collapseBtn.title = dockState.collapsed ? t.expandDock : t.collapseDock;
     collapseBtn.innerHTML = dockState.collapsed ? '▶' : '◀';
     collapseBtn.onclick = (e) => {
       e.stopPropagation();
       dockState.collapsed = !dockState.collapsed;
-      try { localStorage.setItem('muse_dock_collapsed', dockState.collapsed ? '1' : '0'); } catch {}
+      try { localStorage.setItem('acct_dock_collapsed', dockState.collapsed ? '1' : '0'); } catch {}
       renderDock();
     };
     dockContainer.appendChild(collapseBtn);
 
     // 账号列表
     const list = document.createElement('div');
-    list.className = 'muse-dock-list';
+    list.className = 'acct-dock-list';
 
     // 保底至少渲染一个当前账号徽章
     const profilesToRender = (dockState.profiles && dockState.profiles.length > 0)
@@ -1542,7 +1586,7 @@ function injectExportButton() {}
 
     profilesToRender.forEach((p) => {
       const item = document.createElement('div');
-      item.className = 'muse-dock-item';
+      item.className = 'acct-dock-item';
       if (p.id === dockState.activeProfileId) {
         item.classList.add('active');
       }
@@ -1551,7 +1595,7 @@ function injectExportButton() {}
 
       // Tooltip
       const tooltip = document.createElement('div');
-      tooltip.className = 'muse-dock-tooltip';
+      tooltip.className = 'acct-dock-tooltip';
 
       const nameSpan = document.createElement('span');
       nameSpan.textContent = p.name;
@@ -1559,12 +1603,12 @@ function injectExportButton() {}
 
       if (p.id === dockState.activeProfileId) {
         const badge = document.createElement('span');
-        badge.className = 'muse-dock-tooltip-badge';
+        badge.className = 'acct-dock-tooltip-badge';
         badge.textContent = t.currentAccountBadge;
         tooltip.appendChild(badge);
       } else {
         const hint = document.createElement('span');
-        hint.className = 'muse-dock-tooltip-hint';
+        hint.className = 'acct-dock-tooltip-hint';
         hint.textContent = t.clickToSwitch;
         tooltip.appendChild(hint);
       }
@@ -1588,7 +1632,7 @@ function injectExportButton() {}
 
     // 新增账号按钮
     const addBtn = document.createElement('button');
-    addBtn.className = 'muse-dock-add-btn';
+    addBtn.className = 'acct-dock-add-btn';
     addBtn.type = 'button';
     addBtn.title = t.addAccountTooltip;
     addBtn.textContent = '+';
@@ -1601,8 +1645,8 @@ function injectExportButton() {}
 
     // 主题切换快捷按钮 (Dark / Light)
     const themeBtn = document.createElement('button');
-    themeBtn.id = 'muse-dock-theme-toggle';
-    themeBtn.className = 'muse-dock-add-btn';
+    themeBtn.id = 'acct-dock-theme-toggle';
+    themeBtn.className = 'acct-dock-add-btn';
     themeBtn.type = 'button';
     themeBtn.style.marginTop = '4px';
     themeBtn.style.fontSize = '12px';
@@ -1616,8 +1660,8 @@ function injectExportButton() {}
 
     // ⚙ 配置与自动化控制中心按钮 (Settings & Auto-Allow Center)
     const settingsBtn = document.createElement('button');
-    settingsBtn.id = 'muse-dock-settings-btn';
-    settingsBtn.className = 'muse-dock-add-btn';
+    settingsBtn.id = 'acct-dock-settings-btn';
+    settingsBtn.className = 'acct-dock-add-btn';
     settingsBtn.type = 'button';
     settingsBtn.style.marginTop = '4px';
     settingsBtn.style.position = 'relative';
@@ -1627,7 +1671,7 @@ function injectExportButton() {}
 
     // 右下角微型自动化状态指示圆点
     const dot = document.createElement('span');
-    dot.id = 'muse-dock-settings-dot';
+    dot.id = 'acct-dock-settings-dot';
     Object.assign(dot.style, {
       position: 'absolute',
       right: '1px',
@@ -1700,6 +1744,13 @@ function injectExportButton() {}
     if (!rawUrl || typeof rawUrl !== 'string') return null;
     try {
       const parsed = new URL(rawUrl, window.location.href);
+      // 与主进程一致: 只解包已知跳转站的重定向参数 (v1.5.17 加固)
+      const REDIRECTOR_HOSTS = new Set([
+        'www.google.com', 'google.com', 'www.bing.com', 'bing.com',
+        'duckduckgo.com', 'html.duckduckgo.com', 'l.facebook.com',
+        'out.reddit.com', 'www.youtube.com',
+      ]);
+      if (!REDIRECTOR_HOSTS.has(parsed.hostname.toLowerCase())) return null;
       const redirectKeys = ['u', 'url', 'target', 'dest', 'destination', 'link', 'href', 'q'];
       for (const key of redirectKeys) {
         const candidate = parsed.searchParams.get(key);
@@ -1728,7 +1779,6 @@ function injectExportButton() {}
       const host = parsed.hostname.toLowerCase();
       if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
       if (host === 'meta.ai' || host.endsWith('.meta.ai')) return true;
-      if (parsed.protocol === 'file:') return true;
       // 常见认证回调、连接器与页面跳转
       const authHosts = [
         'accounts.google.com',
@@ -1766,6 +1816,12 @@ function injectExportButton() {}
       try {
         const anchor = e.target && e.target.closest ? e.target.closest('a') : null;
         if (!anchor) return;
+
+        // 尊重用户显式打开方式 (v1.5.17, 评审 P2): 带修饰键/中键点击与显式
+        // target 的链接交回页面与主进程的窗口打开逻辑, 不在此劫持
+        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+        const targetAttr = (anchor.getAttribute('target') || '').toLowerCase();
+        if (targetAttr && targetAttr !== '_self') return;
 
         // 关键防御：如果点击发生在模态弹窗、设置面板或对话框内部，绝不拦截！交由页面自身逻辑处理
         if (anchor.closest('[role="dialog"], [aria-modal="true"], [class*="dialog"], [class*="modal"], [class*="settings"]')) {
@@ -1829,10 +1885,10 @@ function injectExportButton() {}
       const isSuccess = state === 'completed';
       const t = getT();
 
-      let container = document.getElementById('muse-download-toast-container');
+      let container = document.getElementById('acct-download-toast-container');
       if (!container) {
         container = document.createElement('div');
-        container.id = 'muse-download-toast-container';
+        container.id = 'acct-download-toast-container';
         container.style.cssText = `
           position: fixed;
           right: 24px;
@@ -1850,7 +1906,7 @@ function injectExportButton() {}
 
       const isLight = currentTheme === 'light';
       const toast = document.createElement('div');
-      toast.className = `muse-download-toast ${isLight ? 'light-mode' : 'dark-mode'}`;
+      toast.className = `acct-download-toast ${isLight ? 'light-mode' : 'dark-mode'}`;
       toast.style.cssText = `
         pointer-events: auto;
         min-width: 300px;
@@ -1882,7 +1938,7 @@ function injectExportButton() {}
           <span>${isSuccess ? t.downloadCompleteTitle : t.downloadFailedTitle}</span>
           ${sizeHtml}
         </div>
-        <button class="muse-toast-close" title="${t.closeToast}" style="background:none;border:none;cursor:pointer;color:inherit;opacity:0.6;font-size:16px;padding:0 2px;line-height:1;display:flex;align-items:center;">&times;</button>
+        <button class="acct-toast-close" title="${t.closeToast}" style="background:none;border:none;cursor:pointer;color:inherit;opacity:0.6;font-size:16px;padding:0 2px;line-height:1;display:flex;align-items:center;">&times;</button>
       `;
 
       const body = document.createElement('div');
@@ -1978,7 +2034,7 @@ function injectExportButton() {}
       toast.onmouseleave = startDismiss;
       startDismiss();
 
-      const closeBtn = header.querySelector('.muse-toast-close');
+      const closeBtn = header.querySelector('.acct-toast-close');
       if (closeBtn) {
         closeBtn.onclick = (e) => {
           e.stopPropagation();

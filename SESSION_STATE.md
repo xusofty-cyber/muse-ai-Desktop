@@ -130,10 +130,20 @@
    - **发布流水线（P1-7 配置侧）**：package.json 的 publish.releaseType 改 draft、mac 目标补 universal（Intel/Apple Silicon 通吃）。配套 release.yml（tag↔version 校验步骤 + finalize 转正 job）因连接器无 workflow 权限仍需手动替换，已单独交付（muse-release-yml-v1.5.16.yml）；注意 PR 与该文件须配套：只合 PR 不换 yml 时下次发版将停留在草稿（安全失败，一键可转正）。
    - **测试证据**：node --check 三个 JS 全过；Electron 桩冒烟新增 sanitize 用例（重复/空/数字/缺失 id 过滤、windowByProfile 剪枝、全非法回退默认）+ 第一批几何/主机名用例回归，全 PASS；release.yml v2 YAML 解析通过。实机回归待真机。
 
+15. **评审第四批修复（v1.5.17 证据，评审清单收尾）**：
+   - **聊天导出健壮性（P2）**：`exportChat` 改为永远导活动账号主窗口（旧实现取焦点窗口，焦点在快速窗/设置窗时导错会话或静默失败），且页面 URL 非 muse/meta 聊天页时明确提示；preload `scrapeChat` 改增量收集——上滚到顶（高度稳定 2 次判定 reachedTop）后逐步下滚边滚边按文本指纹去重收集，解决虚拟列表卸载屏外消息导致的静默丢数据；`fixRoles` 给交替推算的发言人打 `guessed` 标记，导出结果带 `stats{reachedTop, guessedRoles}`，Markdown/JSON/HTML 三种格式均写入完整性告警（未到顶、推算条数），不再产出「看似完整」的静默坏数据。
+   - **外链拦截收窄（P2）**：preload 点击拦截放行带修饰键/中键点击与显式 target 的链接（交回页面与主进程窗口逻辑）；`extractExternalTargetUrl`（主进程与 preload 两份）改为只解包已知跳转站（Google/Bing/DDG/Facebook/Reddit/YouTube）的重定向参数，任意站点 ?u= 不再被无声直达。
+   - **file:// 归类（P2）**：`isInternalSiteUrl` 与 preload `isInternalUrl` 均移除 file: 内部归类，本地 HTML 不再能在特权 preload 窗口内被当内部页放行（应用自身页面均由主进程直接加载，不受影响）。
+   - **Google 重置一致性（P2）**：托盘与 IPC 两条重置路径删除对 defaultSession 的无条件清除（该会话不承载账号窗口），统一只清活动账号分区，与子弹窗横幅路径（按所属分区）对齐。
+   - **注入指纹面收敛（P2）**：preload 注入页面的 DOM 标识去品牌化——data-muse-theme→data-ui-theme、Dock/Popover/Toast/右键菜单/弹窗的 muse-* id 与 class 统一改 acct-*/ui-* 前缀（文件内 JS/CSS 同步改名并审计零残留）；主进程侧 Google 横幅 id 与麦克风 shim 的主世界全局名 __museMic 同步去品牌化。注：Dock 折叠偏好的 localStorage 键随之改名，用户该偏好会重置一次。
+   - **依赖可用性（P2）**：package-lock 中 271 处 resolved 镜像源 registry.npmmirror.com 统一换为官方 registry.npmjs.org（integrity 不变）；CI 的 `npm ci || npm install` 回退在 release.yml v3 交付件中去除（仍需手动替换）。
+   - **未做（需用户投入/决策）**：代码签名与 mac 公证（需 Apple Developer 与 Windows 代码签名证书）；Linux executableName 改名后的旧启动器过渡（建议在 Release 说明中提示旧名 muse-desktop 失效，或保留一版旧名软链，需用户拍板）；release.yml v2 此前未被替换，当前仓库 workflow 仍无 tag 校验与 finalize——**在替换为 v3 之前打 tag 发版，Release 会因 releaseType:draft 停留在草稿**（资产齐全，网页一键可转正）。
+   - **测试证据**：node --check 三个 JS 全过；指纹改名后全仓审计页面可见 muse- 标识零残留（muse.ai 域名、内部 IPC 通道名与隔离世界属性除外）；lock JSON 合法性校验通过；Electron 桩冒烟（sanitize/几何/主机名）回归全 PASS；release.yml v3 YAML 解析通过。实机回归待真机。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - `v1.5.13`、`v1.5.14` 均已合并 main（f111f45），正式发版与实机复核待进行；`v1.5.15` 第二批修复已合并 main（40cf4f3），release.yml 的 sips 步骤与 1024 图标已由用户手动补齐（84f6689、dd332b6）；`v1.5.16` 第三批修复（登出范围与缓存、权限询问、删号原子化、randomUUID、profiles 校验、.bak 代际、更新流式下载、Auto-Allow 加固、发布配置侧）在分支 fix/batch3-session-hygiene 待合并，配套 release.yml v2 待用户替换。评审剩余尾巴（第四批候选）：聊天导出健壮性、外链拦截收窄与参数解包、注入指纹面收敛、file:// 内部站点归类、Google 重置入口一致性、lock 镜像与 CI npm ci 回退、代码签名（需证书投入）、executableName 改名过渡提示。
+   - `v1.5.13`、`v1.5.14` 均已合并 main（f111f45），正式发版与实机复核待进行；`v1.5.15` 第二批修复已合并 main（40cf4f3），release.yml 的 sips 步骤与 1024 图标已由用户手动补齐（84f6689、dd332b6）；`v1.5.16` 第三批修复已合并 main（fe6ca11）；`v1.5.17` 第四批修复（导出健壮性/外链收窄/file 归类/Google 重置一致性/指纹收敛/lock 镜像源）在分支 fix/batch4-polish 待合并，至此五位专家评审清单中可纯代码解决的条目已全部处理完毕。剩余仅需用户决策/投入的事项：①release.yml 替换为 v3（muse-release-yml-v1.5.17.yml，含 tag 校验、finalize 转正、去 npm 回退）——未替换前打 tag 发版会停在草稿；②代码签名与 mac 公证（需证书）；③Linux 旧可执行名过渡方案；④v1.5.13 起各版的实机回归与正式发版（建议合并本批后以 v1.5.17 一次发版并按 SESSION_STATE 第 11–15 条逐项回归）。
 2. **后续下一步**：
    - [x] 完成代码修复与语法校验。
    - [x] 合并至 `main` 主分支并推送到远端。
