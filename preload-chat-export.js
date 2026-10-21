@@ -681,8 +681,11 @@ ipcRenderer.on('muse-export:scrape', async () => {
 
   function isCurrentSiteAllowed() {
     if (!autoState.enabled) return false;
-    if (autoState.autoAllowAll) return true;
     const hostname = location.hostname.toLowerCase();
+    // autoAllowAll 只覆盖 Muse / Meta AI 自家站点 (加固): 「全部放行」若对
+    // 任意站点生效, 任何第三方页面 (含 OAuth 同意屏) 的按钮都可能被代点;
+    // 其他站点仍可通过每站点开关单独启用
+    if (autoState.autoAllowAll) return /^(?:.+\.)?(muse\.ai|meta\.ai)$/.test(hostname);
     return autoState.sites[hostname] === true;
   }
 
@@ -941,7 +944,9 @@ ipcRenderer.on('muse-export:scrape', async () => {
   // --- DOM Auto-Approval Observer ---
   const CLICK_KEYWORDS = [
     'allow', 'approve', 'confirm', 'connect', 'authorize', 'accept',
-    'grant access', 'run code', 'proceed', 'continue'
+    'grant access', 'run code', 'proceed'
+    // 注意: 不含裸 'continue' —— 普通流程按钮遍地都是 Continue, 曾靠正文
+    // 关键词兜底被误点; 同意类对话框几乎都同时带 Allow/Authorize 等词
   ];
 
   const CONNECTOR_CONTAINER_SELECTORS = [
@@ -972,16 +977,19 @@ ipcRenderer.on('muse-export:scrape', async () => {
 
   function checkAndAutoApprove() {
     if (!autoState.enabled) return;
+    // 只在顶层页面运行: 子框架 (第三方嵌入/OAuth iframe) 一律不代点
+    if (window.top !== window) return;
     if (!isCurrentSiteAllowed()) return;
 
-    // Search for interactive confirmation buttons
-    const buttons = Array.from(document.querySelectorAll('button, a[role="button"], [role="button"], input[type="button"], input[type="submit"]'));
+    // Search for interactive confirmation buttons (每轮扫描设上限, 防病态页面)
+    const buttons = Array.from(document.querySelectorAll('button, a[role="button"], [role="button"], input[type="button"], input[type="submit"]')).slice(0, 200);
 
     for (const btn of buttons) {
       if (btn.__museAutoHandled) continue;
       if (btn.offsetWidth === 0 || btn.offsetHeight === 0 || btn.disabled) continue;
 
-      const txt = (btn.innerText || btn.value || btn.getAttribute('aria-label') || '').trim().toLowerCase();
+      // 用 textContent 而非 innerText: 不触发强制同步布局 (流式输出时尤甚)
+      const txt = (btn.textContent || btn.value || btn.getAttribute('aria-label') || '').trim().toLowerCase().slice(0, 120);
       if (!txt) continue;
 
       const isMatch = CLICK_KEYWORDS.some((kw) => {
@@ -992,9 +1000,10 @@ ipcRenderer.on('muse-export:scrape', async () => {
 
       if (!isMatch) continue;
 
-      // Check context container
-      let container = btn.closest(CONNECTOR_CONTAINER_SELECTORS.join(', '));
-      const containerText = container ? container.innerText || '' : document.body.innerText.slice(0, 1000);
+      // 类别判定只认按钮自身文本与其确认类容器文本; 找不到容器时不再兜底
+      // 读取整页正文前 1000 字 (曾导致普通按钮被正文关键词误判代点)
+      const container = btn.closest(CONNECTOR_CONTAINER_SELECTORS.join(', '));
+      const containerText = container ? (container.textContent || '').slice(0, 600) : '';
 
       if (matchesActionCategory(txt, containerText)) {
         btn.__museAutoHandled = true;
@@ -1023,9 +1032,23 @@ ipcRenderer.on('muse-export:scrape', async () => {
     }
   });
 
-  // Observe page changes
+  // Observe page changes —— 节流 (加固): 流式输出时 MutationObserver 每秒
+  // 可触发上千次, 旧实现每次都全文档扫描 + 逐按钮读文本, 常驻占用主线程。
+  // 改为 300ms 防抖合并 + 扫描重入保护
+  let scanTimer = null;
+  let scanRunning = false;
+  function scheduleAutoApproveScan() {
+    if (scanTimer) return;
+    scanTimer = setTimeout(() => {
+      scanTimer = null;
+      if (scanRunning) return;
+      scanRunning = true;
+      try { checkAndAutoApprove(); } finally { scanRunning = false; }
+    }, 300);
+  }
+
   const observer = new MutationObserver(() => {
-    checkAndAutoApprove();
+    scheduleAutoApproveScan();
   });
 
   function startObserver() {
