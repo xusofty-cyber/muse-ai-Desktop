@@ -486,6 +486,15 @@ function loadState() {
 }
 
 let state = loadState();
+// 一次性迁移 (v1.5.18): 站点选择会随 app-state.json 跨版本保留, 旧版本里切到
+// Meta AI 的用户升级后每次启动仍直达 meta.ai, 而 Muse AI 的登录地址只有
+// https://muse.ai 。首次运行本版时把站点强制扳回 muse; 落盘交给下方既有的
+// 守卫首写 (仅安全加载时), 状态损坏时不覆盖现场、下一启动重试迁移。迁移标记
+// 置位后不再干预, 用户之后主动切换站点的选择照常保存。
+if (state.siteResetV1518 !== true) {
+  state.site = 'muse';
+  state.siteResetV1518 = true;
+}
 const { nativeTheme } = require('electron');
 try {
   nativeTheme.themeSource = state.theme || 'dark';
