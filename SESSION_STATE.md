@@ -93,10 +93,16 @@
 
 ---
 
+11. **Ubuntu 多账号登录后主窗口唤不回与 Dock 图标异常根治（v1.5.13 证据）**：
+   - **现场症状**：Ubuntu 24.04（VMware）昨日单账号正常，今日登录多账号后：Dock 出现紫猫启动器与灰齿轮「muse」两个条目并存；点击 Dock 图标、右键「所有窗口」预览、托盘「打开 Muse 主窗口」与「切换至 Muse」均无任何窗口出现；托盘菜单本身正常（当前账号/站点状态可读）。
+   - **根因定位**：①多窗口常驻架构下全部账号共用一份全局 `state.window` 几何且加载/落盘/使用三处均零校验，多窗口 resize/move 竞写、最小化/隐藏瞬间或虚拟机分辨率变化写入的屏幕外坐标/异常尺寸被持久化至 `app-state.json` 并反复重放；②托盘单击、菜单打开主窗口、切换站点、二次启动四条唤回路径全部汇聚到只有 restore/show/focus 的 `showMainWindow()`，无几何修复、无可见性复查、无重建兜底，活动窗口一旦楔死四路同时失效；③Linux 图标从未做桌面匹配：窗口 app_id/WM_CLASS 为「muse」，与 electron-builder 生成的 .desktop/可执行名不一致，GNOME 无法认领窗口而生成灰齿轮兜底条目，且 v1.5.12 的 `setIcon()` 带 `win32` 限定未惠及 Linux。
+   - **修复落地**：新增 `sanitizeWindowBounds`（加载时钳制尺寸/坐标）与 `ensureBoundsVisible`（显示前按当前全部显示器校验交叠、屏幕外自动居中主屏）；`persistBounds` 在最小化/隐藏时不再落盘，并新增按账号分开的 `windowByProfile` 几何存储（全局 `window` 保留兼容）；新建/复用/切换窗口的全部 setBounds 入口统一过校验；新增 `showWindowSafely`（修几何→restore→show→moveTop→focus→返回真实可见性），`showMainWindow` 在 show 后仍不可见时销毁楔死窗口并以安全几何重建；`createMainWindow` 的 ready-to-show 改为捕获本次创建的窗口对象（原闭包引用全局 mainWindow，切账号竞态下会 show 错窗）；profile 窗口新增 `closed` 清理（Map 与 mainWindow 同步置空）；主窗口/设置窗口 `setIcon` 平台条件由 `win32` 放宽为非 darwin，Linux X11 同步生效；`package.json` Linux 配置对齐桌面匹配：`executableName: "muse"` 与 `desktop.StartupWMClass: "muse"`，使 .desktop 文件名、图标名与窗口 app_id 三者一致。
+   - **测试证据**：`node --check` 对 main.js / preload-chat-export.js / preload-settings.js 全部通过；以 Electron 桩加载 main.js 并预置被写坏的 app-state.json（width 40 / height 99999 / x -99999 等）做冒烟测试 9 项全 PASS：坏几何加载即被钳制并写回、屏幕外坐标自动居中主屏、屏幕内坐标原样保留、无坐标居中、垃圾值清空。Ubuntu 实机（Wayland/Xorg 双会话、Dock 图标归并、多账号秒切唤回）待真机复核后发布 v1.5.13。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - 修复与版本升级 `v1.5.12` 已完成。
+   - `v1.5.13` 修复（Ubuntu 多账号窗口唤不回 + Dock 图标匹配）已完成代码与桩冒烟测试，待 Ubuntu 实机复核后合并发布。
 2. **后续下一步**：
    - [x] 完成代码修复与语法校验。
    - [x] 合并至 `main` 主分支并推送到远端。

@@ -50,6 +50,10 @@
     },
     "linux": {
       "icon": "assets/icon.png",
+      "executableName": "muse",
+      "desktop": {
+        "StartupWMClass": "muse"
+      },
       "category": "Network;Chat;Utility",
       "maintainer": "Gc <xusofty-cyber>",
       "target": [
@@ -87,5 +91,5 @@
     "dist:mac": "electron-builder --mac dmg zip",
     "start": "electron ."
   },
-  "version": "1.5.12"
+  "version": "1.5.13"
 }
