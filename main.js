@@ -369,6 +369,7 @@ function defaultState() {
 }
 const statePath = () => path.join(app.getPath('userData'), 'app-state.json');
 const stateBackupPath = () => path.join(app.getPath('userData'), 'app-state.json.bak');
+const stateBackup2Path = () => path.join(app.getPath('userData'), 'app-state.json.bak2');
 
 let isStateSafelyLoaded = false;
 
@@ -400,13 +401,31 @@ function sanitizeAndMergeState(raw) {
     merged.proxy.mode = 'system';
     merged.proxy.enabled = false;
   }
+  // profiles 合法性校验 (v1.5.16, 评审 P2): 此前只补颜色, 不查 id。空/重复/
+  // 非字符串 id 会让多个账号映射到同一 persist:muse-undefined 分区且不可拆分。
+  // 现在过滤非法与重复 id (保留首个), 全部非法时回退默认账号。
   if (Array.isArray(merged.profiles) && merged.profiles.length > 0) {
-    merged.profiles = merged.profiles.map((p, idx) => ({
-      ...p,
-      color: p.color || AVATAR_COLORS[idx % AVATAR_COLORS.length],
-    }));
-  } else {
+    const seenIds = new Set();
+    merged.profiles = merged.profiles
+      .filter((prof) => {
+        if (!prof || typeof prof.id !== 'string' || !prof.id.trim() || seenIds.has(prof.id)) return false;
+        seenIds.add(prof.id);
+        return true;
+      })
+      .map((prof, idx) => ({
+        ...prof,
+        color: prof.color || AVATAR_COLORS[idx % AVATAR_COLORS.length],
+      }));
+  }
+  if (!Array.isArray(merged.profiles) || merged.profiles.length === 0) {
     merged.profiles = [{ id: 'default', name: '账号 1', color: AVATAR_COLORS[0] }];
+  }
+  // windowByProfile 只保留现存账号的条目, 防已删账号的几何记录无限堆积
+  {
+    const validIds = new Set(merged.profiles.map((prof) => prof.id));
+    for (const pid of Object.keys(merged.windowByProfile)) {
+      if (!validIds.has(pid)) delete merged.windowByProfile[pid];
+    }
   }
   return merged;
 }
@@ -434,21 +453,23 @@ function loadState() {
     console.warn('[State] Main app-state.json corrupted or unreadable, attempting backup recovery:', err);
   }
 
-  // 2. 主文件损坏或空文件时，触发容灾备份恢复，绝不直接抹空账号
-  try {
-    if (fs.existsSync(backupPath)) {
-      const backupContent = fs.readFileSync(backupPath, 'utf8');
-      if (backupContent && backupContent.trim()) {
-        const rawBackup = JSON.parse(backupContent);
-        const parsedBackup = sanitizeAndMergeState(rawBackup);
-        console.log('[State] Successfully restored profiles and settings from backup file.');
-        isStateSafelyLoaded = true;
-        try { fs.writeFileSync(primaryPath, JSON.stringify(parsedBackup, null, 2), 'utf8'); } catch {}
-        return parsedBackup;
+  // 2. 主文件损坏或空文件时，依次尝试 .bak / .bak2 代际备份恢复，绝不直接抹空账号
+  for (const candidate of [backupPath, stateBackup2Path()]) {
+    try {
+      if (fs.existsSync(candidate)) {
+        const backupContent = fs.readFileSync(candidate, 'utf8');
+        if (backupContent && backupContent.trim()) {
+          const rawBackup = JSON.parse(backupContent);
+          const parsedBackup = sanitizeAndMergeState(rawBackup);
+          console.log('[State] Successfully restored profiles and settings from backup file:', candidate);
+          isStateSafelyLoaded = true;
+          try { fs.writeFileSync(primaryPath, JSON.stringify(parsedBackup, null, 2), 'utf8'); } catch {}
+          return parsedBackup;
+        }
       }
+    } catch (backupErr) {
+      console.error('[State] Backup recovery failed for', candidate, backupErr);
     }
-  } catch (backupErr) {
-    console.error('[State] Backup recovery also failed:', backupErr);
   }
 
   // 3. 首次启动主备均无时，采用默认状态
@@ -473,20 +494,26 @@ function saveState() {
     const tmpPath = filePath + '.tmp';
     const content = JSON.stringify(state, null, 2);
 
-    // 1. 先安全落盘至临时文件
+    // 1. 代际轮换 (v1.5.16, 评审 P2): 旧实现每次保存后立刻用新内容覆盖 .bak,
+    // 内存中的 state 一旦被写坏, 主备会一起坏。改为覆盖主文件之前, 先把磁盘上
+    // 当前主文件 (最后一个可解析的已知良好版本) 轮为 .bak, 旧 .bak 轮为
+    // .bak2; 当前主文件不可解析时不轮转, 防止坏内容污染备份链。
+    try {
+      const currentOnDisk = fs.readFileSync(filePath, 'utf8');
+      JSON.parse(currentOnDisk);
+      try { if (fs.existsSync(backupPath)) fs.copyFileSync(backupPath, stateBackup2Path()); } catch {}
+      try { fs.copyFileSync(filePath, backupPath); } catch {}
+    } catch {}
+
+    // 2. 先安全落盘至临时文件
     fs.writeFileSync(tmpPath, content, 'utf8');
 
-    // 2. 原子重命名替换
+    // 3. 原子重命名替换
     try {
       fs.renameSync(tmpPath, filePath);
     } catch {
       fs.copyFileSync(tmpPath, filePath);
       try { fs.unlinkSync(tmpPath); } catch {}
-    }
-
-    // 3. 含有有效账号时同步更新备份
-    if (state && Array.isArray(state.profiles) && state.profiles.length > 0) {
-      try { fs.copyFileSync(filePath, backupPath); } catch {}
     }
   } catch (err) {
     console.error('[State] Failed to save state atomically:', err);
@@ -1477,7 +1504,13 @@ function nextAccount() {
 }
 
 function addProfile(customName) {
-  const id = `acc_${Date.now()}`;
+  // 账号 id 必须全局唯一 (v1.5.16, 评审 P2): 此前用 acc_${Date.now()}, 托盘与
+  // 页面两入口同毫秒各触发一次即撞号, 两账号共用同一 partition 完全串号,
+  // 删其一还会清掉另一个。改用 randomUUID 并做唯一性兜底。
+  let id = `acc_${require('crypto').randomUUID()}`;
+  while (state.profiles.some((prof) => prof.id === id)) {
+    id = `acc_${require('crypto').randomUUID()}`;
+  }
   const color = AVATAR_COLORS[state.profiles.length % AVATAR_COLORS.length];
   const name = (customName && customName.trim()) || `账号 ${state.profiles.length + 1}`;
   const profile = { id, name, color };
@@ -1491,11 +1524,50 @@ function addProfile(customName) {
   notify('新增账号', `${profile.name} 已创建，已就绪独立会话环境。`);
 }
 
+// ---- 会话清除工具 (v1.5.16, 评审 P1-13) -------------------------------------
+// UI 文案承诺的是「退出当前站点登录」, 旧实现却对整个 partition 无范围
+// clearStorageData, 同一账号在另一个站点的登录被一并销毁; 且三条清除路径
+// 都漏了 clearCache/clearAuthCache, 缓存中的页面壳与接口响应在登出后仍存活。
+async function clearSessionCaches(ses) {
+  try { await ses.clearCache(); } catch {}
+  try { await ses.clearAuthCache(); } catch {}
+}
+
+async function clearSiteSession(ses, site) {
+  let origin = '';
+  let host = '';
+  try {
+    const u = new URL(site.url);
+    origin = u.origin;
+    host = u.hostname.replace(/^www\./, '');
+  } catch {}
+  if (origin) {
+    try { await ses.clearStorageData({ origin }); } catch {}
+  }
+  if (host) {
+    try {
+      const cookies = await ses.cookies.get({});
+      for (const c of cookies) {
+        const d = String(c.domain || '').replace(/^\./, '');
+        if (d === host || d.endsWith('.' + host)) {
+          await ses.cookies.remove(`https://${d}${c.path || '/'}`, c.name).catch(() => {});
+        }
+      }
+    } catch {}
+  }
+  await clearSessionCaches(ses);
+}
+
+async function clearWholeSession(ses) {
+  try { await ses.clearStorageData(); } catch {}
+  await clearSessionCaches(ses);
+}
+
 async function signOut() {
   // 先关该账号全部子弹窗, 防止清除后弹窗回写 Cookie 让会话复活 (评审 P1-6)
   closeChildWindows(state.activeProfileId);
   const ses = session.fromPartition(partitionFor(state.activeProfileId));
-  await ses.clearStorageData();
+  await clearSiteSession(ses, currentSite());
   const curWin = profileWindows.get(state.activeProfileId);
   if (curWin && !curWin.isDestroyed()) {
     curWin.loadURL(currentSite().url);
@@ -1609,23 +1681,44 @@ function toggleAutomationMaster(forcedValue) {
 
 function setupPermissions(profileId) {
   const ses = session.fromPartition(partitionFor(profileId));
-  ses.setPermissionRequestHandler((webContents, permission, callback) => {
+  ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    // 归因优先用请求方 frame 的 URL (评审 P1-14), 回退顶层页面 URL
     let url = '';
-    try { url = webContents.getURL(); } catch { /* ignore */ }
-    const ours = /^https:\/\/(www\.)?(muse\.ai|meta\.ai)(\/|$)/.test(url);
-
+    try { url = (details && details.requestingUrl) || webContents.getURL(); } catch { /* ignore */ }
     let hostname = '';
     try { hostname = new URL(url).hostname; } catch { /* ignore */ }
+    const ours = url.startsWith('https://') && /(^|\.)(muse\.ai|meta\.ai)$/.test(hostname);
+    if (!ours) { callback(false); return; }
 
-    // Mic for voice chat, clipboard for the site's own copy buttons.
-    let allowed = permission === 'media' || permission === 'audioCapture' ||
-      permission === 'clipboard-read' || permission === 'clipboard-sanitized-write';
+    // 剪贴板读取默认拒绝: 页面可在无用户手势时静默读取剪贴板内容
+    if (permission === 'clipboard-read') { callback(false); return; }
+    // 净化写入是站点自身的复制按钮所需, 保持放行
+    if (permission === 'clipboard-sanitized-write') { callback(true); return; }
 
-    if (state.automation.enabled && (permission === 'media' || permission === 'audioCapture')) {
-      allowed = isAutomationActionAllowed('media_permissions', hostname);
+    if (permission === 'media' || permission === 'audioCapture' || permission === 'videoCapture') {
+      // 自动化规则已明确放行该站点媒体权限时直接通过
+      if (state.automation.enabled && isAutomationActionAllowed('media_permissions', hostname)) {
+        callback(true);
+        return;
+      }
+      // 否则每次向用户询问, 不再默认放行音视频采集
+      const kind = permission === 'videoCapture' ? '摄像头' : (permission === 'audioCapture' ? '麦克风' : '麦克风/摄像头');
+      const win = BrowserWindow.fromWebContents(webContents);
+      const opts = {
+        type: 'question',
+        title: '权限请求',
+        message: `${hostname} 请求使用${kind}`,
+        detail: '仅在使用语音/视频功能时需要。拒绝后该功能不可用, 其他功能不受影响。',
+        buttons: ['拒绝', '允许'],
+        defaultId: 0,
+        cancelId: 0,
+      };
+      const ask = win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts);
+      ask.then(({ response }) => callback(response === 1)).catch(() => callback(false));
+      return;
     }
 
-    callback(ours && allowed);
+    callback(false);
   });
 }
 
@@ -1913,8 +2006,8 @@ ipcMain.handle('account:sign-out', async (e, { id }) => {
   closeChildWindows(targetId);
   const targetSession = session.fromPartition(partitionFor(targetId));
   try {
-    await targetSession.clearStorageData();
-    console.log(`[Account] Signed out / cleared storage for ${targetId}`);
+    await clearSiteSession(targetSession, currentSite());
+    console.log(`[Account] Signed out of ${currentSite().name} for ${targetId}`);
   } catch (err) {
     console.warn('[Account] Sign-out clear error:', err);
   }
@@ -1933,27 +2026,40 @@ ipcMain.handle('account:delete', async (e, { id }) => {
   const idx = state.profiles.findIndex((p) => p.id === id);
   if (idx === -1) return { ok: false, error: '账号不存在' };
 
-  // 先关闭该账号全部子弹窗, 再销毁主窗口 (防清除后回写复活, 评审 P1-6)
+  // 原子化删除 (v1.5.16, 评审 P2): 旧顺序先清数据、最后才从 profiles 摘除,
+  // await 期间该账号仍可被切回使用并与清除竞态。改为先关弹窗与窗口, 立刻
+  // 从状态中摘除并落盘 (账号即刻不可见、不可切回), 之后再清会话与磁盘目录。
   closeChildWindows(id);
-  // 销毁窗口
   const win = profileWindows.get(id);
   if (win && !win.isDestroyed()) {
     win.removeAllListeners('close');
     win.close();
   }
   profileWindows.delete(id);
+  pendingWindowNav.delete(win);
 
+  const wasActive = state.activeProfileId === id;
+  state.profiles.splice(idx, 1);
+  if (state.windowByProfile) delete state.windowByProfile[id];
+  if (wasActive) state.activeProfileId = state.profiles[0].id;
+  saveState();
+  buildTrayMenu();
+  broadcastAccountChange();
+
+  await clearWholeSession(session.fromPartition(partitionFor(id)));
+  // partition 的磁盘目录一并删除, 不留孤儿会话残留 (失败忽略, 不阻塞结果)
   try {
-    await session.fromPartition(partitionFor(id)).clearStorageData();
+    const partDir = path.join(
+      app.getPath('userData'),
+      'Partitions',
+      partitionFor(id).replace(/^persist:/, '')
+    );
+    await fs.promises.rm(partDir, { recursive: true, force: true });
   } catch {}
 
-  state.profiles.splice(idx, 1);
-  if (state.activeProfileId === id) {
-    switchAccount(state.profiles[0].id);
-  } else {
-    saveState();
-    buildTrayMenu();
-    broadcastAccountChange();
+  if (wasActive) {
+    mainWindow = getOrCreateProfileWindow(state.activeProfileId);
+    showWindowSafely(mainWindow);
   }
   return { ok: true };
 });
@@ -2361,10 +2467,11 @@ async function checkForUpdates(manual) {
       headers: { 'User-Agent': 'muse-windows', Accept: 'application/vnd.github+json' },
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
-
     if (!res.ok) throw new Error(`GitHub API HTTP ${res.status}`);
+    // 超时必须覆盖正文读取 (v1.5.16, 评审 P2): 旧实现响应头一到就 clearTimeout,
+    // 正文滴流能让检查永久挂起且 isCheckingUpdate 永远为 true, 后续检查全灭
     const rel = await res.json();
+    clearTimeout(timeoutId);
     const latest = String(rel.tag_name || rel.name || '').replace(/^v/i, '');
     const current = app.getVersion();
 
@@ -2442,25 +2549,55 @@ async function checkForUpdates(manual) {
     }
 
     notify('正在下载更新', `Muse v${latest} 正在后台下载中...`);
+    // 真实性校验前置 (v1.5.14): GitHub API 为每个资产提供 sha256 digest,
+    // 缺失一律中止, 绝不进入待安装状态
+    const expectedDigest = String(asset.digest || '').replace(/^sha256:/i, '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(expectedDigest)) throw new Error('发布资产缺少 SHA-256 摘要, 已中止更新');
+    // 流式下载 (v1.5.16, 评审 P2): 旧实现整包读入内存 (低配机峰值约两倍包体)
+    // 且只有总时长上限。改为边下边落盘边算哈希, 超时改为 60 秒空闲超时
+    // (持续有数据就一直下, 断流一分钟才放弃)
     const dlController = new AbortController();
-    const dlTimeout = setTimeout(() => dlController.abort(), 180000);
     const dl = await fetchFunc(asset.browser_download_url, {
       headers: { 'User-Agent': 'muse-windows' },
       signal: dlController.signal,
     });
-    clearTimeout(dlTimeout);
     if (!dl.ok) throw new Error(`下载失败 HTTP ${dl.status}`);
-    const buf = Buffer.from(await dl.arrayBuffer());
-    if (buf.length < 1024 || buf[0] !== 0x4d || buf[1] !== 0x5a) throw new Error('下载的文件不是合法的 Windows 可执行程序');
-    // 真实性校验 (v1.5.14): GitHub API 为每个资产提供 sha256 digest, 下载后
-    // 必须比对一致; 缺失或不匹配一律中止, 绝不进入待安装状态
-    const expectedDigest = String(asset.digest || '').replace(/^sha256:/i, '').toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(expectedDigest)) throw new Error('发布资产缺少 SHA-256 摘要, 已中止更新');
-    const actualDigest = require('crypto').createHash('sha256').update(buf).digest('hex');
-    if (actualDigest !== expectedDigest) throw new Error('更新文件 SHA-256 校验不通过, 已中止更新');
     // 文件名只取 basename, 防止资产名中的路径成分越出临时目录
     const dest = path.join(app.getPath('temp'), path.basename(String(asset.name || 'Muse-Portable.exe')));
-    await fs.promises.writeFile(dest, buf);
+    const hash = require('crypto').createHash('sha256');
+    const outStream = fs.createWriteStream(dest);
+    let received = 0;
+    let headBuf = Buffer.alloc(0);
+    let idleTimer = setTimeout(() => dlController.abort(), 60000);
+    try {
+      const reader = dl.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => dlController.abort(), 60000);
+        const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+        if (headBuf.length < 2) headBuf = Buffer.concat([headBuf, chunk.subarray(0, 2 - headBuf.length)]);
+        hash.update(chunk);
+        received += chunk.length;
+        if (!outStream.write(chunk)) await new Promise((r) => outStream.once('drain', r));
+      }
+      clearTimeout(idleTimer);
+      await new Promise((resolve, reject) => outStream.end((err) => (err ? reject(err) : resolve())));
+    } catch (dlErr) {
+      clearTimeout(idleTimer);
+      try { outStream.destroy(); } catch {}
+      try { fs.unlinkSync(dest); } catch {}
+      throw dlErr;
+    }
+    if (received < 1024 || headBuf[0] !== 0x4d || headBuf[1] !== 0x5a) {
+      try { fs.unlinkSync(dest); } catch {}
+      throw new Error('下载的文件不是合法的 Windows 可执行程序');
+    }
+    if (hash.digest('hex') !== expectedDigest) {
+      try { fs.unlinkSync(dest); } catch {}
+      throw new Error('更新文件 SHA-256 校验不通过, 已中止更新');
+    }
     pendingUpdate = { version: latest, filePath: dest };
     updateDownloaded = true;
     buildTrayMenu();
@@ -2829,4 +2966,4 @@ app.on('will-quit', () => {
 });
 
 // 仅供本地冒烟测试引用内部纯函数; Electron 运行时忽略该导出。
-try { module.exports = { sanitizeWindowBounds, ensureBoundsVisible, isValidHostname, isTrustedIpcSender, isPortableWindowsBuild, childWindowsByProfile, pendingWindowNav, MAX_RESIDENT_PROFILE_WINDOWS }; } catch {}
+try { module.exports = { sanitizeWindowBounds, ensureBoundsVisible, isValidHostname, isTrustedIpcSender, isPortableWindowsBuild, childWindowsByProfile, pendingWindowNav, MAX_RESIDENT_PROFILE_WINDOWS, sanitizeAndMergeState }; } catch {}

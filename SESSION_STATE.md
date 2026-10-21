@@ -118,10 +118,22 @@
    - **P0-5 mac 图标（CI 侧）**：`release.yml` 的 mac 任务在构建前新增 `sips -z 1024 1024 assets/icon.png` 步骤，绕过 256 源图生成不了 .icns 的问题；建议后续把仓库 assets/icon.png 直接换成 1024 源图（已另行生成交付），该步骤届时为无害空转。注：mac 无产物是多版实查结论，图标仅为疑似主因，仍需以修后一次发布的 Actions 日志与资产清单为准。
    - **测试证据**：`node --check` 三个 JS 全过；release.yml YAML 解析通过；Electron 桩冒烟回归 11 项全 PASS 且新导出（childWindowsByProfile/pendingWindowNav 均为 Map、常驻上限 5）核对无误；单例锁顺序经行号核对（setPath 14 行 < 拿锁 17 行）。实机回归（子弹窗跟随/复活、延迟导航、退出卡死、崩溃重建、mac 发布资产）待真机与下一次发布验证。
 
+14. **评审第三批修复（v1.5.16 证据）**：
+   - **P1-13 登出范围与缓存补清**：新增 `clearSiteSession/clearWholeSession` 工具。托盘与 IPC 两条登出路径改为按当前站点范围清除（origin 范围 clearStorageData + 按域名摘除该站点 Cookie），不再误伤同账号另一站点登录；全部分区级清除路径补 `clearCache + clearAuthCache`。
+   - **P1-14 权限收紧**：`setupPermissions` 归因改用请求方 frame 的 requestingUrl；clipboard-read 对站点默认拒绝；media/audioCapture/videoCapture 不再默认放行——自动化规则明确放行时直接通过，否则每次弹窗询问用户（拒绝为默认）。
+   - **删号原子化（P2）**：顺序改为先关弹窗/窗口→立即从 profiles 摘除并落盘（含 windowByProfile 清理，账号即刻不可切回）→再清会话与 partition 磁盘目录（Partitions/muse-<id> 整目录删除，失败忽略）。
+   - **账号 ID（P2）**：`addProfile` 改 `acc_<crypto.randomUUID()>` + 唯一性兜底，杜绝同毫秒双入口撞号共用 partition。
+   - **profiles 合法性（P2）**：`sanitizeAndMergeState` 过滤空/重复/非字符串 id（全非法回退默认账号），并剪除 windowByProfile 中已删账号条目。
+   - **.bak 代际（P2）**：saveState 改为覆盖前轮转——当前可解析主文件→.bak、旧 .bak→.bak2，坏内容不进备份链；loadState 恢复链扩展为主→.bak→.bak2。
+   - **更新下载（P2）**：检查更新的 15s 超时覆盖到正文 json 解析完成；便携版下载改流式落盘 + 增量 SHA-256（不再整包进内存），超时改为 60 秒空闲超时，digest 校验前置到下载前，半成品文件失败即删。
+   - **Auto-Allow 引擎加固（P2）**：MutationObserver 改 300ms 防抖 + 重入保护 + 每轮扫描上限 200 个按钮；按钮/容器文本改 textContent（不触发同步布局）截断读取；无确认容器时不再兜底读整页正文；CLICK_KEYWORDS 删除裸 continue；autoAllowAll 仅对 muse.ai/meta.ai 生效且引擎只在顶层页面运行（子框架不代点）。
+   - **发布流水线（P1-7 配置侧）**：package.json 的 publish.releaseType 改 draft、mac 目标补 universal（Intel/Apple Silicon 通吃）。配套 release.yml（tag↔version 校验步骤 + finalize 转正 job）因连接器无 workflow 权限仍需手动替换，已单独交付（muse-release-yml-v1.5.16.yml）；注意 PR 与该文件须配套：只合 PR 不换 yml 时下次发版将停留在草稿（安全失败，一键可转正）。
+   - **测试证据**：node --check 三个 JS 全过；Electron 桩冒烟新增 sanitize 用例（重复/空/数字/缺失 id 过滤、windowByProfile 剪枝、全非法回退默认）+ 第一批几何/主机名用例回归，全 PASS；release.yml v2 YAML 解析通过。实机回归待真机。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - `v1.5.13`、`v1.5.14` 均已合并 main（f111f45），正式发版与实机复核待进行；`v1.5.15` 第二批修复（子弹窗追踪/延迟导航/超时/崩溃重建/单例锁/mac 图标 CI）在分支 fix/batch2-robustness-and-mac-icon 待合并。评审剩余 P1/P2（登出范围与缓存补清、删号原子化、账号 ID 改 randomUUID、profiles 合法性校验、.bak 代际、更新超时覆盖正文、发布流水线 draft 汇总与签名等）留待第三批。
+   - `v1.5.13`、`v1.5.14` 均已合并 main（f111f45），正式发版与实机复核待进行；`v1.5.15` 第二批修复已合并 main（40cf4f3），release.yml 的 sips 步骤与 1024 图标已由用户手动补齐（84f6689、dd332b6）；`v1.5.16` 第三批修复（登出范围与缓存、权限询问、删号原子化、randomUUID、profiles 校验、.bak 代际、更新流式下载、Auto-Allow 加固、发布配置侧）在分支 fix/batch3-session-hygiene 待合并，配套 release.yml v2 待用户替换。评审剩余尾巴（第四批候选）：聊天导出健壮性、外链拦截收窄与参数解包、注入指纹面收敛、file:// 内部站点归类、Google 重置入口一致性、lock 镜像与 CI npm ci 回退、代码签名（需证书投入）、executableName 改名过渡提示。
 2. **后续下一步**：
    - [x] 完成代码修复与语法校验。
    - [x] 合并至 `main` 主分支并推送到远端。
