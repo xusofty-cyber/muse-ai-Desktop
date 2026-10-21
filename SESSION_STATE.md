@@ -140,6 +140,12 @@
    - **未做（需用户投入/决策）**：代码签名与 mac 公证（需 Apple Developer 与 Windows 代码签名证书）；Linux executableName 改名后的旧启动器过渡（建议在 Release 说明中提示旧名 muse-desktop 失效，或保留一版旧名软链，需用户拍板）；release.yml v2 此前未被替换，当前仓库 workflow 仍无 tag 校验与 finalize——**在替换为 v3 之前打 tag 发版，Release 会因 releaseType:draft 停留在草稿**（资产齐全，网页一键可转正）。
    - **测试证据**：node --check 三个 JS 全过；指纹改名后全仓审计页面可见 muse- 标识零残留（muse.ai 域名、内部 IPC 通道名与隔离世界属性除外）；lock JSON 合法性校验通过；Electron 桩冒烟（sanitize/几何/主机名）回归全 PASS；release.yml v3 YAML 解析通过。实机回归待真机。
 
+16. **v1.5.17 发版第二轮失败修复（linux.desktop 写法）**：
+   - **现象**：PR #6 合并后重新触发 Release #15，`npm ci` 三端全部通过（锁文件修复生效），但三端均在 electron-builder 打包第一步失败（39 秒全灭），报错 `configuration.linux.desktop should be one of these: null`——配置校验未过，根本没开始打包。release.yml 本身无问题（tag 校验步带 `if: startsWith(github.ref, 'refs/tags/v')`，手动触发自动跳过）。
+   - **根因**：第 11 条（v1.5.13）为对齐 Dock 写入的 `linux.desktop: { "StartupWMClass": "muse" }` 不符合 electron-builder 26 的 `LinuxDesktopFile` schema（`additionalProperties: false`，顶层只允许 `entry` / `desktopActions` 两个键，自定义 [Desktop Entry] 键必须嵌套在 `entry` 下）。该字段自写入后从未被 CI 真正执行（v1.5.13 起无一版走到打包步），本次首次暴露。
+   - **修复**：package.json 改为 `"desktop": { "entry": { "StartupWMClass": "muse" } }`，语义不变（生成的 .desktop 文件仍含 StartupWMClass=muse，Dock 归并修复不受影响）；版本号保持 1.5.17（该版本从未成功发布过）。
+   - **测试证据**：用仓库 node_modules 内 electron-builder 26.15.3 自带 validateConfiguration 实测三种形态——旧写法 INVALID（与 CI 报错一致）、entry 写法 VALID、删除 desktop 亦 VALID；改后对真实 package.json 复验 VALID。git diff 仅此一处（3 行）。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：

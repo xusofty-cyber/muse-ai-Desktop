@@ -52,7 +52,9 @@
       "icon": "assets/icon.png",
       "executableName": "muse",
       "desktop": {
-        "StartupWMClass": "muse"
+        "entry": {
+          "StartupWMClass": "muse"
+        }
       },
       "category": "Network;Chat;Utility",
       "maintainer": "Gc <xusofty-cyber>",
