@@ -109,10 +109,19 @@
    - **顺带**：package.json 升 1.5.14，package-lock 两处版本字段由漂移的 1.4.1 同步为 1.5.14。
    - **测试证据**：`node --check` 三个 JS 全过；IPC 守卫静态审计 29/29 覆盖；Electron 桩冒烟 11 项全 PASS（标题栏飘出居中、只剩边缘居中、正常保留、屏幕外居中、hostname 合法/XSS/空格/前导横线/无后缀/空 六类判定）；hotkeys.html 内联脚本编译检查通过。Ubuntu/Windows 实机回归（证书校验开启后代理场景、便携版更新 digest 校验、快捷窗切号、设置页站点列表渲染）待真机复核。
 
+13. **评审第二批修复（v1.5.15 证据）**：
+   - **P1-11 单例锁顺序**：`app.setName` 与 win32 的 `setPath('userData')` 整体提到 `requestSingleInstanceLock()` 之前（锁绑定获取时刻的 userData 目录，旧顺序下便携版与安装版可能各持一把锁并发写状态/会话）；锁仍在一切业务初始化之前。
+   - **P1-6 子弹窗追踪**：新增 `childWindowsByProfile` 登记表，`did-create-window` 时按父窗口 profile 登记、closed 注销；切账号时前一账号子弹窗跟随隐藏、目标账号子弹窗恢复显示（WeakSet 标记区分「被切换藏起」与用户自关）；托盘登出、IPC 登出、删号三条路径均先 `closeChildWindows` 再清存储，堵住清除后回写 Cookie 的会话复活路径。
+   - **P1-12 延迟导航**：新增 `pendingWindowNav` 脏标记（site/reload 两档）：`toggleSite` 与 `proxy-set` 对可见窗口立即生效、对隐藏窗口只打标记，窗口下次被 show（showWindowSafely / toggleQuickWindow）时才真正 loadURL/reload，后台账号未发送内容不再被静默冲掉。
+   - **P1-8 超时**：`flushAllSessions` 加 3 秒总超时 race（before-quit 不再可能被单个分区卡死）；启动改为先建窗/托盘/快捷键，`applyProxySettings` 异步补应用并加 5 秒超时降级，新窗口创建时各自仍会按当前配置应用代理。
+   - **P1-10 崩溃重建与常驻上限**：每个 profile 窗口注册 `render-process-gone`（clean-exit 除外）：销毁僵尸窗口，活动账号立即重建并显示；10 分钟内崩溃超过 3 次停止自动重建并通知。常驻 profile 窗口上限 5 个，超出按 LRU 销毁最久未显示的隐藏窗口（partition 在磁盘，重建恢复登录态）。
+   - **P0-5 mac 图标（CI 侧）**：`release.yml` 的 mac 任务在构建前新增 `sips -z 1024 1024 assets/icon.png` 步骤，绕过 256 源图生成不了 .icns 的问题；建议后续把仓库 assets/icon.png 直接换成 1024 源图（已另行生成交付），该步骤届时为无害空转。注：mac 无产物是多版实查结论，图标仅为疑似主因，仍需以修后一次发布的 Actions 日志与资产清单为准。
+   - **测试证据**：`node --check` 三个 JS 全过；release.yml YAML 解析通过；Electron 桩冒烟回归 11 项全 PASS 且新导出（childWindowsByProfile/pendingWindowNav 均为 Map、常驻上限 5）核对无误；单例锁顺序经行号核对（setPath 14 行 < 拿锁 17 行）。实机回归（子弹窗跟随/复活、延迟导航、退出卡死、崩溃重建、mac 发布资产）待真机与下一次发布验证。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - `v1.5.13` 已合并 main（d2ba306），正式发版与 Ubuntu 实机复核待进行；`v1.5.14` 第一批修复（评审 P0 安全止血 + 快捷窗串号 + 自愈修正）已完成代码与桩冒烟测试，在分支 fix/p0-security-and-session-batch1 待合并与实机回归。
+   - `v1.5.13`、`v1.5.14` 均已合并 main（f111f45），正式发版与实机复核待进行；`v1.5.15` 第二批修复（子弹窗追踪/延迟导航/超时/崩溃重建/单例锁/mac 图标 CI）在分支 fix/batch2-robustness-and-mac-icon 待合并。评审剩余 P1/P2（登出范围与缓存补清、删号原子化、账号 ID 改 randomUUID、profiles 合法性校验、.bak 代际、更新超时覆盖正文、发布流水线 draft 汇总与签名等）留待第三批。
 2. **后续下一步**：
    - [x] 完成代码修复与语法校验。
    - [x] 合并至 `main` 主分支并推送到远端。

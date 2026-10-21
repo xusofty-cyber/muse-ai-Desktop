@@ -2,21 +2,26 @@ const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeI
 const path = require('path');
 const fs = require('fs');
 
-// ---- 核心加固 1 & 2: 单例锁前置 + 强制统一 UserData 目录 ------------------------
-// 1. 单例锁必须在任何文件读写与初始化之前执行，阻断第二实例引发的 SQLite/状态锁冲突与崩溃
+// ---- 核心加固 1 & 2: 先定身份/UserData 再拿单例锁 + 统一 UserData 目录 -------------
+// 顺序要点 (v1.5.15 修正评审 P1-11): Chromium 单例锁绑定获取时刻的 userData
+// 目录。旧实现先拿锁、后改 userData, 便携版初始目录与目标目录不一致时, 安装版
+// 与便携版可能各持一把不同的锁双双启动, 并发写同一 app-state.json 与 partition。
+// 因此 setName 与 win32 的 setPath 必须在 requestSingleInstanceLock 之前完成;
+// 锁本身仍在任何文件读写与业务初始化之前获取。
+app.setName('Muse');
+if (process.platform === 'win32') {
+  const fixedUserData = path.join(app.getPath('appData'), 'Muse');
+  app.setPath('userData', fixedUserData);
+}
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
   process.exit(0);
 }
 
-app.setName('Muse');
 const APP_ICON_PATH = path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
 if (process.platform === 'win32') {
-  // 2. 强制将 userData 锁定至 %APPDATA%\Muse，杜绝便携版（Portable）重定向到可执行文件同级目录导致会话空间分裂丢失
-  const fixedUserData = path.join(app.getPath('appData'), 'Muse');
-  app.setPath('userData', fixedUserData);
-
   if (app.isPackaged) {
     app.setAppUserModelId('ai.muse.desktop');
   } else {
@@ -536,7 +541,12 @@ async function flushAllSessions() {
     if (session.defaultSession && typeof session.defaultSession.cookies.flushStore === 'function') {
       promises.push(session.defaultSession.cookies.flushStore().catch(() => {}));
     }
-    await Promise.all(promises);
+    // 总超时兜底 (v1.5.15, 评审 P1-8): 任一分区存储层卡住时 Promise.all 永不
+    // settle, before-quit 的 await 会让应用永远退不出 (只能强杀, 反而绕过刷盘)。
+    await Promise.race([
+      Promise.all(promises),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]);
     console.log('[SessionFlush] All session cookies successfully flushed to disk.');
   } catch (err) {
     console.warn('[SessionFlush] Error flushing session cookies:', err);
@@ -720,7 +730,48 @@ function isAuthOrConnectorUrl(rawUrl) {
   }
 }
 
-function setupExternalLinkHandler(win) {
+// ---- 子弹窗 (OAuth/连接器) 追踪 (v1.5.15, 评审 P1-6) -------------------------
+// 此前 did-create-window 的子窗口无人登记: 切账号不跟随、登出/删号关不掉,
+// 开着的授权弹窗能在存储清除后回写 Cookie 让已登出会话复活。现在按父窗口
+// 所属 profile 登记, closed 时注销, 并提供跟随显隐与批量关闭工具。
+const childWindowsByProfile = new Map(); // profileId -> Set<BrowserWindow>
+const childrenHiddenBySwitch = new WeakSet();
+
+function trackChildWindow(profileId, childWin) {
+  if (!profileId || !childWin) return;
+  let set = childWindowsByProfile.get(profileId);
+  if (!set) { set = new Set(); childWindowsByProfile.set(profileId, set); }
+  set.add(childWin);
+  childWin.on('closed', () => {
+    const st = childWindowsByProfile.get(profileId);
+    if (st) { st.delete(childWin); if (!st.size) childWindowsByProfile.delete(profileId); }
+  });
+}
+
+function setChildWindowsVisible(profileId, visible) {
+  const set = childWindowsByProfile.get(profileId);
+  if (!set) return;
+  for (const child of set) {
+    if (!child || child.isDestroyed()) continue;
+    if (visible) {
+      if (childrenHiddenBySwitch.has(child)) { childrenHiddenBySwitch.delete(child); child.show(); }
+    } else if (child.isVisible()) {
+      childrenHiddenBySwitch.add(child);
+      child.hide();
+    }
+  }
+}
+
+function closeChildWindows(profileId) {
+  const set = childWindowsByProfile.get(profileId);
+  if (!set) return;
+  for (const child of [...set]) {
+    if (child && !child.isDestroyed()) { try { child.destroy(); } catch {} }
+  }
+  childWindowsByProfile.delete(profileId);
+}
+
+function setupExternalLinkHandler(win, profileId) {
   if (!win || win.isDestroyed()) return;
 
   // 1. 拦截 window.open() 或带 target="_blank" 的链接
@@ -761,6 +812,7 @@ function setupExternalLinkHandler(win) {
   win.webContents.on('did-create-window', (childWin) => {
     try {
       if (childWin && !childWin.isDestroyed()) {
+        trackChildWindow(profileId, childWin);
         attachZoomShortcuts(childWin);
 
         // 使用干净标准的原生 Chrome UA，消除指纹特征冲突
@@ -976,8 +1028,75 @@ async function applyProxySettings() {
   }
 }
 
+// ---- 待生效导航 (v1.5.15, 评审 P1-12) ---------------------------------------
+// 切站点/改代理此前对所有账号窗口无差别 loadURL/reload, 后台账号未发送的
+// 输入、进行中的生成与 OAuth 流程被静默冲掉。改为: 可见窗口立即生效,
+// 隐藏窗口只打脏标记, 等它下次被 show 时才真正导航/重载。
+const pendingWindowNav = new Map(); // BrowserWindow -> 'site' | 'reload'
+
+function markWindowNavPending(win, mode) {
+  if (!win || win.isDestroyed()) return;
+  if (mode === 'site') pendingWindowNav.set(win, 'site');
+  else if (!pendingWindowNav.has(win)) pendingWindowNav.set(win, 'reload');
+}
+
+function applyPendingWindowNav(win) {
+  if (!win || win.isDestroyed()) return;
+  const mode = pendingWindowNav.get(win);
+  if (!mode) return;
+  pendingWindowNav.delete(win);
+  try {
+    if (mode === 'site') win.loadURL(currentSite().url);
+    else win.webContents.reload();
+  } catch {}
+}
+
 // ---- Multi-Window Tab Architecture (Zero-Reload Instant Switching) --------
 const profileWindows = new Map(); // profileId -> BrowserWindow
+const profileLastActive = new Map(); // profileId -> last shown timestamp
+const rendererCrashLog = new Map(); // profileId -> [timestamps]
+const MAX_RESIDENT_PROFILE_WINDOWS = 5;
+
+// 渲染进程崩溃有界重建 (v1.5.15, 评审 P1-10): 此前 render-process-gone 零处理,
+// renderer 被 OOM/GPU 崩溃杀掉后窗口对象还在、isVisible 仍为 true, 自愈永不
+// 触发, 用户面对黑/白屏僵尸窗口。10 分钟内崩溃超过 3 次则停止自动重建并通知。
+function handleProfileRendererGone(profileId, win, details) {
+  const reason = (details && details.reason) || 'unknown';
+  if (reason === 'clean-exit') return;
+  console.warn(`[Renderer] profile ${profileId} renderer gone: ${reason}`);
+  if (profileWindows.get(profileId) === win) profileWindows.delete(profileId);
+  if (mainWindow === win) mainWindow = null;
+  pendingWindowNav.delete(win);
+  try { win.destroy(); } catch {}
+  const now = Date.now();
+  const recent = (rendererCrashLog.get(profileId) || []).filter((t) => now - t < 10 * 60 * 1000);
+  recent.push(now);
+  rendererCrashLog.set(profileId, recent);
+  if (recent.length > 3) {
+    notify('页面反复崩溃', '该账号页面短时间内多次崩溃, 已停止自动重建。请从托盘重新打开或切换账号。');
+    return;
+  }
+  if (profileId === state.activeProfileId) {
+    mainWindow = getOrCreateProfileWindow(profileId);
+    showWindowSafely(mainWindow);
+  }
+}
+
+// 常驻窗口 LRU 上限: 每个账号一个完整 Web 应用常驻, 账号越多内存线性增长。
+// 超出上限时销毁最久未显示的隐藏窗口 (partition 在磁盘, 重建即恢复登录态)。
+function enforceResidentWindowCap() {
+  if (profileWindows.size <= MAX_RESIDENT_PROFILE_WINDOWS) return;
+  const candidates = [...profileWindows.entries()]
+    .filter(([id, w]) => id !== state.activeProfileId && w && !w.isDestroyed() && !w.isVisible())
+    .sort((a, b) => (profileLastActive.get(a[0]) || 0) - (profileLastActive.get(b[0]) || 0));
+  while (profileWindows.size > MAX_RESIDENT_PROFILE_WINDOWS && candidates.length) {
+    const [id, w] = candidates.shift();
+    profileWindows.delete(id);
+    pendingWindowNav.delete(w);
+    closeChildWindows(id);
+    try { w.removeAllListeners('close'); w.destroy(); } catch {}
+  }
+}
 
 function broadcastAccountChange() {
   const payload = {
@@ -1125,7 +1244,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
 
   attachZoomShortcuts(win);
   attachContextMenu(win);
-  setupExternalLinkHandler(win);
+  setupExternalLinkHandler(win, profileId);
 
   const persistBounds = () => {
     if (!win || win.isDestroyed()) return;
@@ -1154,11 +1273,18 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
   });
 
   win.on('closed', () => {
+    pendingWindowNav.delete(win);
     if (profileWindows.get(profileId) === win) profileWindows.delete(profileId);
     if (mainWindow === win) mainWindow = null;
   });
 
+  win.webContents.on('render-process-gone', (event, details) => {
+    handleProfileRendererGone(profileId, win, details);
+  });
+
   profileWindows.set(profileId, win);
+  profileLastActive.set(profileId, Date.now());
+  enforceResidentWindowCap();
   return win;
 }
 
@@ -1171,6 +1297,12 @@ function showWindowSafely(win) {
   win.show();
   try { win.moveTop(); } catch {}
   win.focus();
+  if (win.isVisible()) {
+    for (const [id, w] of profileWindows.entries()) {
+      if (w === win) profileLastActive.set(id, Date.now());
+    }
+    applyPendingWindowNav(win);
+  }
   return win.isVisible();
 }
 
@@ -1214,7 +1346,7 @@ function createQuickWindow() {
   quickWindow.webContents.setUserAgent(CHROME_UA);
   quickWindow.loadURL(currentSite().url);
   attachContextMenu(quickWindow);
-  setupExternalLinkHandler(quickWindow);
+  setupExternalLinkHandler(quickWindow, quickWindowProfileId);
   // Spotlight-style: hide when focus is lost.
   quickWindow.on('blur', () => { if (quickWindow) quickWindow.hide(); });
   quickWindow.on('closed', () => { quickWindow = null; quickWindowProfileId = null; });
@@ -1254,6 +1386,7 @@ function toggleQuickWindow() {
     );
     quickWindow.show();
     quickWindow.focus();
+    applyPendingWindowNav(quickWindow);
   }
 }
 
@@ -1312,13 +1445,18 @@ function switchAccount(id) {
   // 上一个账号的登录态响应 (评审 P0-4); 下次打开时按新账号重建
   if (quickWindowProfileId !== id) destroyQuickWindow();
 
-  // 隐藏前一个窗口并强制落盘会话 Cookie
+  // 子弹窗跟随账号可见性: 目标账号此前开着的弹窗恢复显示
+  setChildWindowsVisible(id, true);
+
+  // 隐藏前一个窗口并强制落盘会话 Cookie; 其子弹窗一并隐藏 (防串号感知)
   if (prevWin && prevWin !== targetWin && !prevWin.isDestroyed()) {
+    const prevProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
+    if (prevProfile) setChildWindowsVisible(prevProfile.id, false);
     prevWin.hide();
     try {
-      const prevProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
-      if (prevProfile) {
-        session.fromPartition(partitionFor(prevProfile.id)).cookies.flushStore().catch(() => {});
+      const flushProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
+      if (flushProfile) {
+        session.fromPartition(partitionFor(flushProfile.id)).cookies.flushStore().catch(() => {});
       }
     } catch {}
   }
@@ -1354,6 +1492,8 @@ function addProfile(customName) {
 }
 
 async function signOut() {
+  // 先关该账号全部子弹窗, 防止清除后弹窗回写 Cookie 让会话复活 (评审 P1-6)
+  closeChildWindows(state.activeProfileId);
   const ses = session.fromPartition(partitionFor(state.activeProfileId));
   await ses.clearStorageData();
   const curWin = profileWindows.get(state.activeProfileId);
@@ -1369,12 +1509,16 @@ function toggleSite() {
   for (const [id, win] of profileWindows.entries()) {
     if (win && !win.isDestroyed()) {
       win.setTitle(`${currentSite().name} (Muse desktop)`);
-      win.loadURL(currentSite().url);
+      // 可见窗口立即切换; 隐藏窗口只打脏标记, 下次 show 时再导航,
+      // 避免冲掉后台账号未发送的内容 (评审 P1-12)
+      if (win.isVisible()) win.loadURL(currentSite().url);
+      else markWindowNavPending(win, 'site');
     }
   }
   if (quickWindow && !quickWindow.isDestroyed()) {
     quickWindow.setTitle(`${currentSite().name} quick chat`);
-    quickWindow.loadURL(currentSite().url);
+    if (quickWindow.isVisible()) quickWindow.loadURL(currentSite().url);
+    else markWindowNavPending(quickWindow, 'site');
   }
   showMainWindow();
   buildTrayMenu();
@@ -1766,6 +1910,7 @@ ipcMain.handle('account:rename', (e, { id, name }) => {
 ipcMain.handle('account:sign-out', async (e, { id }) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   const targetId = id || state.activeProfileId;
+  closeChildWindows(targetId);
   const targetSession = session.fromPartition(partitionFor(targetId));
   try {
     await targetSession.clearStorageData();
@@ -1788,6 +1933,8 @@ ipcMain.handle('account:delete', async (e, { id }) => {
   const idx = state.profiles.findIndex((p) => p.id === id);
   if (idx === -1) return { ok: false, error: '账号不存在' };
 
+  // 先关闭该账号全部子弹窗, 再销毁主窗口 (防清除后回写复活, 评审 P1-6)
+  closeChildWindows(id);
   // 销毁窗口
   const win = profileWindows.get(id);
   if (win && !win.isDestroyed()) {
@@ -1836,14 +1983,16 @@ ipcMain.handle('proxy-set', async (e, config) => {
   };
   saveState();
   await applyProxySettings();
-  // 全局刷新所有已实例化的账号标签窗口，确保代理立即在所有账号中生效
+  // 可见窗口立即重载生效; 隐藏窗口打脏标记, 下次 show 时再重载 (评审 P1-12)
   for (const win of profileWindows.values()) {
     if (win && !win.isDestroyed()) {
-      win.webContents.reload();
+      if (win.isVisible()) win.webContents.reload();
+      else markWindowNavPending(win, 'reload');
     }
   }
   if (quickWindow && !quickWindow.isDestroyed()) {
-    quickWindow.webContents.reload();
+    if (quickWindow.isVisible()) quickWindow.webContents.reload();
+    else markWindowNavPending(quickWindow, 'reload');
   }
   return { ok: true };
 });
@@ -2637,8 +2786,10 @@ function createTray() {
 app.on('second-instance', showMainWindow);
 
 app.whenReady().then(async () => {
-  console.log('[Init] Applying initial proxy settings...');
-  await applyProxySettings();
+  // 首屏优先 (v1.5.15, 评审 P1-8): 此前 await applyProxySettings 排在建窗之前,
+  // 任一分区 setProxy 卡住即表现为进程在、无窗无托盘, 与窗口事故表型相同。
+  // 现在先建窗/托盘, 代理异步补应用并加 5s 超时降级 (新窗口创建时各自还会
+  // 按当前配置 applyProxyToSession, 不依赖这条全量应用完成)。
   createMainWindow();
   createTray();
   registerHotkeys();
@@ -2648,6 +2799,12 @@ app.whenReady().then(async () => {
     setupSessionPersistence(p.id);
   });
   setupAutoUpdate();
+  Promise.race([
+    applyProxySettings(),
+    new Promise((resolve) => setTimeout(resolve, 5000)),
+  ])
+    .then(() => console.log('[Init] Initial proxy settings applied.'))
+    .catch((err) => console.warn('[Init] Failed to apply initial proxy settings:', err));
 });
 
 app.on('window-all-closed', () => {
@@ -2672,4 +2829,4 @@ app.on('will-quit', () => {
 });
 
 // 仅供本地冒烟测试引用内部纯函数; Electron 运行时忽略该导出。
-try { module.exports = { sanitizeWindowBounds, ensureBoundsVisible, isValidHostname, isTrustedIpcSender }; } catch {}
+try { module.exports = { sanitizeWindowBounds, ensureBoundsVisible, isValidHostname, isTrustedIpcSender, isPortableWindowsBuild, childWindowsByProfile, pendingWindowNav, MAX_RESIDENT_PROFILE_WINDOWS }; } catch {}
