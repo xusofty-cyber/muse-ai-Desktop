@@ -154,14 +154,33 @@
    - **过程教训**：取证时 `asar extract-file` 在仓库目录执行会把解出的精简 package.json 覆盖工作区原件（后续两次本地构建因此缺 build 配置、产物名变 muse-desktop），已用 git 恢复并逐行核对 diff；今后解包一律在 /tmp 进行。
    - **追加修复（同日，用户澄清登录地址问题）**：用户明确 Muse AI 登录地址只有 https://muse.ai、不是 Meta AI。核查：代码默认站点恒为 muse、应用内地址均为 muse.ai，无写错；但站点选择随 app-state.json 跨版本保留，旧版切到过 meta 的用户升级后每次启动仍直达 meta.ai，与用户现象吻合。main.js 在 `loadState()` 后加一次性迁移：`siteResetV1518` 未置位时强制 `state.site='muse'` 并置位，落盘复用既有守卫首写（状态损坏时不覆盖、下一启动重试）；置位后用户主动切换照常保存。端到端实测（dir 构建 + 预置状态文件真机运行）：老状态（site=meta、无标记）首启后状态文件变为 site=muse 且标记为 true；标记已置位且 site=meta 时保持 meta 不干预，两用例均 PASS。
 
+18. **v1.5.18 实机回归发现（v1.5.19 修复）：Ubuntu 应用中心与任务栏图标灰齿轮问题彻底根治**：
+   - **现场症状**：Ubuntu 24.04（Wayland）安装已发布 `muse-desktop_1.5.18_amd64.deb` 后，应用中心（App Grid / 活动概览）和任务栏（Ubuntu Dock）中 Muse 应用图标均显示为系统默认灰色齿轮（`application-x-executable`），无法正常显示 Muse 自定义图标。
+   - **根因定位**：
+     1. `hicolor` 图标规范限制：`/usr/share/icons/hicolor/index.theme` 中 `Directories=` 最高仅定义到 `512x512/apps`，规范与系统均未声明 `1024x1024`。
+     2. electron-builder 打包行为：`package.json` 中配置为 `"linux": { "icon": "assets/icon.png" }`，指向 1024x1024 单图时，electron-builder 不会自动为 Linux deb 降采样生成多分辨率目录，而是直接原样打包到 `/usr/share/icons/hicolor/1024x1024/apps/muse.png`。
+     3. GTK/GNOME 图标解析全部返回 None：GNOME Shell 解析 `Icon=muse` 时经 `GtkIconTheme` 查询各常用尺寸（48、64、128、256、512），因 1024x1024 未在 index.theme 注册而被底层彻底忽略，所有尺寸查询全部返回 None，系统自动 fallback 为默认齿轮图标。
+   - **修复落地**：
+     1. 从 1024x1024 源图降采样生成完整标准多尺寸目录 `assets/icons/`（包含 16x16, 24x24, 32x32, 48x48, 64x64, 96x96, 128x128, 256x256, 512x512, 1024x1024 共 10 档分辨率）。
+     2. `package.json` 中 `linux.icon` 修改为 `"assets/icons"`，由 electron-builder 自动在 deb/AppImage 中将各尺寸分发至对应的 `/usr/share/icons/hicolor/<size>/apps/muse.png` 标准目录。
+     3. 保留根目录 `assets/icon.png` 与 `icon.ico`，确保 Windows 打包、macOS 构建及 `main.js`（`APP_ICON_PATH`）完全向下兼容。
+     4. 现场将标准尺寸图标同步部署至本机 `~/.local/share/icons/hicolor/`，使本机当前桌面环境即刻恢复应用自定义图标。
+   - **验证证据**：
+     - 本机 Python `Gtk.IconTheme` 实测：`lookup_by_gicon('muse')` 在 16px、24px、32px、48px、64px、96px、128px、256px、512px 全尺寸 100% 精确命中；
+     - `node -c main.js preload-settings.js preload-chat-export.js` 语法检查 Exit Code 0；
+     - `package.json` JSON 格式校验通过。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - `v1.5.13`、`v1.5.14` 均已合并 main（f111f45），正式发版与实机复核待进行；`v1.5.15` 第二批修复已合并 main（40cf4f3），release.yml 的 sips 步骤与 1024 图标已由用户手动补齐（84f6689、dd332b6）；`v1.5.16` 第三批修复已合并 main（fe6ca11）；`v1.5.17` 第四批修复（导出健壮性/外链收窄/file 归类/Google 重置一致性/指纹收敛/lock 镜像源）在分支 fix/batch4-polish 待合并，至此五位专家评审清单中可纯代码解决的条目已全部处理完毕。剩余仅需用户决策/投入的事项：①release.yml 替换为 v3（muse-release-yml-v1.5.17.yml，含 tag 校验、finalize 转正、去 npm 回退）——未替换前打 tag 发版会停在草稿；②代码签名与 mac 公证（需证书）；③Linux 旧可执行名过渡方案；④v1.5.13 起各版的实机回归与正式发版（建议合并本批后以 v1.5.17 一次发版并按 SESSION_STATE 第 11–15 条逐项回归）。
+   - 临时分支 `fix/linux-hicolor-icons` 已生成 `assets/icons/` 全套标准尺寸并配置 `package.json`；
+   - 本机已现场写入用户级图标缓存实现自愈，GTK 取证验证全尺寸命中通过；
+   - 待用户确认后执行分支合并与发版流水线。
 2. **后续下一步**：
-   - [x] 完成代码修复与语法校验。
-   - [x] 合并至 `main` 主分支并推送到远端。
-   - [x] 发布 Release 标签 `v1.5.12` 触发 CI/CD 自动化构建。
+   - [x] 完成多尺寸图标生成与 package.json 路径修正。
+   - [x] 本机实机环境 GTK IconTheme 验证通过。
+   - [ ] 提交改动并合并至 `main` 主分支。
+   - [ ] 触发 CI/CD 构建新版 Linux 安装包验证。
 
 
 

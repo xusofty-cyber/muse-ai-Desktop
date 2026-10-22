@@ -49,7 +49,7 @@
       ]
     },
     "linux": {
-      "icon": "assets/icon.png",
+      "icon": "assets/icons",
       "executableName": "muse",
       "desktop": {
         "entry": {
@@ -100,5 +100,5 @@
     "dist:mac": "electron-builder --mac dmg zip",
     "start": "electron ."
   },
-  "version": "1.5.18"
+  "version": "1.5.19"
 }
