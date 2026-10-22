@@ -11,6 +11,7 @@ dist/
 !.comet/config.yaml
 
 # Machine-specific agent hook configurations (comet init / local IDE hooks with absolute paths)
+.agents/*
 .codex/hooks.json
 .trae/hooks.json
 .trae-cn/hooks.json
