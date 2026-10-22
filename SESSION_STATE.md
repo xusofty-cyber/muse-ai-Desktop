@@ -173,14 +173,15 @@
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - 临时分支 `fix/linux-hicolor-icons` 已生成 `assets/icons/` 全套标准尺寸并配置 `package.json`；
-   - 本机已现场写入用户级图标缓存实现自愈，GTK 取证验证全尺寸命中通过；
-   - 待用户确认后执行分支合并与发版流水线。
+   - 修复分支 `fix/linux-hicolor-icons` 已成功 Fast-forward 合入 `main`；
+   - 版本已对齐发布为 `1.5.19` 并打标签 `v1.5.19`；
+   - 代码与标签已全部推送至远端 `origin/main` 与 `origin/v1.5.19`，已触发 GitHub Actions 多端构建；
+   - 本机已现场写入用户级图标缓存实现自愈，GTK 取证验证全尺寸命中通过。
 2. **后续下一步**：
    - [x] 完成多尺寸图标生成与 package.json 路径修正。
    - [x] 本机实机环境 GTK IconTheme 验证通过。
-   - [ ] 提交改动并合并至 `main` 主分支。
-   - [ ] 触发 CI/CD 构建新版 Linux 安装包验证。
+   - [x] 提交改动并合并至 `main` 主分支。
+   - [x] 推送远端并触发 CI/CD 构建新版 Linux 安装包（v1.5.19 已发布）。
 
 
 
