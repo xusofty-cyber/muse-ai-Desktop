@@ -156,6 +156,7 @@
     <button class="tab-btn" id="tab-appearance-btn">Appearance & UI</button>
     <button class="tab-btn" id="tab-auto-btn">Automation & Rules</button>
     <button class="tab-btn" id="tab-proxy-btn">Network & Proxy</button>
+    <button class="tab-btn" id="tab-security-btn">Security & Lock</button>
   </div>
 
   <div class="tab-content active" id="tab-hotkeys">
@@ -406,6 +407,104 @@
     </div>
   </div>
 
+  <div class="tab-content" id="tab-security">
+    <h2 id="h2-security">Security & Screen Lock</h2>
+    <p class="hint" id="hint-security">Protect your confidential conversations and accounts with a master lock password.</p>
+
+    <!-- Section 1: Master Lock Status -->
+    <div class="section-title" id="sec-title-master-lock">Master Lock (锁屏保护)</div>
+    <div class="auto-card">
+      <div class="auto-row" style="align-items: center;">
+        <div>
+          <span id="lbl-lock-status-title" style="font-weight: 600;">Lock Status</span>
+          <span class="sub" id="desc-lock-status">Master password screen lock is currently disabled.</span>
+        </div>
+        <span id="badge-lock-status" class="proxy-badge" style="background: rgba(154, 160, 174, 0.15); color: var(--text-dim); border: 1px solid rgba(154, 160, 174, 0.3);">Disabled</span>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+        <button class="action primary" id="btn-setup-lock" style="flex:1; min-width:140px;">Set Master Password</button>
+        <button class="action" id="btn-change-pwd" style="flex:1; min-width:140px; display:none;">Change Password</button>
+        <button class="action" id="btn-lock-now" style="flex:1; min-width:120px; display:none;">🔒 Lock Now</button>
+        <button class="action" id="btn-disable-lock" style="flex:1; min-width:120px; color:#ff9a9a; border-color:#ff9a9a33; display:none;">Disable Lock</button>
+      </div>
+      <div id="lock-status-msg" style="margin-top:8px; font-size:12px; min-height:16px;"></div>
+    </div>
+
+    <!-- Section 2: Inactivity Auto-Lock -->
+    <div class="section-title" id="sec-title-autolock">Auto-Lock (无操作定时自动锁屏)</div>
+    <div class="auto-card">
+      <div class="auto-row">
+        <div>
+          <span id="lbl-autolock-enable">Enable Auto-Lock on Idle</span>
+          <span class="sub" id="desc-autolock-enable">Automatically lock the screen after a period of user inactivity.</span>
+        </div>
+        <input type="checkbox" id="chk-autolock" class="toggle-switch">
+      </div>
+      <div class="auto-row" id="row-autolock-time" style="margin-top: 6px;">
+        <div>
+          <span id="lbl-autolock-duration">Lock After Inactivity</span>
+          <span class="sub" id="desc-autolock-duration">Select how long to wait before locking interface.</span>
+        </div>
+        <select id="sel-autolock-minutes" style="background:var(--key-bg); border:1px solid var(--key-border); color:var(--text-main); padding:4px 8px; border-radius:6px; font-size:12px;">
+          <option value="1">1 minute (1 分钟)</option>
+          <option value="5">5 minutes (5 分钟)</option>
+          <option value="15" selected>15 minutes (15 分钟)</option>
+          <option value="30">30 minutes (30 分钟)</option>
+          <option value="60">60 minutes (1 小时)</option>
+        </select>
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+        <button class="action primary" id="btn-save-autolock" style="padding:6px 16px; font-size:12px; flex:0;">Save Settings</button>
+      </div>
+      <div id="autolock-msg" style="margin-top:8px; font-size:12px; min-height:16px;"></div>
+    </div>
+
+    <!-- Section 3: Lock Shortcut -->
+    <div class="section-title" id="sec-title-lock-shortcut">Lock Shortcut (快捷键锁屏)</div>
+    <div class="auto-card">
+      <div class="auto-row">
+        <div>
+          <span id="lbl-lock-shortcut">Global Lock Shortcut</span>
+          <span class="sub" id="desc-lock-shortcut">Press this shortcut anywhere in the system to immediately lock the screen.</span>
+        </div>
+        <span id="txt-lock-shortcut" style="font-family: Consolas, monospace; font-size: 12px; background: var(--key-bg); color: var(--key-text); border: 1px solid var(--key-border); border-radius: 6px; padding: 4px 10px;">Ctrl+Shift+L</span>
+      </div>
+      <div style="text-align:right; margin-top:8px;">
+        <a class="quick-link" id="link-goto-hotkeys">Configure shortcut in Hotkeys tab (在快捷键标签页中修改)</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Password Dialog Modal -->
+  <div id="pwd-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card); border:1px solid var(--border-card); border-radius:12px; width:360px; max-width:90%; padding:20px; box-shadow:0 12px 36px rgba(0,0,0,0.4);">
+      <h3 id="pwd-modal-title" style="margin:0 0 8px; font-size:15px; font-weight:600;">Set Master Password</h3>
+      <p id="pwd-modal-desc" style="margin:0 0 16px; font-size:12px; color:var(--text-muted); line-height:1.4;">Enter a master password (minimum 4 characters) to secure the app.</p>
+      
+      <div id="pwd-field-old" style="margin-bottom:12px; display:none;">
+        <label id="lbl-pwd-old" style="font-size:11.5px; color:var(--text-dim); display:block; margin-bottom:4px;">Current Password</label>
+        <input type="password" id="inp-pwd-old" style="width:100%; background:var(--key-bg); border:1px solid var(--key-border); color:var(--text-main); padding:8px 10px; border-radius:6px; font-size:13px; box-sizing:border-box;">
+      </div>
+      
+      <div id="pwd-field-new" style="margin-bottom:12px;">
+        <label id="lbl-pwd-new" style="font-size:11.5px; color:var(--text-dim); display:block; margin-bottom:4px;">New Password</label>
+        <input type="password" id="inp-pwd-new" style="width:100%; background:var(--key-bg); border:1px solid var(--key-border); color:var(--text-main); padding:8px 10px; border-radius:6px; font-size:13px; box-sizing:border-box;" placeholder="At least 4 characters">
+      </div>
+
+      <div id="pwd-field-confirm" style="margin-bottom:14px;">
+        <label id="lbl-pwd-confirm" style="font-size:11.5px; color:var(--text-dim); display:block; margin-bottom:4px;">Confirm Password</label>
+        <input type="password" id="inp-pwd-confirm" style="width:100%; background:var(--key-bg); border:1px solid var(--key-border); color:var(--text-main); padding:8px 10px; border-radius:6px; font-size:13px; box-sizing:border-box;" placeholder="Re-enter password">
+      </div>
+
+      <div id="pwd-modal-err" style="color:#ff9a9a; font-size:11.5px; margin-bottom:12px; min-height:16px;"></div>
+
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button class="action" id="btn-pwd-cancel" style="padding:6px 14px; font-size:12px; flex:0;">Cancel</button>
+        <button class="action primary" id="btn-pwd-confirm" style="padding:6px 18px; font-size:12px; flex:0;">Confirm</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 const I18N_SETTINGS = {
   en: {
@@ -475,12 +574,49 @@ const I18N_SETTINGS = {
     connCardDesc: 'Google policy (RFC 8252) blocks password entry inside embedded desktop windows. We recommend signing into muse.ai in your default browser to connect Google, then press F5 in Muse to sync. If previously blocked, you can reset Google session flags below.',
     btnOpenMuseText: '🌐 Open muse.ai in Default Browser',
     btnResetGoogleText: '🧹 Reset Google Session Cache',
+    tabSecurity: 'Security & Lock',
+    securityTitle: 'Security & Screen Lock',
+    securityHint: 'Protect your confidential conversations and accounts with a master lock password.',
+    masterLockTitle: 'Master Lock (锁屏保护)',
+    lockStatusDisabled: 'Master password screen lock is currently disabled.',
+    lockStatusEnabled: 'Screen lock is active and protecting your sessions.',
+    badgeDisabled: 'Disabled',
+    badgeEnabled: 'Enabled',
+    btnSetupLockText: 'Set Master Password',
+    btnChangePwdText: 'Change Password',
+    btnLockNowText: '🔒 Lock Now',
+    btnDisableLockText: 'Disable Lock',
+    autoLockSecTitle: 'Auto-Lock (无操作定时自动锁屏)',
+    autoLockEnableLabel: 'Enable Auto-Lock on Idle',
+    autoLockEnableDesc: 'Automatically lock the screen after a period of user inactivity.',
+    autoLockDurationLabel: 'Lock After Inactivity',
+    autoLockDurationDesc: 'Select how long to wait before locking interface.',
+    btnSaveAutoLockText: 'Save Settings',
+    lockShortcutSecTitle: 'Lock Shortcut (快捷键锁屏)',
+    lockShortcutLabel: 'Global Lock Shortcut',
+    lockShortcutDesc: 'Press this shortcut anywhere in the system to immediately lock the screen.',
+    linkGotoHotkeysText: 'Configure shortcut in Hotkeys tab (在快捷键标签页中修改)',
+    modalTitleSetup: 'Set Master Password',
+    modalDescSetup: 'Enter a master password (minimum 4 characters) to secure the app.',
+    modalTitleChange: 'Change Master Password',
+    modalDescChange: 'Verify your current password, then enter a new master password.',
+    modalTitleDisable: 'Disable Master Lock',
+    modalDescDisable: 'Enter your current password to disable screen lock.',
+    modalLblOldPwd: 'Current Password',
+    modalLblNewPwd: 'New Password',
+    modalLblConfirmPwd: 'Confirm Password',
+    modalBtnCancel: 'Cancel',
+    modalBtnConfirm: 'Confirm',
+    errPwdMismatch: 'Passwords do not match.',
+    errPwdLength: 'Password must be at least 4 characters.',
+    errPwdRequired: 'Password cannot be empty.',
   },
   'zh-CN': {
     tabHotkeys: '快捷键',
     tabAppearance: '外观与语言',
     tabAuto: '自动化规则',
     tabProxy: '网络与代理',
+    tabSecurity: '安全与锁屏',
     hotkeysTitle: '全局快捷键',
     hotkeysHint: '点击快捷键输入框，直接按下新的键盘按键组合；按 Esc 键可取消。',
     resetDefaults: '恢复默认值',
@@ -543,6 +679,41 @@ const I18N_SETTINGS = {
     connCardDesc: 'Google 官方安全规范（RFC 8252）禁止在桌面客户端内嵌窗口直接输入密码登录。建议在默认浏览器中登录 muse.ai 绑定 Google 账号，绑定后在客户端按 F5 刷新即可同步。若曾被 Google 风控拦截，可一键重置会话缓存。',
     btnOpenMuseText: '🌐 在默认浏览器打开 muse.ai',
     btnResetGoogleText: '🧹 重置 Google 登录与风控缓存',
+    securityTitle: '安全与锁屏保护',
+    securityHint: '设置主密码保护您的机密对话与多账号数据，离开电脑时自动或快捷键锁屏。',
+    masterLockTitle: '主锁屏保护 (Master Lock)',
+    lockStatusDisabled: '主密码锁屏保护当前处于停用状态。',
+    lockStatusEnabled: '主密码锁屏保护已启用，正在保护您的会话安全。',
+    badgeDisabled: '未启用',
+    badgeEnabled: '已启用',
+    btnSetupLockText: '设置主密码并启用',
+    btnChangePwdText: '修改主密码',
+    btnLockNowText: '🔒 立即锁屏',
+    btnDisableLockText: '停用锁屏',
+    autoLockSecTitle: '无操作自动锁屏 (Auto-Lock)',
+    autoLockEnableLabel: '启用空闲无操作自动锁屏',
+    autoLockEnableDesc: '当检测到键盘与鼠标在设定的时长内无任何活动时，自动锁定桌面界面。',
+    autoLockDurationLabel: '无操作超时锁定时间',
+    autoLockDurationDesc: '选择系统或应用空闲多久后自动进入锁屏状态。',
+    btnSaveAutoLockText: '保存设置',
+    lockShortcutSecTitle: '锁屏全局快捷键 (Shortcut)',
+    lockShortcutLabel: '全局快速锁屏组合键',
+    lockShortcutDesc: '在系统的任意界面按下该快捷键，即刻最小化并拉起全屏安全锁。',
+    linkGotoHotkeysText: '在快捷键标签页中自定义修改',
+    modalTitleSetup: '设置主密码',
+    modalDescSetup: '请输入至少 4 位主密码以启用锁屏保护。',
+    modalTitleChange: '修改主密码',
+    modalDescChange: '请输入当前密码以验证身份，随后设置新的主密码。',
+    modalTitleDisable: '停用锁屏保护',
+    modalDescDisable: '请输入当前主密码以停用锁屏保护功能。',
+    modalLblOldPwd: '当前主密码',
+    modalLblNewPwd: '新主密码',
+    modalLblConfirmPwd: '确认新密码',
+    modalBtnCancel: '取消',
+    modalBtnConfirm: '确认',
+    errPwdMismatch: '两次输入的密码不一致。',
+    errPwdLength: '密码长度至少需 4 个字符。',
+    errPwdRequired: '密码不能为空。',
   }
 };
 
@@ -678,6 +849,9 @@ function applySettingsLocale(loc) {
   const btnSaveProxy = document.getElementById('btn-save-proxy');
   if (btnSaveProxy) btnSaveProxy.textContent = t.proxySaveBtn;
 
+  const tabSecurityBtn = document.getElementById('tab-security-btn');
+  if (tabSecurityBtn) tabSecurityBtn.textContent = t.tabSecurity;
+
   const secConn = document.getElementById('sec-title-connector');
   if (secConn) secConn.textContent = t.connectorSecTitle;
   const txtConnTitle = document.getElementById('txt-conn-title');
@@ -688,6 +862,44 @@ function applySettingsLocale(loc) {
   if (btnOpenMuse) btnOpenMuse.textContent = t.btnOpenMuseText;
   const btnResetGoogle = document.getElementById('btn-reset-google-cache');
   if (btnResetGoogle) btnResetGoogle.textContent = t.btnResetGoogleText;
+
+  const h2Sec = document.getElementById('h2-security');
+  if (h2Sec) h2Sec.textContent = t.securityTitle;
+  const hintSec = document.getElementById('hint-security');
+  if (hintSec) hintSec.textContent = t.securityHint;
+  const secMasterLock = document.getElementById('sec-title-master-lock');
+  if (secMasterLock) secMasterLock.textContent = t.masterLockTitle;
+  const btnSetupLock = document.getElementById('btn-setup-lock');
+  if (btnSetupLock) btnSetupLock.textContent = t.btnSetupLockText;
+  const btnChangePwd = document.getElementById('btn-change-pwd');
+  if (btnChangePwd) btnChangePwd.textContent = t.btnChangePwdText;
+  const btnLockNow = document.getElementById('btn-lock-now');
+  if (btnLockNow) btnLockNow.textContent = t.btnLockNowText;
+  const btnDisableLock = document.getElementById('btn-disable-lock');
+  if (btnDisableLock) btnDisableLock.textContent = t.btnDisableLockText;
+
+  const secAutoLock = document.getElementById('sec-title-autolock');
+  if (secAutoLock) secAutoLock.textContent = t.autoLockSecTitle;
+  const lblAutoLockEnable = document.getElementById('lbl-autolock-enable');
+  if (lblAutoLockEnable) lblAutoLockEnable.textContent = t.autoLockEnableLabel;
+  const descAutoLockEnable = document.getElementById('desc-autolock-enable');
+  if (descAutoLockEnable) descAutoLockEnable.textContent = t.autoLockEnableDesc;
+  const lblAutoLockDur = document.getElementById('lbl-autolock-duration');
+  if (lblAutoLockDur) lblAutoLockDur.textContent = t.autoLockDurationLabel;
+  const descAutoLockDur = document.getElementById('desc-autolock-duration');
+  if (descAutoLockDur) descAutoLockDur.textContent = t.autoLockDurationDesc;
+  const btnSaveAutoLock = document.getElementById('btn-save-autolock');
+  if (btnSaveAutoLock) btnSaveAutoLock.textContent = t.btnSaveAutoLockText;
+
+  const secLockShortcut = document.getElementById('sec-title-lock-shortcut');
+  if (secLockShortcut) secLockShortcut.textContent = t.lockShortcutSecTitle;
+  const lblLockShortcut = document.getElementById('lbl-lock-shortcut');
+  if (lblLockShortcut) lblLockShortcut.textContent = t.lockShortcutLabel;
+  const descLockShortcut = document.getElementById('desc-lock-shortcut');
+  if (descLockShortcut) descLockShortcut.textContent = t.lockShortcutDesc;
+  const linkGotoHotkeys = document.getElementById('link-goto-hotkeys');
+  if (linkGotoHotkeys) linkGotoHotkeys.textContent = t.linkGotoHotkeysText;
+  if (typeof refreshLockState === 'function') refreshLockState();
 }
 
 const api = window.hotkeyAPI;
@@ -980,16 +1192,18 @@ const tabHotkeysBtn = document.getElementById('tab-hotkeys-btn');
 const tabAppearanceBtn = document.getElementById('tab-appearance-btn');
 const tabAutoBtn = document.getElementById('tab-auto-btn');
 const tabProxyBtn = document.getElementById('tab-proxy-btn');
+const tabSecurityBtn = document.getElementById('tab-security-btn');
 const tabHotkeys = document.getElementById('tab-hotkeys');
 const tabAppearance = document.getElementById('tab-appearance');
 const tabAuto = document.getElementById('tab-auto');
 const tabProxy = document.getElementById('tab-proxy');
+const tabSecurity = document.getElementById('tab-security');
 
 function selectTab(btn, content) {
-  [tabHotkeysBtn, tabAppearanceBtn, tabAutoBtn, tabProxyBtn].forEach(b => b.classList.remove('active'));
-  [tabHotkeys, tabAppearance, tabAuto, tabProxy].forEach(c => c.classList.remove('active'));
-  btn.classList.add('active');
-  content.classList.add('active');
+  [tabHotkeysBtn, tabAppearanceBtn, tabAutoBtn, tabProxyBtn, tabSecurityBtn].forEach(b => b && b.classList.remove('active'));
+  [tabHotkeys, tabAppearance, tabAuto, tabProxy, tabSecurity].forEach(c => c && c.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (content) content.classList.add('active');
 }
 
 tabHotkeysBtn.onclick = () => selectTab(tabHotkeysBtn, tabHotkeys);
@@ -1005,6 +1219,12 @@ tabProxyBtn.onclick = () => {
   selectTab(tabProxyBtn, tabProxy);
   loadProxySettings();
 };
+if (tabSecurityBtn) {
+  tabSecurityBtn.onclick = () => {
+    selectTab(tabSecurityBtn, tabSecurity);
+    refreshLockState();
+  };
+}
 
 // --- Appearance & UI Settings Logic ---
 const themeApi = window.themeAPI;
@@ -1326,9 +1546,308 @@ if (window.settingsTabAPI) {
       tabHotkeysBtn.click();
     } else if (tabId === 'tab-appearance') {
       tabAppearanceBtn.click();
+    } else if (tabId === 'tab-security') {
+      if (tabSecurityBtn) tabSecurityBtn.click();
     }
   });
 }
+
+// --- Security & Master Screen Lock Logic ---
+const lockApi = window.lockAPI;
+let currentLockStatus = null;
+let modalMode = 'setup'; // 'setup' | 'change' | 'disable'
+
+const badgeLockStatus = document.getElementById('badge-lock-status');
+const descLockStatus = document.getElementById('desc-lock-status');
+const btnSetupLock = document.getElementById('btn-setup-lock');
+const btnChangePwd = document.getElementById('btn-change-pwd');
+const btnLockNow = document.getElementById('btn-lock-now');
+const btnDisableLock = document.getElementById('btn-disable-lock');
+const lockStatusMsg = document.getElementById('lock-status-msg');
+
+const chkAutoLock = document.getElementById('chk-autolock');
+const selAutoLockMinutes = document.getElementById('sel-autolock-minutes');
+const btnSaveAutoLock = document.getElementById('btn-save-autolock');
+const autoLockMsg = document.getElementById('autolock-msg');
+const txtLockShortcut = document.getElementById('txt-lock-shortcut');
+const linkGotoHotkeys = document.getElementById('link-goto-hotkeys');
+
+const pwdModalOverlay = document.getElementById('pwd-modal-overlay');
+const pwdModalTitle = document.getElementById('pwd-modal-title');
+const pwdModalDesc = document.getElementById('pwd-modal-desc');
+const pwdFieldOld = document.getElementById('pwd-field-old');
+const pwdFieldNew = document.getElementById('pwd-field-new');
+const pwdFieldConfirm = document.getElementById('pwd-field-confirm');
+const inpPwdOld = document.getElementById('inp-pwd-old');
+const inpPwdNew = document.getElementById('inp-pwd-new');
+const inpPwdConfirm = document.getElementById('inp-pwd-confirm');
+const pwdModalErr = document.getElementById('pwd-modal-err');
+const btnPwdCancel = document.getElementById('btn-pwd-cancel');
+const btnPwdConfirm = document.getElementById('btn-pwd-confirm');
+
+function getActiveLocaleDict() {
+  const isZh = document.getElementById('rad-lang-zh')?.checked || false;
+  return I18N_SETTINGS[isZh ? 'zh-CN' : 'en'] || I18N_SETTINGS.en;
+}
+
+function isZhActive() {
+  return !!document.getElementById('rad-lang-zh')?.checked;
+}
+
+async function refreshLockState() {
+  if (!lockApi) return;
+  try {
+    const status = await lockApi.getStatus();
+    if (!status) return;
+    currentLockStatus = status;
+    const t = getActiveLocaleDict();
+
+    if (badgeLockStatus && descLockStatus) {
+      if (status.enabled) {
+        badgeLockStatus.textContent = t.badgeEnabled;
+        badgeLockStatus.style.background = 'rgba(16, 185, 129, 0.15)';
+        badgeLockStatus.style.color = '#10b981';
+        badgeLockStatus.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+        descLockStatus.textContent = t.lockStatusEnabled;
+
+        if (btnSetupLock) btnSetupLock.style.display = 'none';
+        if (btnChangePwd) btnChangePwd.style.display = 'inline-block';
+        if (btnLockNow) btnLockNow.style.display = 'inline-block';
+        if (btnDisableLock) btnDisableLock.style.display = 'inline-block';
+      } else {
+        badgeLockStatus.textContent = t.badgeDisabled;
+        badgeLockStatus.style.background = 'rgba(154, 160, 174, 0.15)';
+        badgeLockStatus.style.color = 'var(--text-dim)';
+        badgeLockStatus.style.borderColor = 'rgba(154, 160, 174, 0.3)';
+        descLockStatus.textContent = t.lockStatusDisabled;
+
+        if (btnSetupLock) btnSetupLock.style.display = 'inline-block';
+        if (btnChangePwd) btnChangePwd.style.display = 'none';
+        if (btnLockNow) btnLockNow.style.display = 'none';
+        if (btnDisableLock) btnDisableLock.style.display = 'none';
+      }
+    }
+
+    if (chkAutoLock) chkAutoLock.checked = !!status.autoLockEnabled;
+    if (selAutoLockMinutes) selAutoLockMinutes.value = String(status.idleMinutes || 15);
+    if (txtLockShortcut) txtLockShortcut.textContent = pretty(status.shortcut || 'CommandOrControl+Shift+L');
+  } catch (err) {
+    console.error('Failed to get lock status:', err);
+  }
+}
+
+function openPasswordModal(mode) {
+  modalMode = mode;
+  const t = getActiveLocaleDict();
+  inpPwdOld.value = '';
+  inpPwdNew.value = '';
+  inpPwdConfirm.value = '';
+  pwdModalErr.textContent = '';
+
+  if (mode === 'setup') {
+    pwdModalTitle.textContent = t.modalTitleSetup;
+    pwdModalDesc.textContent = t.modalDescSetup;
+    pwdFieldOld.style.display = 'none';
+    pwdFieldNew.style.display = 'block';
+    pwdFieldConfirm.style.display = 'block';
+  } else if (mode === 'change') {
+    pwdModalTitle.textContent = t.modalTitleChange;
+    pwdModalDesc.textContent = t.modalDescChange;
+    pwdFieldOld.style.display = 'block';
+    pwdFieldNew.style.display = 'block';
+    pwdFieldConfirm.style.display = 'block';
+  } else if (mode === 'disable') {
+    pwdModalTitle.textContent = t.modalTitleDisable;
+    pwdModalDesc.textContent = t.modalDescDisable;
+    pwdFieldOld.style.display = 'block';
+    pwdFieldNew.style.display = 'none';
+    pwdFieldConfirm.style.display = 'none';
+  }
+
+  pwdModalOverlay.style.display = 'flex';
+  setTimeout(() => {
+    if (mode === 'setup') inpPwdNew.focus();
+    else inpPwdOld.focus();
+  }, 50);
+}
+
+function closePasswordModal() {
+  pwdModalOverlay.style.display = 'none';
+  inpPwdOld.value = '';
+  inpPwdNew.value = '';
+  inpPwdConfirm.value = '';
+  pwdModalErr.textContent = '';
+}
+
+async function handleModalConfirm() {
+  const t = getActiveLocaleDict();
+  pwdModalErr.textContent = '';
+  const oldPwd = inpPwdOld.value;
+  const newPwd = inpPwdNew.value;
+  const confirmPwd = inpPwdConfirm.value;
+
+  if (modalMode === 'setup') {
+    if (!newPwd || newPwd.length < 4) {
+      pwdModalErr.textContent = t.errPwdLength;
+      inpPwdNew.focus();
+      return;
+    }
+    if (newPwd !== confirmPwd) {
+      pwdModalErr.textContent = t.errPwdMismatch;
+      inpPwdConfirm.focus();
+      return;
+    }
+    btnPwdConfirm.disabled = true;
+    try {
+      const res = await lockApi.setPassword(newPwd);
+      if (res && res.ok) {
+        closePasswordModal();
+        if (lockStatusMsg) {
+          lockStatusMsg.style.color = '#7ee2a8';
+          lockStatusMsg.textContent = isZhActive() ? '主密码设置成功，锁屏已启用！' : 'Master password set successfully!';
+        }
+        await refreshLockState();
+      } else {
+        pwdModalErr.textContent = (res && res.error) || 'Failed to set password';
+      }
+    } catch (e) {
+      pwdModalErr.textContent = e.message;
+    } finally {
+      btnPwdConfirm.disabled = false;
+    }
+  } else if (modalMode === 'change') {
+    if (!oldPwd) {
+      pwdModalErr.textContent = t.errPwdRequired;
+      inpPwdOld.focus();
+      return;
+    }
+    if (!newPwd || newPwd.length < 4) {
+      pwdModalErr.textContent = t.errPwdLength;
+      inpPwdNew.focus();
+      return;
+    }
+    if (newPwd !== confirmPwd) {
+      pwdModalErr.textContent = t.errPwdMismatch;
+      inpPwdConfirm.focus();
+      return;
+    }
+    btnPwdConfirm.disabled = true;
+    try {
+      const res = await lockApi.changePassword(oldPwd, newPwd);
+      if (res && res.ok) {
+        closePasswordModal();
+        if (lockStatusMsg) {
+          lockStatusMsg.style.color = '#7ee2a8';
+          lockStatusMsg.textContent = isZhActive() ? '主密码修改成功！' : 'Master password changed successfully!';
+        }
+        await refreshLockState();
+      } else {
+        pwdModalErr.textContent = (res && res.error) || 'Incorrect password';
+      }
+    } catch (e) {
+      pwdModalErr.textContent = e.message;
+    } finally {
+      btnPwdConfirm.disabled = false;
+    }
+  } else if (modalMode === 'disable') {
+    if (!oldPwd) {
+      pwdModalErr.textContent = t.errPwdRequired;
+      inpPwdOld.focus();
+      return;
+    }
+    btnPwdConfirm.disabled = true;
+    try {
+      const res = await lockApi.disableLock(oldPwd);
+      if (res && res.ok) {
+        closePasswordModal();
+        if (lockStatusMsg) {
+          lockStatusMsg.style.color = '#7ee2a8';
+          lockStatusMsg.textContent = isZhActive() ? '主密码锁屏保护已停用。' : 'Screen lock disabled.';
+        }
+        await refreshLockState();
+      } else {
+        pwdModalErr.textContent = (res && res.error) || 'Incorrect password';
+      }
+    } catch (e) {
+      pwdModalErr.textContent = e.message;
+    } finally {
+      btnPwdConfirm.disabled = false;
+    }
+  }
+}
+
+if (btnSetupLock) btnSetupLock.onclick = () => openPasswordModal('setup');
+if (btnChangePwd) btnChangePwd.onclick = () => openPasswordModal('change');
+if (btnDisableLock) btnDisableLock.onclick = () => openPasswordModal('disable');
+if (btnLockNow) {
+  btnLockNow.onclick = async () => {
+    try {
+      if (lockApi) await lockApi.lockNow();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+}
+
+if (btnSaveAutoLock) {
+  btnSaveAutoLock.onclick = async () => {
+    if (!lockApi) return;
+    if (autoLockMsg) {
+      autoLockMsg.style.color = '#7aa2ff';
+      autoLockMsg.textContent = isZhActive() ? '正在保存自动锁屏设置...' : 'Saving auto-lock settings...';
+    }
+    try {
+      const autoLockEnabled = !!(chkAutoLock && chkAutoLock.checked);
+      const idleMinutes = parseInt(selAutoLockMinutes?.value || '15', 10);
+      const res = await lockApi.updateConfig({ autoLockEnabled, idleMinutes });
+      if (res && res.ok) {
+        if (autoLockMsg) {
+          autoLockMsg.style.color = '#7ee2a8';
+          autoLockMsg.textContent = isZhActive() ? '自动锁屏设置已保存！' : 'Auto-lock settings saved!';
+        }
+        await refreshLockState();
+      } else {
+        if (autoLockMsg) {
+          autoLockMsg.style.color = '#ff9a9a';
+          autoLockMsg.textContent = (res && res.error) || 'Failed to update auto-lock';
+        }
+      }
+    } catch (err) {
+      if (autoLockMsg) {
+        autoLockMsg.style.color = '#ff9a9a';
+        autoLockMsg.textContent = err.message;
+      }
+    }
+  };
+}
+
+if (linkGotoHotkeys) {
+  linkGotoHotkeys.onclick = (e) => {
+    e.preventDefault();
+    if (tabHotkeysBtn) tabHotkeysBtn.click();
+  };
+}
+
+if (btnPwdCancel) btnPwdCancel.onclick = closePasswordModal;
+if (btnPwdConfirm) btnPwdConfirm.onclick = handleModalConfirm;
+if (pwdModalOverlay) {
+  pwdModalOverlay.onclick = (e) => {
+    if (e.target === pwdModalOverlay) closePasswordModal();
+  };
+}
+
+[inpPwdOld, inpPwdNew, inpPwdConfirm].forEach((inp) => {
+  if (!inp) return;
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleModalConfirm();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closePasswordModal();
+    }
+  });
+});
 
 (async () => {
   try {
@@ -1348,6 +1867,7 @@ if (window.settingsTabAPI) {
   try { await refreshAutoState(); } catch (e) { console.error(e); }
   try { await loadThemeAndUI(); } catch (e) { console.error(e); }
   try { await loadProxySettings(); } catch (e) { console.error(e); }
+  try { await refreshLockState(); } catch (e) { console.error(e); }
 
   if (window.localeAPI && window.localeAPI.onChanged) {
     window.localeAPI.onChanged(async (newLoc) => {

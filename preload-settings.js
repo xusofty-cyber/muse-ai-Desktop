@@ -61,4 +61,13 @@ contextBridge.exposeInMainWorld('connectorAPI', {
   resetGoogleSession: () => ipcRenderer.invoke('google-session-reset'),
 });
 
+contextBridge.exposeInMainWorld('lockAPI', {
+  getStatus: () => ipcRenderer.invoke('lock:get-status'),
+  setPassword: (pwd) => ipcRenderer.invoke('lock:set-password', pwd),
+  changePassword: (oldPwd, newPwd) => ipcRenderer.invoke('lock:change-password', oldPwd, newPwd),
+  disableLock: (pwd) => ipcRenderer.invoke('lock:disable', pwd),
+  updateConfig: (cfg) => ipcRenderer.invoke('lock:update-config', cfg),
+  lockNow: () => ipcRenderer.invoke('lock:lock-now'),
+});
+
 

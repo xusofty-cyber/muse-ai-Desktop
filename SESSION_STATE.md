@@ -170,18 +170,27 @@
      - `node -c main.js preload-settings.js preload-chat-export.js` 语法检查 Exit Code 0；
      - `package.json` JSON 格式校验通过。
 
+19. **v1.5.20 主密码安全锁屏（Screen Lock）功能研发完成（Comet Native 变更：`screen-lock`）**：
+   - **业务目标**：为桌面端增加机密会话安全锁屏，支持定时空闲锁屏、手动锁屏、全局快捷键锁屏、设置页配置（启用/修改密码/停用/时长选择），以及加盐慢哈希加密与防暴力破解。
+   - **技术方案**：
+     1. **密码学安全**：采用 Node 原生 `crypto.scryptSync(pwd, salt, 64, { N: 16384, r: 8, p: 1 })` 结合 16 字节随机 salt 派生 64 字节密钥，文件存储绝对不含明文或弱散列；密码比对使用 `crypto.timingSafeEqual` 恒定时间比对防时序侧信道攻击。
+     2. **防暴力破解（Rate Limiting）**：连续输错 5 次触发 30 秒冷却倒计时锁定，主进程与 `lock.html` 倒计时联动，冷却期内拒绝对比任何密码。
+     3. **无操作空闲自动锁屏**：结合 `powerMonitor.getSystemIdleTime()` 与应用内 `recordUserActivity()`（窗口聚焦与 IPC 交互）追踪空闲时长，支持 1/5/15/30/60 分钟阶梯配置。
+     4. **会话遮蔽与快捷键越权拦截**：锁屏时隐藏全部 `mainWindow`、`profileWindows`、`quickWindow`、`hotkeyWindow`；弹出全屏置顶 `lockWindow`（`preload-lock.js` + `lock.html`）；`switchAccount`、`nextAccount`、快捷键、快速对话、聊天导出及设置窗口全部拦截。
+     5. **设置中心 UI 融合**：在 `hotkeys.html` 中新增“安全与锁屏”Tab，支持主锁屏状态卡片、主密码设置/修改/停用模态框（`pwd-modal-overlay`）、自动锁屏开关与时长选择、锁屏快捷键卡片展示，完全适配深浅色主题与中英文 i18n。
+   - **验证证据**：
+     - `node -c main.js preload-settings.js preload-lock.js` 语法检查全部通过；
+     - `node scratch/test-screen-lock.js` 执行 12 项单测与边界测试，18/18 验收标准（AC1~AC18）100% 变绿；
+     - `comet native next screen-lock` 推进完成 Build 与 Verify 阶段，验收 18/18 通过。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - 修复分支 `fix/linux-hicolor-icons` 已成功 Fast-forward 合入 `main`；
-   - 版本已对齐发布为 `1.5.19` 并打标签 `v1.5.19`；
-   - 代码与标签已全部推送至远端 `origin/main` 与 `origin/v1.5.19`，已触发 GitHub Actions 多端构建；
-   - 本机已现场写入用户级图标缓存实现自愈，GTK 取证验证全尺寸命中通过。
+   - 处于分支 `feat/screen-lock`，Comet Native change `screen-lock` 已完成全部编码实现与自动化验证；
+   - Verify 阶段 18/18 项验收标准全部通过，当前状态为 `await-user`，等待用户确认是否接受验收结果进入归档（Archive）。
 2. **后续下一步**：
-   - [x] 完成多尺寸图标生成与 package.json 路径修正。
-   - [x] 本机实机环境 GTK IconTheme 验证通过。
-   - [x] 提交改动并合并至 `main` 主分支。
-   - [x] 推送远端并触发 CI/CD 构建新版 Linux 安装包（v1.5.19 已发布）。
+   - [ ] 用户确认接受验收结果并执行 `comet native next screen-lock --summary "Accept verification results" --accept-result` 推进归档。
+   - [ ] 归档完成后根据用户授权，合并分支至 `main` 并发布。
 
 
 

@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeImage, clipboard, session, dialog, Notification, ipcMain, net } = require('electron');
+const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeImage, clipboard, session, dialog, Notification, ipcMain, net, powerMonitor, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // ---- 核心加固 1 & 2: 先定身份/UserData 再拿单例锁 + 统一 UserData 目录 -------------
 // 顺序要点 (v1.5.15 修正评审 P1-11): Chromium 单例锁绑定获取时刻的 userData
@@ -74,6 +75,7 @@ const DEFAULT_HOTKEYS = {
   speaker: 'CommandOrControl+Shift+O',
   automation: 'CommandOrControl+Shift+A',
   metaAccount: 'CommandOrControl+Shift+N',
+  lock: 'CommandOrControl+Shift+L',
 };
 const HOTKEY_LABELS = {
   en: {
@@ -84,6 +86,7 @@ const HOTKEY_LABELS = {
     speaker: 'Mute / unmute app sound',
     automation: 'Toggle automation (Auto-Allow)',
     metaAccount: 'Next account (Switch)',
+    lock: 'Lock screen (Require password)',
   },
   'zh-CN': {
     quick: '快捷会话窗口 (Quick chat)',
@@ -93,6 +96,7 @@ const HOTKEY_LABELS = {
     speaker: '应用声音静音 / 开关',
     automation: '自动化授权开关 (Auto-Allow)',
     metaAccount: '切换下一个账号',
+    lock: '锁定屏幕 (需要密码解锁)',
   },
 };
 
@@ -228,6 +232,7 @@ const HOTKEY_ACTIONS = {
   speaker: () => toggleSpeaker(),
   automation: () => toggleAutomationMaster(),
   metaAccount: () => nextAccount(),
+  lock: () => lockScreen(),
 };
 
 let mainWindow = null;
@@ -358,6 +363,39 @@ function detectDefaultLocale() {
   return 'en';
 }
 
+function defaultLock() {
+  return {
+    enabled: false,
+    hash: '',
+    salt: '',
+    autoLockEnabled: false,
+    idleMinutes: 15,
+  };
+}
+
+function hashPassword(password, salt) {
+  if (!salt) {
+    salt = crypto.randomBytes(16).toString('hex');
+  }
+  const derivedKey = crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 });
+  return {
+    hash: derivedKey.toString('hex'),
+    salt: salt,
+  };
+}
+
+function verifyPassword(password, salt, storedHash) {
+  if (!password || !salt || !storedHash) return false;
+  try {
+    const derivedKey = crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 });
+    const storedBuf = Buffer.from(storedHash, 'hex');
+    if (derivedKey.length !== storedBuf.length) return false;
+    return crypto.timingSafeEqual(derivedKey, storedBuf);
+  } catch {
+    return false;
+  }
+}
+
 function defaultState() {
   return {
     window: {},
@@ -373,6 +411,7 @@ function defaultState() {
     ui: {
       autoHideButtons: true, // 自动隐藏右上角与右下角按钮
     },
+    lock: defaultLock(),
   };
 }
 const statePath = () => path.join(app.getPath('userData'), 'app-state.json');
@@ -395,6 +434,14 @@ function sanitizeAndMergeState(raw) {
     siteActions: { ...((raw.automation && raw.automation.siteActions) || {}) },
   };
   merged.proxy = { ...defaultProxy(), ...(raw.proxy || {}) };
+  const rawLock = (raw && raw.lock) || {};
+  merged.lock = {
+    enabled: typeof rawLock.enabled === 'boolean' ? rawLock.enabled : false,
+    hash: typeof rawLock.hash === 'string' ? rawLock.hash : '',
+    salt: typeof rawLock.salt === 'string' ? rawLock.salt : '',
+    autoLockEnabled: typeof rawLock.autoLockEnabled === 'boolean' ? rawLock.autoLockEnabled : false,
+    idleMinutes: (typeof rawLock.idleMinutes === 'number' && [1, 5, 15, 30, 60].includes(rawLock.idleMinutes)) ? rawLock.idleMinutes : 15,
+  };
   // 窗口几何必须钳制后再用: 历史坏值 (屏幕外/负尺寸) 不得重放进新会话
   merged.window = sanitizeWindowBounds(raw.window || {});
   const wbp = {};
@@ -1424,14 +1471,186 @@ function closeWindows() {
   mainWindow = null;
 }
 
+let isScreenLocked = false;
+let lockWindow = null;
+let failedAttempts = 0;
+let lockoutUntil = 0;
+let lastUserActivityTime = Date.now();
+let autoLockTimer = null;
+
+function recordUserActivity() {
+  lastUserActivityTime = Date.now();
+}
+
+function lockScreen() {
+  if (!state.lock || !state.lock.enabled || !state.lock.hash) return;
+  if (isScreenLocked) {
+    if (lockWindow && !lockWindow.isDestroyed()) {
+      lockWindow.show();
+      lockWindow.focus();
+    }
+    return;
+  }
+
+  isScreenLocked = true;
+
+  // 1. 隐藏快捷聊天浮窗
+  if (quickWindow && !quickWindow.isDestroyed() && quickWindow.isVisible()) {
+    quickWindow.hide();
+  }
+
+  // 2. 隐藏设置窗口
+  if (hotkeyWindow && !hotkeyWindow.isDestroyed() && hotkeyWindow.isVisible()) {
+    hotkeyWindow.hide();
+  }
+
+  // 3. 隐藏所有账号窗口，防止界面内容被窥视
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+    mainWindow.hide();
+  }
+  for (const win of profileWindows.values()) {
+    if (win && !win.isDestroyed() && win.isVisible()) {
+      win.hide();
+    }
+  }
+
+  // 4. 更新托盘菜单为锁定保护模式
+  buildTrayMenu();
+
+  // 5. 弹出全屏前置锁屏窗
+  createLockWindow();
+}
+
+function createLockWindow() {
+  if (lockWindow && !lockWindow.isDestroyed()) {
+    lockWindow.show();
+    lockWindow.focus();
+    return;
+  }
+
+  let workArea = { width: 1280, height: 800 };
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    if (primaryDisplay && primaryDisplay.workAreaSize) {
+      workArea = primaryDisplay.workAreaSize;
+    }
+  } catch {}
+
+  lockWindow = new BrowserWindow({
+    width: Math.min(420, workArea.width),
+    height: Math.min(520, workArea.height),
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    closable: false,
+    alwaysOnTop: true,
+    center: true,
+    show: false,
+    icon: APP_ICON_PATH,
+    title: 'Muse - 屏幕锁定',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-lock.js'),
+      sandbox: true,
+      contextIsolation: true,
+    },
+  });
+
+  if (process.platform !== 'darwin' && fs.existsSync(APP_ICON_PATH)) {
+    lockWindow.setIcon(APP_ICON_PATH);
+  }
+
+  lockWindow.loadFile(path.join(__dirname, 'lock.html'));
+
+  lockWindow.once('ready-to-show', () => {
+    if (lockWindow && !lockWindow.isDestroyed()) {
+      lockWindow.show();
+      lockWindow.focus();
+    }
+  });
+
+  lockWindow.on('close', (e) => {
+    if (isScreenLocked && !app.quitting) {
+      e.preventDefault();
+    }
+  });
+
+  lockWindow.on('closed', () => {
+    lockWindow = null;
+  });
+}
+
+function unlockScreen(password) {
+  if (!isScreenLocked) return { ok: true };
+
+  const now = Date.now();
+  if (lockoutUntil > now) {
+    const remainingSec = Math.ceil((lockoutUntil - now) / 1000);
+    return { ok: false, error: 'lockout', remainingSec };
+  }
+
+  const valid = verifyPassword(password, state.lock.salt, state.lock.hash);
+  if (!valid) {
+    failedAttempts += 1;
+    if (failedAttempts >= 5) {
+      lockoutUntil = Date.now() + 30000; // 冷却锁定 30 秒
+      failedAttempts = 0;
+      return { ok: false, error: 'lockout', remainingSec: 30 };
+    }
+    return { ok: false, error: 'invalid-password', attemptsLeft: 5 - failedAttempts };
+  }
+
+  // 密码正确，解除锁定
+  failedAttempts = 0;
+  lockoutUntil = 0;
+  isScreenLocked = false;
+  recordUserActivity();
+
+  if (lockWindow && !lockWindow.isDestroyed()) {
+    lockWindow.destroy();
+    lockWindow = null;
+  }
+
+  showMainWindow();
+  buildTrayMenu();
+  return { ok: true };
+}
+
+function startAutoLockTimer() {
+  if (autoLockTimer) clearInterval(autoLockTimer);
+  autoLockTimer = setInterval(() => {
+    if (isScreenLocked) return;
+    if (!state.lock || !state.lock.enabled || !state.lock.autoLockEnabled || !state.lock.hash) return;
+    const idleLimitSec = (state.lock.idleMinutes || 15) * 60;
+    let systemIdleSec = 0;
+    try {
+      if (powerMonitor && typeof powerMonitor.getSystemIdleTime === 'function') {
+        systemIdleSec = powerMonitor.getSystemIdleTime();
+      }
+    } catch {}
+    const inAppIdleSec = Math.floor((Date.now() - lastUserActivityTime) / 1000);
+    const effectiveIdleSec = Math.max(systemIdleSec, inAppIdleSec);
+    if (effectiveIdleSec >= idleLimitSec) {
+      lockScreen();
+    }
+  }, 10000);
+}
+
 function toggleQuickWindow() {
+  if (isScreenLocked) {
+    if (lockWindow && !lockWindow.isDestroyed()) {
+      lockWindow.show();
+      lockWindow.focus();
+    }
+    return;
+  }
+  recordUserActivity();
   // 绑定的账号与当前活动账号不一致时先销毁, 下一句按当前账号重建
   if (quickWindow && quickWindowProfileId !== state.activeProfileId) destroyQuickWindow();
   if (!quickWindow) createQuickWindow();
   if (quickWindow.isVisible()) {
     quickWindow.hide();
   } else {
-    const { screen } = require('electron');
     const cursor = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(cursor);
     const [w, h] = quickWindow.getSize();
@@ -1446,6 +1665,16 @@ function toggleQuickWindow() {
 }
 
 function showMainWindow() {
+  if (isScreenLocked) {
+    if (lockWindow && !lockWindow.isDestroyed()) {
+      lockWindow.show();
+      lockWindow.focus();
+    } else {
+      createLockWindow();
+    }
+    return;
+  }
+  recordUserActivity();
   if (!mainWindow || mainWindow.isDestroyed()) {
     mainWindow = getOrCreateProfileWindow(state.activeProfileId);
   }
@@ -1476,8 +1705,9 @@ function showMainWindow() {
   }, 250);
 }
 
-// ---- profiles & accounts (Zero-Reload Multi-Tab Switching) ---------------
 function switchAccount(id) {
+  if (isScreenLocked) return;
+  recordUserActivity();
   if (!state.profiles.some((p) => p.id === id)) return;
   if (id === state.activeProfileId && mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) return;
 
@@ -1525,6 +1755,8 @@ function switchProfile(id) {
 }
 
 function nextAccount() {
+  if (isScreenLocked) return;
+  recordUserActivity();
   if (!state.profiles || state.profiles.length <= 1) return;
   const idx = state.profiles.findIndex((p) => p.id === state.activeProfileId);
   const nextIdx = (idx + 1) % state.profiles.length;
@@ -1604,6 +1836,8 @@ async function signOut() {
 }
 
 function toggleSite() {
+  if (isScreenLocked) return;
+  recordUserActivity();
   state.site = state.site === 'muse' ? 'meta' : 'muse';
   saveState();
   for (const [id, win] of profileWindows.entries()) {
@@ -1847,6 +2081,8 @@ function applyHotkeys(bindings) {
 
 let hotkeyWindow = null;
 function openHotkeySettings(initialTab) {
+  if (isScreenLocked) return;
+  recordUserActivity();
   if (hotkeyWindow && !hotkeyWindow.isDestroyed()) {
     hotkeyWindow.focus();
     if (initialTab) hotkeyWindow.webContents.send('switch-tab', initialTab);
@@ -1890,7 +2126,7 @@ function isTrustedIpcSender(e) {
     if (!e || !e.sender || (typeof e.sender.isDestroyed === 'function' && e.sender.isDestroyed())) return false;
     const frame = e.senderFrame;
     if (!frame || frame !== e.sender.mainFrame) return false;
-    const owned = [mainWindow, quickWindow, hotkeyWindow, ...profileWindows.values()];
+    const owned = [mainWindow, quickWindow, hotkeyWindow, lockWindow, ...profileWindows.values()];
     if (!owned.some((w) => w && !w.isDestroyed() && w.webContents === e.sender)) return false;
     const raw = frame.url || '';
     if (raw.startsWith('file://')) return true;
@@ -2168,6 +2404,101 @@ ipcMain.handle('locale-get', (e) => {
   return state.locale || 'en';
 });
 
+// ---- Lock screen IPC handlers ------------------------------------------------
+ipcMain.handle('lock:get-status', (e) => {
+  if (denyUntrusted(e)) return undefined;
+  recordUserActivity();
+  const now = Date.now();
+  const remainingSec = lockoutUntil > now ? Math.ceil((lockoutUntil - now) / 1000) : 0;
+  return {
+    enabled: !!(state.lock && state.lock.enabled && state.lock.hash),
+    autoLockEnabled: !!(state.lock && state.lock.autoLockEnabled),
+    idleMinutes: (state.lock && state.lock.idleMinutes) || 15,
+    isLocked: isScreenLocked,
+    lockoutRemainingSec: remainingSec,
+    shortcut: state.hotkeys.lock || DEFAULT_HOTKEYS.lock,
+  };
+});
+
+ipcMain.handle('lock:set-password', (e, pwd) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  recordUserActivity();
+  if (!pwd || typeof pwd !== 'string' || pwd.length < 4) {
+    return { ok: false, error: 'Password must be at least 4 characters' };
+  }
+  const { hash, salt } = hashPassword(pwd);
+  state.lock = {
+    ...(state.lock || defaultLock()),
+    enabled: true,
+    hash,
+    salt,
+  };
+  saveState();
+  buildTrayMenu();
+  return { ok: true };
+});
+
+ipcMain.handle('lock:change-password', (e, oldPwd, newPwd) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  recordUserActivity();
+  if (!state.lock || !state.lock.enabled || !state.lock.hash) {
+    return { ok: false, error: 'Lock not enabled' };
+  }
+  const valid = verifyPassword(oldPwd, state.lock.salt, state.lock.hash);
+  if (!valid) {
+    return { ok: false, error: 'Current password incorrect' };
+  }
+  if (!newPwd || typeof newPwd !== 'string' || newPwd.length < 4) {
+    return { ok: false, error: 'New password must be at least 4 characters' };
+  }
+  const { hash, salt } = hashPassword(newPwd);
+  state.lock.hash = hash;
+  state.lock.salt = salt;
+  saveState();
+  return { ok: true };
+});
+
+ipcMain.handle('lock:disable', (e, pwd) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  recordUserActivity();
+  if (!state.lock || !state.lock.enabled) return { ok: true };
+  const valid = verifyPassword(pwd, state.lock.salt, state.lock.hash);
+  if (!valid) {
+    return { ok: false, error: 'Password incorrect' };
+  }
+  state.lock.enabled = false;
+  state.lock.hash = '';
+  state.lock.salt = '';
+  saveState();
+  buildTrayMenu();
+  return { ok: true };
+});
+
+ipcMain.handle('lock:update-config', (e, cfg) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  recordUserActivity();
+  if (!state.lock) state.lock = defaultLock();
+  if (cfg && typeof cfg.autoLockEnabled === 'boolean') {
+    state.lock.autoLockEnabled = cfg.autoLockEnabled;
+  }
+  if (cfg && typeof cfg.idleMinutes === 'number' && [1, 5, 15, 30, 60].includes(cfg.idleMinutes)) {
+    state.lock.idleMinutes = cfg.idleMinutes;
+  }
+  saveState();
+  return { ok: true };
+});
+
+ipcMain.handle('lock:lock-now', (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  lockScreen();
+  return { ok: true };
+});
+
+ipcMain.handle('lock:unlock', (e, pwd) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  return unlockScreen(pwd);
+});
+
 ipcMain.handle('locale-set', (e, newLocale) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (['en', 'zh-CN'].includes(newLocale)) {
@@ -2388,6 +2719,8 @@ body{font-family:system-ui,sans-serif;max-width:800px;margin:2rem auto;padding:0
 }
 
 async function exportChat() {
+  if (isScreenLocked) return;
+  recordUserActivity();
   // 永远导出活动账号的主窗口 (v1.5.17, 评审 P2): 旧实现取焦点窗口, 焦点在
   // 快速窗/设置窗时会导错会话或静默无结果且不给提示
   const win = profileWindows.get(state.activeProfileId);
@@ -2781,6 +3114,33 @@ function buildTrayMenu() {
   if (!tray) return;
   const lang = state.locale || 'en';
   const t = I18N_MAIN[lang] || I18N_MAIN.en;
+
+  if (isScreenLocked) {
+    const templateLocked = [
+      {
+        label: lang === 'zh-CN' ? '🔒 解锁 Muse 客户端...' : '🔒 Unlock Muse Client...',
+        click: () => {
+          if (lockWindow && !lockWindow.isDestroyed()) {
+            lockWindow.show();
+            lockWindow.focus();
+          } else {
+            createLockWindow();
+          }
+        },
+      },
+      { type: 'separator' },
+      {
+        label: t.quitMuse || '退出',
+        click: () => {
+          app.quitting = true;
+          app.quit();
+        },
+      },
+    ];
+    tray.setContextMenu(Menu.buildFromTemplate(templateLocked));
+    return;
+  }
+
   const otherSite = state.site === 'muse' ? SITES.meta : SITES.muse;
   const loginSettings = app.getLoginItemSettings();
 
@@ -2802,6 +3162,10 @@ function buildTrayMenu() {
     { label: t.openMuse, click: showMainWindow },
     { label: t.quickChat(prettyHotkey(state.hotkeys.quick)), click: toggleQuickWindow },
     { label: t.switchTo(otherSite.name, prettyHotkey(state.hotkeys.site)), click: toggleSite },
+    ...(state.lock && state.lock.enabled ? [{
+      label: lang === 'zh-CN' ? `🔒 锁定客户端  (${prettyHotkey(state.hotkeys.lock)})` : `🔒 Lock Client  (${prettyHotkey(state.hotkeys.lock)})`,
+      click: () => lockScreen(),
+    }] : []),
     {
       label: t.multiAccounts,
       submenu: [
@@ -2989,6 +3353,11 @@ app.whenReady().then(async () => {
     setupSessionPersistence(p.id);
   });
   setupAutoUpdate();
+  startAutoLockTimer();
+  app.on('browser-window-focus', () => recordUserActivity());
+  if (state.lock && state.lock.enabled && state.lock.hash) {
+    lockScreen();
+  }
   Promise.race([
     applyProxySettings(),
     new Promise((resolve) => setTimeout(resolve, 5000)),
@@ -3015,8 +3384,9 @@ app.on('before-quit', async (e) => {
 });
 
 app.on('will-quit', () => {
+  if (autoLockTimer) clearInterval(autoLockTimer);
   globalShortcut.unregisterAll();
 });
 
 // 仅供本地冒烟测试引用内部纯函数; Electron 运行时忽略该导出。
-try { module.exports = { sanitizeWindowBounds, ensureBoundsVisible, isValidHostname, isTrustedIpcSender, isPortableWindowsBuild, childWindowsByProfile, pendingWindowNav, MAX_RESIDENT_PROFILE_WINDOWS, sanitizeAndMergeState }; } catch {}
+try { module.exports = { sanitizeWindowBounds, ensureBoundsVisible, isValidHostname, isTrustedIpcSender, isPortableWindowsBuild, childWindowsByProfile, pendingWindowNav, MAX_RESIDENT_PROFILE_WINDOWS, sanitizeAndMergeState, defaultLock, hashPassword, verifyPassword, unlockScreen, lockScreen, isScreenLocked: () => isScreenLocked, getInternalState: () => state }; } catch {}

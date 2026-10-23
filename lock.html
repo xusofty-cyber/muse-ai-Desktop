@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Muse - 屏幕锁定</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-base: #0f1117;
+    --bg-card: rgba(26, 29, 38, 0.85);
+    --border-card: rgba(255, 255, 255, 0.08);
+    --text-primary: #f0f2f8;
+    --text-secondary: #9098aa;
+    --text-danger: #ff5c5c;
+    --accent: #4f6bff;
+    --accent-hover: #3d58f5;
+    --input-bg: rgba(15, 17, 23, 0.7);
+    --input-border: rgba(255, 255, 255, 0.12);
+  }
+  body {
+    background: radial-gradient(circle at 50% 30%, #1a1e2e 0%, #0c0d12 100%);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+  .lock-card {
+    width: 380px;
+    padding: 36px 32px 32px;
+    background: var(--bg-card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    text-align: center;
+    animation: fadeIn 0.3s ease-out;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.96) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .icon-wrapper {
+    width: 68px;
+    height: 68px;
+    margin: 0 auto 18px;
+    background: linear-gradient(135deg, rgba(79, 107, 255, 0.2) 0%, rgba(120, 75, 255, 0.2) 100%);
+    border: 1px solid rgba(79, 107, 255, 0.35);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 24px rgba(79, 107, 255, 0.25);
+  }
+  .icon-wrapper svg {
+    width: 32px;
+    height: 32px;
+    fill: #7d96ff;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  p.subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+    line-height: 1.4;
+  }
+  .form-group {
+    position: relative;
+    margin-bottom: 16px;
+  }
+  input[type="password"] {
+    width: 100%;
+    height: 44px;
+    padding: 0 16px;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 14px;
+    letter-spacing: 2px;
+    outline: none;
+    transition: all 0.2s ease;
+  }
+  input[type="password"]::placeholder {
+    letter-spacing: normal;
+    color: #555c6d;
+  }
+  input[type="password"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79, 107, 255, 0.25);
+  }
+  input[type="password"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .shake {
+    animation: shakeAnim 0.4s ease-in-out;
+  }
+  @keyframes shakeAnim {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-8px); }
+    40%, 80% { transform: translateX(8px); }
+  }
+  .btn-unlock {
+    width: 100%;
+    height: 44px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .btn-unlock:hover:not(:disabled) {
+    background: var(--accent-hover);
+    box-shadow: 0 4px 12px rgba(79, 107, 255, 0.35);
+  }
+  .btn-unlock:disabled {
+    background: #2b3040;
+    color: #6a7182;
+    cursor: not-allowed;
+  }
+  .msg-error {
+    font-size: 12px;
+    color: var(--text-danger);
+    margin-top: 12px;
+    min-height: 18px;
+    line-height: 1.4;
+  }
+  .footer-hint {
+    margin-top: 20px;
+    font-size: 11.5px;
+    color: #5a6174;
+  }
+</style>
+</head>
+<body>
+
+<div class="lock-card" id="lockCard">
+  <div class="icon-wrapper">
+    <svg viewBox="0 0 24 24">
+      <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+    </svg>
+  </div>
+  <h1 id="titleText">Muse 已锁定</h1>
+  <p class="subtitle" id="subtitleText">请输入解锁密码以恢复访问</p>
+
+  <div class="form-group">
+    <input type="password" id="passwordInput" placeholder="输入解锁密码" autocomplete="off" autofocus>
+  </div>
+
+  <button class="btn-unlock" id="btnUnlock">
+    <span id="btnText">解锁界面</span>
+  </button>
+
+  <div class="msg-error" id="msgError"></div>
+
+  <div class="footer-hint" id="footerHint">
+    连续多次错误将触发防暴力破解冷却锁定
+  </div>
+</div>
+
+<script>
+  const I18N = {
+    'zh-CN': {
+      title: 'Muse 已锁定',
+      subtitle: '请输入解锁密码以恢复访问',
+      placeholder: '输入解锁密码',
+      btn: '解锁界面',
+      invalidPwd: (left) => `密码错误，还剩 ${left} 次尝试机会`,
+      lockout: (sec) => `尝试次数过多，请等待 ${sec} 秒后重试`,
+      footer: '连续多次错误将触发防暴力破解冷却锁定',
+      emptyPwd: '请输入解锁密码',
+    },
+    en: {
+      title: 'Muse is Locked',
+      subtitle: 'Enter master password to resume access',
+      placeholder: 'Enter unlock password',
+      btn: 'Unlock Client',
+      invalidPwd: (left) => `Invalid password. ${left} attempts remaining`,
+      lockout: (sec) => `Too many failed attempts. Try again in ${sec}s`,
+      footer: 'Repeated failures will trigger brute-force lockout delay',
+      emptyPwd: 'Password cannot be empty',
+    }
+  };
+
+  let currentLocale = 'zh-CN';
+  let lockoutTimer = null;
+  let remainingSeconds = 0;
+
+  const card = document.getElementById('lockCard');
+  const pwdInput = document.getElementById('passwordInput');
+  const btnUnlock = document.getElementById('btnUnlock');
+  const msgError = document.getElementById('msgError');
+  const titleText = document.getElementById('titleText');
+  const subtitleText = document.getElementById('subtitleText');
+  const btnText = document.getElementById('btnText');
+  const footerHint = document.getElementById('footerHint');
+
+  function applyI18n(loc) {
+    currentLocale = (loc === 'zh-CN' || loc === 'en') ? loc : 'zh-CN';
+    const t = I18N[currentLocale];
+    titleText.textContent = t.title;
+    subtitleText.textContent = t.subtitle;
+    pwdInput.placeholder = t.placeholder;
+    btnText.textContent = t.btn;
+    footerHint.textContent = t.footer;
+  }
+
+  function startLockoutCountdown(seconds) {
+    remainingSeconds = seconds;
+    pwdInput.disabled = true;
+    btnUnlock.disabled = true;
+    const t = I18N[currentLocale];
+    msgError.textContent = t.lockout(remainingSeconds);
+
+    if (lockoutTimer) clearInterval(lockoutTimer);
+    lockoutTimer = setInterval(() => {
+      remainingSeconds -= 1;
+      if (remainingSeconds <= 0) {
+        clearInterval(lockoutTimer);
+        lockoutTimer = null;
+        pwdInput.disabled = false;
+        btnUnlock.disabled = false;
+        msgError.textContent = '';
+        pwdInput.focus();
+      } else {
+        msgError.textContent = t.lockout(remainingSeconds);
+      }
+    }, 1000);
+  }
+
+  async function handleUnlock() {
+    if (pwdInput.disabled) return;
+    const pwd = pwdInput.value;
+    const t = I18N[currentLocale];
+    if (!pwd) {
+      msgError.textContent = t.emptyPwd;
+      shake();
+      return;
+    }
+
+    btnUnlock.disabled = true;
+    try {
+      const res = await window.lockAPI.unlock(pwd);
+      if (res && res.ok) {
+        msgError.textContent = '';
+        pwdInput.value = '';
+      } else if (res && res.error === 'lockout') {
+        startLockoutCountdown(res.remainingSec || 30);
+        shake();
+      } else {
+        const left = (res && typeof res.attemptsLeft === 'number') ? res.attemptsLeft : 0;
+        msgError.textContent = t.invalidPwd(left);
+        shake();
+        pwdInput.select();
+        pwdInput.focus();
+      }
+    } catch (e) {
+      msgError.textContent = String(e && e.message || e);
+    } finally {
+      if (remainingSeconds <= 0) {
+        btnUnlock.disabled = false;
+      }
+    }
+  }
+
+  function shake() {
+    card.classList.remove('shake');
+    void card.offsetWidth; // trigger reflow
+    card.classList.add('shake');
+  }
+
+  btnUnlock.addEventListener('click', handleUnlock);
+  pwdInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      handleUnlock();
+    }
+  });
+
+  // Init
+  window.addEventListener('DOMContentLoaded', async () => {
+    try {
+      if (window.lockAPI && window.lockAPI.getLocale) {
+        const loc = await window.lockAPI.getLocale();
+        applyI18n(loc);
+      }
+      if (window.lockAPI && window.lockAPI.getStatus) {
+        const st = await window.lockAPI.getStatus();
+        if (st && st.lockoutRemainingSec > 0) {
+          startLockoutCountdown(st.lockoutRemainingSec);
+        }
+      }
+    } catch {}
+    pwdInput.focus();
+  });
+</script>
+</body>
+</html>
