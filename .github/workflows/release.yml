@@ -10,8 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build & Release (${{ matrix.os }})
+  build:
+    name: Build (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -45,46 +45,91 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Windows 打包发布 (NSIS 安装包 + Portable 便携单文件)
-      - name: Build and Publish (Windows)
+      # Windows 打包 (NSIS 安装包 + Portable 便携单文件)
+      - name: Build (Windows)
         if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win nsis portable --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win nsis portable --publish never
 
-      # Linux 打包发布 (AppImage + DEB + tar.gz)
-      - name: Build and Publish (Linux)
+      # Linux 打包 (AppImage + DEB + tar.gz)
+      - name: Build (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: npx electron-builder --linux AppImage deb tar.gz --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --linux AppImage deb tar.gz --publish never
 
-      # macOS 图标修复: 仓库 icon.png 仅 256x256, electron-builder 生成 .icns
-      # 要求源图至少 512x512, mac 任务此前连续多版无产物疑与此有关。
-      # 构建前用 macOS 自带 sips 放大到 1024x1024 (源图替换为 1024 后此步无害)。
+      # macOS 图标准备 (>=512px for icns)
       - name: Prepare macOS icon (>=512px for icns)
         if: matrix.os == 'macos-latest'
         run: sips -z 1024 1024 assets/icon.png
 
-      # macOS 打包发布 (DMG + ZIP)
-      - name: Build and Publish (macOS)
+      # macOS 打包 (DMG + ZIP)
+      - name: Build (macOS)
         if: matrix.os == 'macos-latest'
-        run: npx electron-builder --mac dmg zip --publish always
+        run: npx electron-builder --mac dmg zip --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-  # 三端构建全部成功后, 把草稿 Release 转为正式发布 (配合 package.json 的
-  # releaseType: draft)。任何一端失败, Release 保持草稿, 用户下不到半成品。
-  finalize:
+      # 收集各端构件，统一上传到 GitHub Actions Artifacts 暂存
+      - name: Upload platform artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: |
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.tar.gz
+            dist/*.dmg
+            dist/*.zip
+            dist/*.yml
+            dist/*.blockmap
+          if-no-files-found: error
+
+  # 三端构建全部成功后，统一收集构件并由单一任务原子发布到 GitHub Release。
+  # 彻底杜绝多端并发 electron-builder --publish 导致的 Draft 分裂与资产孤立问题。
+  publish:
     name: Publish Release
-    needs: release
+    needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Undraft the release
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Inspect artifacts
+        shell: bash
+        run: |
+          echo "=== Artifacts to publish ==="
+          ls -lh dist/
+
+      # 统一一次性原子发布三端全量资产
+      - name: Publish all assets to GitHub Release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --repo "${GITHUB_REPOSITORY}"
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          echo "Publishing release for tag: ${TAG_NAME}"
+
+          # 检查该 tag 的 Release 是否已存在（如预建或残留 Draft）
+          if gh release view "${TAG_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release ${TAG_NAME} already exists. Uploading all assets and un-drafting..."
+            gh release upload "${TAG_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --clobber
+            gh release edit "${TAG_NAME}" --draft=false --repo "${GITHUB_REPOSITORY}"
+          else
+            echo "Creating new release ${TAG_NAME} with all assets..."
+            gh release create "${TAG_NAME}" dist/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${TAG_NAME}" \
+              --generate-notes \
+              --draft=false
+          fi
+          echo "Release ${TAG_NAME} successfully published with all platform assets!"
+
