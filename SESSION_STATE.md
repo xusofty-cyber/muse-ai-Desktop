@@ -203,11 +203,12 @@
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - 工作流重构代码已在临时分支 `fix/release-workflow` 提交（commit `3ad3df2`）；
-   - 等待用户授权合入 `main` 并推送到远端仓库。
+   - 工作流重构代码（commit `3ad3df2`）已正式 Fast-forward 合入 `main` 主分支，并全量推送到远端 `origin/main`；
+   - 临时分支 `fix/release-workflow` 已安全清理；
+   - 后续任何新发版（打 tag `v*`）都将按“阶段一纯构建上传构件 + 阶段二原子单点正式发布”全链路自动化运行，彻底杜绝 Draft 分裂。
 2. **后续待办**：
    - [x] 重构 `.github/workflows/release.yml`，消除多端 Draft 并发竞态。
-   - [ ] 经用户明确授权后合入 `main` 并推送到远端仓库。
+   - [x] 经用户明确授权后合入 `main` 并推送到远端仓库（`origin/main`）。
 
 
 
