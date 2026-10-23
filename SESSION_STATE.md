@@ -186,11 +186,17 @@
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - 处于分支 `feat/screen-lock`，Comet Native change `screen-lock` 已完成全部编码实现与自动化验证；
-   - Verify 阶段 18/18 项验收标准全部通过，当前状态为 `await-user`，等待用户确认是否接受验收结果进入归档（Archive）。
-2. **后续下一步**：
-   - [ ] 用户确认接受验收结果并执行 `comet native next screen-lock --summary "Accept verification results" --accept-result` 推进归档。
-   - [ ] 归档完成后根据用户授权，合并分支至 `main` 并发布。
+   - Comet Native 需求 `screen-lock` 已完成归档（Archive）；
+   - 代码已成功 Fast-forward 合入 `main` 分支；
+   - 版本号已正式发布为 `1.5.20`，已创建标签 `v1.5.20`；
+   - `main` 分支及 `v1.5.20` 标签已全量推送到远端 `origin/main` 与 `origin/v1.5.20`，触发 GitHub Actions 多端持续集成与自动化构建发布；
+   - 本地临时开发分支 `feat/screen-lock` 已安全清理。
+2. **后续待办**：
+   - [x] 完成主密码加盐 scrypt 哈希、timingSafeEqual 比对与防暴力破解冷却锁定。
+   - [x] 完成会话遮蔽、快捷键越权阻断、无操作空闲自动锁屏。
+   - [x] 完成设置中心安全标签页与密码配置模态框 UI。
+   - [x] 归档 Comet Native change 并更新相关规范。
+   - [x] 合并至 `main` 主分支，打标签 `v1.5.20` 并全量推送到 GitHub 远端仓库。
 
 
 
