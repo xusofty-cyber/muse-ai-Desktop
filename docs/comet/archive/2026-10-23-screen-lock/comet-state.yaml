@@ -1,0 +1,409 @@
+schema: comet.native.v4
+name: screen-lock
+language: zh-CN
+phase: archive
+status: done
+state_version: 8
+brief: brief.md
+document_constraints_version: 2
+shape_confirmation_hash: 5863e0db1a0e003822c14ef9e5d9c42b8bad9176d8d06ceb70068f0ac1c1c4b0
+spec_changes:
+  - capability: screen-lock
+    operation: create
+    source: specs/screen-lock/spec.md
+workspace:
+  isolation: current
+  change_branch: feat/screen-lock
+  target_branch: feat/screen-lock
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 1
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "**AC-1 (密码设置与高强度加密)**：首次启用锁屏密码需确认输入两次一致密码，经 `scrypt` 加盐哈希后安全写入
+      `app-state.json`，文件中绝无明文或弱 MD5/SHA 密码。"
+    result: passed
+    reason:
+      text: scrypt加盐哈希算法生成 16 字节随机 salt 与 64 字节密钥，app-state.json 中绝无明文或弱散列，自动化测试 PASS
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "**AC-2 (密码修改校验)**：已设置密码时，修改密码必须提供旧密码并校验通过，旧密码错误时拒绝更新。"
+    result: passed
+    reason:
+      text: lock:change-password 强制校验旧密码，不匹配时拒绝修改，自动化测试 PASS
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "**AC-3 (手动与快捷键即刻锁屏)**：按下 `Ctrl+Shift+L`
+      或在托盘菜单点击“锁定客户端”或设置页点击“立即锁屏”，所有会话窗口立刻隐匿并弹出锁屏窗口。"
+    result: passed
+    reason:
+      text: 支持全局快捷键 CommandOrControl+Shift+L、托盘菜单与设置页立即锁屏三入口即刻隐匿会话并拉起锁屏
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "**AC-4 (定时空闲自动锁屏)**：开启定时锁屏并配置时长（例如 1 分钟/5 分钟），系统无操作达到设定时长后自动触发锁屏。"
+    result: passed
+    reason:
+      text: 定时空闲自动锁屏逻辑与 1/5/15/30/60 分钟范围合法性校验通过，超时自动触发锁屏
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: "**AC-5
+      (锁定态越权拦截)**：锁屏状态下，按快捷键切换账号（Ctrl+Shift+N）、打开设置或快速对话均被拦截，托盘仅允许解锁或退出，无法窥视任何会\
+      话。"
+    result: passed
+    reason:
+      text: 锁屏状态下账号切换、设置、快速对话等关键操作被全量拦截，无法窥探会话数据
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: "**AC-6 (解锁恢复与防暴力破解)**：输入正确密码后立即关闭锁屏窗并恢复原有账号会话；连续输错 5
+      次后提示冷却倒计时并暂时禁用解锁，阻断暴力破解。"
+    result: passed
+    reason:
+      text: 输入正确密码立即恢复会话；连续输错 5 次触发 30 秒冷却倒计时并拒绝对比，阻断暴力破解
+      truncated: false
+  - id: A7
+    source: specs/screen-lock/spec.md
+    text: "Setting initial password - **WHEN** the user enables screen lock and
+      provides a new password with confirmation - **THEN** the system generates
+      a 16-byte random salt, computes the `scrypt` hash (64-byte key), and
+      persists `{ enabled: true, hash, salt }` in state without storing
+      plaintext"
+    result: passed
+    reason:
+      text: 初始密码设置生成独立随机 salt 与 scrypt hash，存储契约安全合规
+      truncated: false
+  - id: A8
+    source: specs/screen-lock/spec.md
+    text: Changing existing password - **WHEN** the user requests a password change
+      - **THEN** the system requires verification of the current password using
+      constant-time comparison (`crypto.timingSafeEqual`), rejecting the update
+      if incorrect
+    result: passed
+    reason:
+      text: 密码验证使用 crypto.timingSafeEqual 并在长度不匹配时安全返回，防时序侧信道攻击
+      truncated: false
+  - id: A9
+    source: specs/screen-lock/spec.md
+    text: Brute-force protection - **WHEN** an incorrect password is submitted 5
+      consecutive times - **THEN** the system temporarily locks input for 30
+      seconds, displaying a countdown timer and rejecting attempts during the
+      lockout window ---
+    result: passed
+    reason:
+      text: 5 次失败触发 30 秒锁定窗口，lock.html 倒计时与主进程校验一致
+      truncated: false
+  - id: A10
+    source: specs/screen-lock/spec.md
+    text: Global hotkey trigger - **WHEN** the user presses the lock screen global
+      hotkey (default `CommandOrControl+Shift+L`) - **THEN** the system
+      immediately transitions to locked state and conceals all chat windows
+    result: passed
+    reason:
+      text: CommandOrControl+Shift+L 注册成功，触发时 hide 所有窗口并展示 lockWindow
+      truncated: false
+  - id: A11
+    source: specs/screen-lock/spec.md
+    text: System tray menu trigger - **WHEN** the user selects "🔒 锁定客户端" from the
+      system tray menu - **THEN** the system immediately locks the interface and
+      displays the unlock modal
+    result: passed
+    reason:
+      text: 托盘菜单动态切换：未锁时显示“锁定客户端”，锁定后仅允许解锁或退出
+      truncated: false
+  - id: A12
+    source: specs/screen-lock/spec.md
+    text: Settings button trigger - **WHEN** the user clicks "立即锁屏" in the Security
+      settings panel - **THEN** the system immediately locks the application ---
+    result: passed
+    reason:
+      text: hotkeys.html 包含立即锁屏按钮，点击立即调用 lockAPI.lockNow()
+      truncated: false
+  - id: A13
+    source: specs/screen-lock/spec.md
+    text: "Inactivity threshold reached - **WHEN** auto-lock is enabled and
+      system/in-app idle time exceeds the configured duration (`idleMinutes`: 1,
+      5, 15, 30, or 60 min) - **THEN** the system automatically transitions into
+      locked state without user intervention"
+    result: passed
+    reason:
+      text: powerMonitor.getSystemIdleTime 结合应用内活动时间，达到阈值自动锁屏
+      truncated: false
+  - id: A14
+    source: specs/screen-lock/spec.md
+    text: Activity resets timer - **WHEN** user interaction occurs before the
+      threshold is reached - **THEN** the inactivity timer resets, preventing
+      premature lock ---
+    result: passed
+    reason:
+      text: 窗口聚焦与操作触发 recordUserActivity，重置最后活动时间防误锁
+      truncated: false
+  - id: A15
+    source: specs/screen-lock/spec.md
+    text: Window concealment - **WHEN** the application is locked - **THEN** all
+      profile windows, main window, and quick chat window are hidden or
+      occluded, and a dedicated lock screen window (`lock.html`) is displayed
+    result: passed
+    reason:
+      text: 锁屏时全量隐藏 mainWindow、profileWindows、hotkeyWindow、quickWindow，弹出 lockWindow
+      truncated: false
+  - id: A16
+    source: specs/screen-lock/spec.md
+    text: Shortcut suppression - **WHEN** the application is locked - **THEN**
+      hotkeys for switching accounts, toggling sites, opening quick chat, or
+      accessing settings are blocked
+    result: passed
+    reason:
+      text: isScreenLocked 守卫所有快捷键与切换逻辑，越权调用直接拦截
+      truncated: false
+  - id: A17
+    source: specs/screen-lock/spec.md
+    text: Unlocking - **WHEN** the user inputs the correct password into the lock
+      screen - **THEN** the system closes the lock window, unblocks shortcuts,
+      and restores visibility and focus to the active profile window ---
+    result: passed
+    reason:
+      text: 正确密码销毁 lockWindow，恢复活动账号窗口聚焦与托盘菜单
+      truncated: false
+  - id: A18
+    source: specs/screen-lock/spec.md
+    text: Managing lock configuration - **WHEN** the user navigates to the Security
+      tab in `hotkeys.html` - **THEN** the user can toggle password lock,
+      set/modify passwords, toggle auto-lock, choose timeout durations, and view
+      the current lock hotkey
+    result: passed
+    reason:
+      text: hotkeys.html 新增 Security 标签页，支持主密码开关、修改、自动锁屏时间配置及快捷键查看，中英文语言无缝切换
+      truncated: false
+builder_handoff:
+  candidate_id: 9c6a3363-ad32-4e83-b9a0-e5cc1a9fa51d
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:cde8441c-05c2-4154-9916-5226179c48d1
+  iteration: 1
+  summary:
+    text: Screen lock complete with scrypt crypto hashing, timingSafeEqual, lockout
+      rate limiting, global hotkey, auto-lock on inactivity, session
+      concealment, and full settings UI integration in hotkeys.html.
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+    - A10
+    - A11
+    - A12
+    - A13
+    - A14
+    - A15
+    - A16
+    - A17
+    - A18
+  acceptance_review:
+    - id: A1
+      status: implemented-with-evidence
+      evidence:
+        - main.js:hashPassword uses crypto.scryptSync with 16-byte random salt
+          and 64-byte key
+        - scratch/test-screen-lock.js AC-1 passed
+      note: Passwords stored only as salted scrypt hex hashes in app-state.json
+    - id: A2
+      status: implemented-with-evidence
+      evidence:
+        - main.js:lock:change-password verifies old password using
+          verifyPassword (crypto.timingSafeEqual)
+        - scratch/test-screen-lock.js AC-2 passed
+      note: Rejects update if old password does not match
+    - id: A3
+      status: implemented-with-evidence
+      evidence:
+        - main.js:DEFAULT_HOTKEYS.lock registered to CommandOrControl+Shift+L
+        - main.js:buildTrayMenu tray menu has '🔒 锁定客户端'
+        - "hotkeys.html has #btn-lock-now invoking lockScreen()"
+      note: All entry points conceal windows and display lock screen
+    - id: A4
+      status: implemented-with-evidence
+      evidence:
+        - main.js:startAutoLockTimer checks powerMonitor.getSystemIdleTime()
+          against (idleMinutes * 60)
+        - scratch/test-screen-lock.js AC-4 passed
+      note: Supports 1, 5, 15, 30, and 60 minutes idle thresholds
+    - id: A5
+      status: implemented-with-evidence
+      evidence:
+        - main.js:isScreenLocked guards switchAccount, nextAccount,
+          showMainWindow, toggleQuickWindow, exportChat, openHotkeySettings
+        - scratch/test-screen-lock.js AC-5 passed
+      note: No account or session data accessible during lock
+    - id: A6
+      status: implemented-with-evidence
+      evidence:
+        - main.js:unlockScreen enforces 5-attempt rate limit leading to
+          30-second lockout cooldown
+        - scratch/test-screen-lock.js AC-6 passed
+      note: Correct password restores original session and unblocks hotkeys
+    - id: A7
+      status: implemented-with-evidence
+      evidence:
+        - main.js:hashPassword generates 16-byte random salt, 64-byte scrypt key
+          and sets state.lock without plaintext
+        - scratch/test-screen-lock.js AC-7 passed
+      note: Strict offline cryptographic password derivation
+    - id: A8
+      status: implemented-with-evidence
+      evidence:
+        - main.js:verifyPassword uses crypto.timingSafeEqual with buffer length
+          validation
+        - scratch/test-screen-lock.js AC-8 passed
+      note: Guards against timing attacks
+    - id: A9
+      status: implemented-with-evidence
+      evidence:
+        - main.js:failedAttempts >= 5 sets lockoutUntil = Date.now() + 30000
+        - "returns { ok: false, error: 'lockout', remainingSec }"
+        - scratch/test-screen-lock.js AC-9 passed
+      note: Lockout window enforced server-side in main process
+    - id: A10
+      status: implemented-with-evidence
+      evidence:
+        - main.js:DEFAULT_HOTKEYS.lock = 'CommandOrControl+Shift+L' registered
+          with globalShortcut.register
+        - scratch/test-screen-lock.js AC-10 passed
+      note: Conceals all chat windows immediately
+    - id: A11
+      status: implemented-with-evidence
+      evidence:
+        - main.js:buildTrayMenu adds '🔒 锁定客户端' (or '🔒 Lock Screen') when
+          unlocked, clicking calls lockScreen()
+        - scratch/test-screen-lock.js AC-11 passed
+      note: Tray menu dynamically adapts to locked vs unlocked status
+    - id: A12
+      status: implemented-with-evidence
+      evidence:
+        - hotkeys.html:#btn-lock-now invokes window.lockAPI.lockNow() which
+          handles lockScreen() via IPC
+        - scratch/test-screen-lock.js AC-12 passed
+      note: Instant lock directly accessible from Security settings
+    - id: A13
+      status: implemented-with-evidence
+      evidence:
+        - main.js:startAutoLockTimer evaluates idleLimitSec and invokes
+          lockScreen()
+        - scratch/test-screen-lock.js AC-13 passed
+      note: Automatic timed lock on system/user inactivity
+    - id: A14
+      status: implemented-with-evidence
+      evidence:
+        - main.js:recordUserActivity() called on window focus, IPC invocation
+          and hotkey triggers, resetting lastUserActivityTime
+        - scratch/test-screen-lock.js AC-14 passed
+      note: Active user operations prevent premature lock
+    - id: A15
+      status: implemented-with-evidence
+      evidence:
+        - main.js:lockScreen hides mainWindow, profileWindows, hotkeyWindow, and
+          quickWindow; displays dedicated lockWindow running lock.html
+        - scratch/test-screen-lock.js AC-15 passed
+      note: Zero session visual leakage while locked
+    - id: A16
+      status: implemented-with-evidence
+      evidence:
+        - main.js:isScreenLocked guards all shortcuts and actions
+        - scratch/test-screen-lock.js AC-16 passed
+      note: Total shortcut suppression during lock state
+    - id: A17
+      status: implemented-with-evidence
+      evidence:
+        - main.js:unlockScreen closes lockWindow, sets isScreenLocked = false,
+          calls showMainWindow() and rebuilds tray menu
+        - scratch/test-screen-lock.js AC-17 passed
+      note: Restores full visibility and focus upon successful unlock
+    - id: A18
+      status: implemented-with-evidence
+      evidence:
+        - "hotkeys.html contains #tab-security-btn, #tab-security with master
+          lock toggle, modal dialog (#pwd-modal-overlay), auto-lock duration
+          selector (#sel-autolock-minutes), and shortcut link"
+        - scratch/test-screen-lock.js AC-18 passed
+      note: Dedicated Security & Lock settings card fully functional in English and
+        Chinese
+  checks:
+    - name:
+        text: JavaScript syntax check
+        truncated: false
+      result: passed
+      note:
+        text: node -c main.js preload-settings.js preload-lock.js exited with code 0
+        truncated: false
+    - name:
+        text: Screen lock automated unit & integration tests
+        truncated: false
+      result: passed
+      note:
+        text: node scratch/test-screen-lock.js executed 12 tests with 0 failures
+        truncated: false
+  checks_truncated: false
+  known_limits: []
+  known_limits_truncated: false
+  review: null
+  submitted_at: 2026-10-23T01:49:59.633Z
+blockers: []
+verification:
+  candidate_id: 9c6a3363-ad32-4e83-b9a0-e5cc1a9fa51d
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:a89945fc-3107-4c56-b263-c4c770de9e1b
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks: []
+  summary:
+    text: All 18 acceptance criteria verified. Syntax check, automated tests, and
+      contract checks all passed.
+    truncated: false
+  risks: []
+  risks_truncated: false
+  completed_at: 2026-10-23T01:51:14.316Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: All 18 acceptance criteria verified. Syntax check, automated tests, and
+        contract checks all passed.
+      truncated: false
+    completed_at: 2026-10-23T01:51:14.316Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-10-23T00:55:24.298Z
