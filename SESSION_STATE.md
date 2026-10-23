@@ -183,20 +183,29 @@
      - `node scratch/test-screen-lock.js` 执行 12 项单测与边界测试，18/18 验收标准（AC1~AC18）100% 变绿；
      - `comet native next screen-lock` 推进完成 Build 与 Verify 阶段，验收 18/18 通过。
 
+20. **v1.5.20 GitHub Actions 多端自动化构建与正式发布完成**：
+    - **构建状态**：GitHub Actions Release Workflow（Run ID `39891330584`）编译完成，耗时约 2 分 37 秒，全矩阵全部成功（Windows / Ubuntu / macOS）。
+    - **发布地址**：[https://github.com/xusofty-cyber/muse-ai-Desktop/releases/tag/v1.5.20](https://github.com/xusofty-cyber/muse-ai-Desktop/releases/tag/v1.5.20)
+    - **资产清单**：
+      - Windows: `Muse-Setup-1.5.20.exe` (安装程序), `Muse-Portable-1.5.20.exe` (便携单文件), `latest.yml`
+      - Linux: `Muse-1.5.20.AppImage`, `muse-desktop_1.5.20_amd64.deb`, `muse-desktop-1.5.20.tar.gz`, `latest-linux.yml`
+      - macOS: `Muse-1.5.20-arm64-mac.zip.blockmap` 及 DMG/ZIP 安装包
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - Comet Native 需求 `screen-lock` 已完成归档（Archive）；
-   - 代码已成功 Fast-forward 合入 `main` 分支；
-   - 版本号已正式发布为 `1.5.20`，已创建标签 `v1.5.20`；
-   - `main` 分支及 `v1.5.20` 标签已全量推送到远端 `origin/main` 与 `origin/v1.5.20`，触发 GitHub Actions 多端持续集成与自动化构建发布；
-   - 本地临时开发分支 `feat/screen-lock` 已安全清理。
+   - Comet Native 需求 `screen-lock` 已全流程归档（Open -> Design -> Build -> Verify -> Archive）；
+   - 代码已合入 `main` 主分支（commit `518ec5f`）；
+   - 标签 `v1.5.20` 已创建并推送到 GitHub；
+   - GitHub Actions 自动化编译打包完成，`v1.5.20` 正式版本已在 GitHub Releases 发布；
+   - 工作区分支保持干净，`main` 与远端保持同步。
 2. **后续待办**：
    - [x] 完成主密码加盐 scrypt 哈希、timingSafeEqual 比对与防暴力破解冷却锁定。
    - [x] 完成会话遮蔽、快捷键越权阻断、无操作空闲自动锁屏。
    - [x] 完成设置中心安全标签页与密码配置模态框 UI。
    - [x] 归档 Comet Native change 并更新相关规范。
    - [x] 合并至 `main` 主分支，打标签 `v1.5.20` 并全量推送到 GitHub 远端仓库。
+   - [x] GitHub Actions 完成跨平台产物编译打包，正式上线发布 v1.5.20。
 
 
 
