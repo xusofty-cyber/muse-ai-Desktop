@@ -193,19 +193,22 @@
 
 ## 五、当前断点与后续待执行事项
 
+21. **GitHub Actions 发布流彻底重构（杜绝多端并发 Draft 竞态与资产分裂）**：
+    - **根因消除**：彻底废除 3 端并行 Runner 调用 `electron-builder --publish always` 直接上传 GitHub Releases 的做法（消除了 Draft 竞态与多端孤立 Release）；
+    - **两阶段原子发布（Two-Stage Atomic Publish）**：
+      1. 第一阶段（Matrix Build）：Windows/Linux/macOS 仅负责纯粹编译打包（`--publish never`），通过 `actions/upload-artifact@v4` 暂存构件；
+      2. 第二阶段（Atomic Publish）：三端构建全部成功后，由单个 `publish` 任务通过 `actions/download-artifact@v4` 统一下载并使用 `gh release create/upload` 单一指令一次性将全平台资产挂载到同一个 Release 并转正；任何一端失败均不触发发布。
+    - **验证**：YAML 语法与解析验证通过，已在临时分支 `fix/release-workflow` 提交。
+
+## 五、当前断点与后续待执行事项
+
 1. **当前断点**：
-   - Comet Native 需求 `screen-lock` 已全流程归档（Open -> Design -> Build -> Verify -> Archive）；
-   - 代码已合入 `main` 主分支（commit `518ec5f`）；
-   - 标签 `v1.5.20` 已创建并推送到 GitHub；
-   - GitHub Actions 自动化编译打包完成，`v1.5.20` 正式版本已在 GitHub Releases 发布；
-   - 工作区分支保持干净，`main` 与远端保持同步。
+   - 工作流重构代码已在临时分支 `fix/release-workflow` 提交（commit `3ad3df2`）；
+   - 等待用户授权合入 `main` 并推送到远端仓库。
 2. **后续待办**：
-   - [x] 完成主密码加盐 scrypt 哈希、timingSafeEqual 比对与防暴力破解冷却锁定。
-   - [x] 完成会话遮蔽、快捷键越权阻断、无操作空闲自动锁屏。
-   - [x] 完成设置中心安全标签页与密码配置模态框 UI。
-   - [x] 归档 Comet Native change 并更新相关规范。
-   - [x] 合并至 `main` 主分支，打标签 `v1.5.20` 并全量推送到 GitHub 远端仓库。
-   - [x] GitHub Actions 完成跨平台产物编译打包，正式上线发布 v1.5.20。
+   - [x] 重构 `.github/workflows/release.yml`，消除多端 Draft 并发竞态。
+   - [ ] 经用户明确授权后合入 `main` 并推送到远端仓库。
+
 
 
 
