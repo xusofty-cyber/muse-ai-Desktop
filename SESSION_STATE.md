@@ -242,13 +242,22 @@
       3. 在 `showMainWindow()` 的 250ms 异步恢复定时器两段回调中均补充 `if (isScreenLocked) return;` 防御，彻底消除异步重显竞态。
     - **测试证据**：Node 语法校验 Exit Code 0，`test-dock-and-lock.js` 7 项全 PASS，`test-screen-lock.js` 12 项全 PASS，安全门禁断言全部通过。版本号正式升至 `1.5.22`。
 
+23. **GitHub Search 搜索排名与 README SEO 全面优化**：
+    - **实测数据**：使用 GitHub API 检索确认项目已被收录，原排名位于第 62 位（第 7 页）；
+    - **优化落地**：
+      1. H1 标题精确锚定：`# Muse Desktop: Native Desktop Client for Muse AI & Meta AI`，中英双语对齐；
+      2. 简介段落高频覆盖 `Muse Desktop`、`muse-desktop`、`Muse AI Desktop` 等核心短语；
+      3. 补充 Electron 框架标识、v1.5.20~v1.5.22 主密码锁屏与 12+ 账号高密度防挤压 Dock 等最新特性说明与快捷键清单；
+    - **合并流转**：已通过临时分支 `docs/seo-readme-optimization` 合入 `main` 主分支并推送到 `origin/main`。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - 修复已完成并合入 `main` 主分支；
-   - 准备打标签 `v1.5.22` 并全量推送到远端 `origin`；
-   - 远端接收 tag `v1.5.22` 后，GitHub Actions 将执行两阶段原子自动化构建并正式发布 v1.5.22。
+   - 锁屏安全隐藏缺陷与版本号 `1.5.22` 已全部合入 `main` 并打 tag `v1.5.22` 推送至远端（GitHub Actions 发布流水线运行完成）；
+   - 中英双语 README 针对 GitHub 搜索的最佳匹配 SEO 优化已合并并推送到 `origin/main`；
+   - 建议在 GitHub 网页端对应更新仓库右侧 About 区域的 Description 与 Topics 标签以完成最终加权。
 2. **后续待办**：
    - [x] 彻底修复锁屏窗口弹出时主窗口未隐藏及异步重显竞态问题。
    - [x] 同步 package.json 与 package-lock.json 版本至 1.5.22。
    - [x] 合并至 main 分支，打标签 v1.5.22 并推送到 GitHub 远端触发构建发布。
+   - [x] 优化中英文 README 标题、关键词与框架徽章，提升 GitHub 搜索命中权重并推送远端。
