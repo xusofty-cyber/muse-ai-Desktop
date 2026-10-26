@@ -50,11 +50,15 @@ The system SHALL automatically lock the application after a configured period of
 ---
 
 ### Requirement: Session Concealment & Input Interception While Locked
-The system SHALL strictly prevent visual leakage and access to session data while in the locked state.
+The system SHALL strictly prevent visual leakage and access to session data while in the locked state without blocking interaction with other system applications.
 
 #### Scenario: Window concealment
 - **WHEN** the application is locked
 - **THEN** all profile windows, main window, and quick chat window are hidden or occluded, and a dedicated lock screen window (`lock.html`) is displayed
+
+#### Scenario: Non-topmost window behavior
+- **WHEN** the lock screen window is displayed
+- **THEN** it SHALL NOT be set as `alwaysOnTop`, allowing the user to switch to and interact with other external desktop applications freely
 
 #### Scenario: Shortcut suppression
 - **WHEN** the application is locked

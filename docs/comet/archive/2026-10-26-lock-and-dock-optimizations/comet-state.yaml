@@ -1,0 +1,88 @@
+schema: comet.native.v4
+name: 2026-10-26-lock-and-dock-optimizations
+language: zh-CN
+phase: archive
+status: done
+state_version: 2
+brief: brief.md
+document_constraints_version: 2
+spec_changes:
+  - capability: screen-lock
+    operation: update
+    source: specs/screen-lock/spec.md
+  - capability: multi-account
+    operation: update
+    source: specs/multi-account/spec.md
+workspace:
+  isolation: current
+  change_branch: feature/lock-and-dock-optimizations
+  target_branch: feature/lock-and-dock-optimizations
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 1
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "**AC-1 (锁屏窗口非置顶)**：触发锁定（快捷键/托盘/设置）后，`lockWindow` 弹出并聚焦，但 `alwaysOnTop === false`，用户切换到其他桌面外部应用时，外部应用可正常盖在锁屏窗口上方，不阻挡其它应用操作；Muse 内部窗口依然隐匿安全。"
+    result: passed
+    reason:
+      text: lockWindow BrowserWindow 构造参数中 alwaysOnTop 显式配置为 false，自动化单元测试验证通过
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "**AC-2 (12+ 账号平滑承载与防挤压)**：添加账号至 9 个、12 个乃至更多时，Dock 栏头像尺寸与间距保持统一规整，头像绝无垂直挤压变形；列表超出可视高度时出现平滑细滚动条，支持鼠标滚轮上下滚动，激活账号自动滚动至视口。"
+    result: passed
+    reason:
+      text: .acct-dock-item 设置 flex-shrink: 0，列表设置响应式最大高度与细长滚动条，AVATAR_COLORS 扩充至 16 色，测试全部通过
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "**AC-3 (移开鼠标自动收起)**：未固定状态下，鼠标移入 Dock 栏展开，点击切换到某一账号后，当鼠标离开 Dock 区域，Dock 栏自动收缩至左侧屏幕边缘，仅保留边缘指示条。"
+    result: passed
+    reason:
+      text: 监听 mouseenter/mouseleave 与 250ms 防抖收起计时器，未固定状态移开平滑收缩
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "**AC-4 (主动点开固定)**：点击顶部“📌”固定按钮后，Dock 栏进入固定状态（高亮显示），鼠标移出不会自动收起；再次点击取消固定后恢复自动收起行为；刷新或重启后保持固定状态。"
+    result: passed
+    reason:
+      text: 提供 acct-dock-pin-btn，状态落盘至 state.ui.dockPinned 与 localStorage，跨账号无缝同步
+      truncated: false
+  - id: A5
+    source: specs/screen-lock/spec.md
+    text: "Non-topmost window behavior - **WHEN** the lock screen window is displayed - **THEN** it SHALL NOT be set as `alwaysOnTop`, allowing the user to switch to and interact with other external desktop applications freely"
+    result: passed
+    reason:
+      text: main.js lockWindow 配置验证通过，始终保持非置顶普通层级窗口
+      truncated: false
+  - id: A6
+    source: specs/multi-account/spec.md
+    text: "Non-squeezing 12+ accounts dock list - **WHEN** 9, 12, or more accounts are added to the system - **THEN** the avatar items maintain their standard dimensions without vertical squashing or crowding, providing a slim translucent scrollbar when content exceeds viewport max-height"
+    result: passed
+    reason:
+      text: flex-shrink: 0 与 webkit-scrollbar 规则生效，保证纵向空间自适应滚动不挤压
+      truncated: false
+  - id: A7
+    source: specs/multi-account/spec.md
+    text: "Auto-collapsing dock on mouse leave - **WHEN** the dock is in unpinned mode and the user hovers, switches an account, or finishes interacting - **THEN** upon the mouse leaving the dock area, the dock smoothly collapses to the screen edge"
+    result: passed
+    reason:
+      text: 移开鼠标后 250ms 触发 auto-collapse，点击切换账号后移开平滑收缩
+      truncated: false
+  - id: A8
+    source: specs/multi-account/spec.md
+    text: "Pinning dock to keep expanded - **WHEN** the user clicks the pin button (📌) on the dock header - **THEN** the dock remains persistently expanded and does not auto-collapse when the mouse leaves, until explicitly unpinned"
+    result: passed
+    reason:
+      text: 点击 📌 切换 dockState.pinned 并广播，pinned 状态下 mouseleave 不收缩
+      truncated: false
