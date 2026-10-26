@@ -1,13 +1,14 @@
-# Muse 桌面客户端 (Windows, macOS, Linux)
+# Muse Desktop: 原生跨平台 AI 桌面客户端 (Windows, macOS, Linux)
 
 <div align="center">
 
-**极速、原生、轻量级的个人 AI 桌面工作助手**
+**极速、原生、轻量且深度隔离的个人 AI 桌面工作助手（Muse Desktop / muse-desktop）**
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Release](https://img.shields.io/github/v/release/xusofty-cyber/muse-ai-Desktop?style=flat-square)](https://github.com/xusofty-cyber/muse-ai-Desktop/releases)
+[![Release](https://img.shields.io/github/v/release/xusofty-cyber/muse-ai-Desktop?style=flat-square&color=blue)](https://github.com/xusofty-cyber/muse-ai-Desktop/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=flat-square)](#下载与安装)
+[![Technology](https://img.shields.io/badge/Framework-Electron-blueviolet?style=flat-square)](https://www.electronjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 </div>
@@ -16,11 +17,24 @@
 
 ## 🌟 项目概览
 
-**Muse Desktop** 是一款面向 **Windows、Linux 和 macOS** 的桌面原生客户端，将 Muse ([muse.ai](https://muse.ai)) 与 Meta AI ([meta.ai](https://www.meta.ai)) 深度封装于轻量原生窗口中。客户端提供多账号会话隔离、全局快捷键呼出、自适应代理与 TUN 虚拟网卡兼容、自动化权限授权（Auto-Allow）与一键导出等进阶桌面体验，为您打造沉浸专注的 AI 对话环境。
+**Muse Desktop**（开源代号 `muse-desktop` / **Muse AI Desktop**）是一款面向 **Windows、Linux 和 macOS** 的桌面原生客户端，将 Muse ([muse.ai](https://muse.ai)) 与 Meta AI ([meta.ai](https://www.meta.ai)) 深度封装于轻量原生窗口中。客户端深度集成操作系统底层特性：
+
+- 🔒 **主密码安全锁屏**：基于加盐慢哈希密码学加密、防暴力破解锁定机制与空闲无操作自动锁屏，锁定时彻底遮蔽所有会话窗口；
+- 👥 **多账号并发与深度隔离（支持 12+ 账号）**：基于 Chromium 原生 partition 的多账号独立存储与登录态隔离，防挤压纤细滚动条、移开自动收起与一键固定（📌）；
+- 🚀 **自适应系统代理与 TUN 模式**：原生适配 Windows/Linux/macOS 系统代理与 Clash Verge、Sing-box、Surge、V2Ray 等虚拟网卡；
+- 🎨 **左下角集成控制中心**：零遮挡极简对话视野，支持深色夜间、明亮日间与系统跟随三档主题即时热切换；
+- ⌨️ **全局快捷键呼出与一键聊天导出**：快捷会话弹窗、全局锁屏、站点切换，并支持将对话一键导出为 Markdown、HTML 与 JSON。
 
 ---
 
 ## ✨ 核心特性
+
+### 🔒 主密码安全锁屏与隐私守护
+- **密码学级高强度安全**：采用 Node.js 原生慢哈希算法 `crypto.scryptSync`（16 字节随机 salt 派生 64 字节高抗碰撞密钥），存储绝无明文或弱散列；密码比对采用 `crypto.timingSafeEqual` 恒定时间校验，彻底杜绝时序侧信道攻击。
+- **防暴力破解（Rate Limiting）**：连续输错 5 次密码自动触发 30 秒冷却倒计时锁定，主进程与渲染进程状态严格联动，冷却期内拒绝对比任何密码。
+- **无操作空闲自动锁屏**：支持设置空闲超时自动锁定（可设 1、5、15、30、60 分钟），综合追踪操作系统空闲状态（`powerMonitor`）与应用内前台交互。
+- **完全遮蔽会话与越权阻断**：锁屏时无条件全量隐匿所有主窗口、账号窗口与悬浮窗口，弹出独立置顶毛玻璃锁屏窗，阻断内容窥视，拦截全局切换与导出操作。
+- **即时锁屏入口**：支持全局快捷键（**Ctrl+Shift+L** / **Cmd+Shift+L**）、托盘右键菜单或设置中心一键即刻锁屏。
 
 ### 🌐 跨平台全原生支持
 - **Windows**: 提供 NSIS 安装包及免安装单文件便携版（Portable）。
@@ -35,15 +49,16 @@
 - **深度体积优化**：配置 LZMA 最大压缩算法，精准剔除 60+ 种冗余语言包（仅保留中英必需资源），Windows 便携版压至 88MB，Linux 绿色包仅 59MB。
 - **高性能渲染**：启用 GPU 光栅化与零拷贝渲染，滚动丝滑流畅，内存开销极低。
 
-### 👥 多账号并发登录与会话深度隔离
+### 👥 多账号并发登录与会话深度隔离（12+ 账号承载）
 - **支持多账号同时在线**：无需频繁登出或切换浏览器无痕窗口，可在同一客户端内同时登录多个 Muse 或 Meta AI 账号（如个人私人号、团队工作号、专属项目号、家庭账号）。
 - **真正的底层 Session 隔离**：基于 Chromium 原生 `persist:partition` 机制，每个账号拥有完全独立的 Cookie、LocalStorage、Token 凭据、缓存与对话上下文，杜绝多账号串号或登录凭证冲突。
+- **12+ 账号高密度无挤压 Dock**：提供 16 档质感专属配色调色盘，自适应计算视口高度，多账号时展示纤细半透明滚动条，头像尺寸与间距绝不变形。
+- **移开自动收起与一键固定（📌）**：未固定模式下鼠标移开（`mouseleave`）自动平滑缩进至屏幕边缘；点击顶部“📌”固定按钮即可锁定常驻展开。
 - **零延迟秒级瞬切**：左侧悬浮 Dock 栏以醒目的头像/别名圆标排列，点击立即呈现对应账号的对话界面，无需等待任何网页重新加载。
 - **灵活的账号配置与维护**：
   - **一键新建账号**：点击 Dock 栏底部的 `+` 按钮，即刻创建并开启全新独立的隔离会话。
-  - **自定义个性化备注**：右键点击任意账号头像即可自定义备注别名（例如“主工作号”、“写作研究号”）。
+  - **自定义个性化备注**：右键点击任意账号头像即可自定义备注别名。
   - **独立登出与缓存清理**：支持对单账号执行退出登录或彻底抹除本地会话缓存，完全不影响其他在线账号。
-  - **侧边栏一键折叠**：可随时折叠隐藏左侧账号栏，保持纯粹沉浸的极简全屏对话视野。
 
 ### 🎨 界面视觉风格与主题自由切换
 - **多种专属视觉风格**：
@@ -136,6 +151,7 @@ npm run dist:mac
 | 快捷键 (Windows / Linux) | 快捷键 (macOS) | 功能说明 |
 | :--- | :--- | :--- |
 | `Ctrl + Shift + Space` | `Cmd + Shift + Space` | 唤出 / 隐藏快捷会话浮窗 |
+| `Ctrl + Shift + L` | `Cmd + Shift + L` | 主密码快速锁屏保护 |
 | `Ctrl + Shift + M` | `Cmd + Shift + M` | 切换 Muse 与 Meta AI 站点 |
 | `Ctrl + Shift + N` | `Cmd + Shift + N` | 循环切换保存的多账号 |
 | `Ctrl + Shift + A` | `Cmd + Shift + A` | 开关自动化审批总控 (Auto-Allow) |

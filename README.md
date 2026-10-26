@@ -1,13 +1,14 @@
-# Muse ai for Desktop (Windows, macOS, Linux)
+# Muse Desktop: Native Desktop Client for Muse AI & Meta AI (Windows, macOS, Linux)
 
 <div align="center">
 
-**Your Personal AI Agent in a Native, Lightweight Desktop App**
+**Your Personal AI Agent in an Ultra-Fast, Privacy-Focused Native Desktop App**
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Release](https://img.shields.io/github/v/release/xusofty-cyber/muse-ai-Desktop?style=flat-square)](https://github.com/xusofty-cyber/muse-ai-Desktop/releases)
+[![Release](https://img.shields.io/github/v/release/xusofty-cyber/muse-ai-Desktop?style=flat-square&color=blue)](https://github.com/xusofty-cyber/muse-ai-Desktop/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=flat-square)](#download--installation)
+[![Technology](https://img.shields.io/badge/Framework-Electron-blueviolet?style=flat-square)](https://www.electronjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 </div>
@@ -16,16 +17,40 @@
 
 ## 🌟 Overview
 
-**Muse Desktop** wraps Muse ([muse.ai](https://muse.ai)) and Meta AI ([meta.ai](https://www.meta.ai)) in a fast, privacy-focused native desktop container for **Windows, Linux, and macOS**. It delivers multi-account session isolation, global shortcut controls, adaptive proxy & TUN virtual adapter compatibility, automated permission approval (Auto-Allow), and instant chat export—all inside a clean, clutter-free desktop UI.
+**Muse Desktop** (also known as `muse-desktop` or **Muse AI Desktop**) is a high-performance, cross-platform native desktop application designed for **Windows, Linux, and macOS**. It wraps Muse ([muse.ai](https://muse.ai)) and Meta AI ([meta.ai](https://www.meta.ai)) in a privacy-centric container with deep desktop OS integrations:
+
+- 🔒 **Master Password Screen Lock**: Salted cryptographic password protection, anti-brute-force rate limiting, and idle auto-lock with complete session concealment.
+- 👥 **Multi-Account Concurrent Login (12+ Accounts)**: Chromium partition-based profile isolation with an instant-switch, non-squeezing Dock, auto-collapse, and pin mode.
+- 🚀 **Adaptive Network & TUN Proxy**: Self-adaptive system proxy detection and TUN virtual adapter compatibility (Clash Verge, Sing-box, Surge, V2Ray).
+- 🎨 **Unified Control Center & Themes**: Distraction-free canvas with dynamic Dark, Light, and System adaptive themes.
+- ⌨️ **Global Hotkeys & Instant Chat Export**: Quick chat overlay, site switching, mic/speaker toggles, and one-click chat history export to Markdown, HTML, and JSON.
 
 ---
 
 ## ✨ Key Features
 
+### 🔒 Master Password Screen Lock & Privacy Guard
+- **Cryptographic Security**: Salted slow-hashing via Node.js native `crypto.scryptSync` (16-byte random salt, 64-byte derived key). Verification uses `crypto.timingSafeEqual` constant-time comparison to prevent side-channel timing attacks.
+- **Anti-Brute-Force Rate Limiting**: 5 consecutive incorrect attempts trigger a 30-second lockout cooldown, synchronizing lock state between main and renderer processes.
+- **Idle Auto-Lock**: Automatically locks the screen after an inactivity threshold (1, 5, 15, 30, or 60 minutes) tracking both OS idle timers (`powerMonitor`) and active app interactions.
+- **Complete Session Concealment**: Automatically hides all application windows, profile windows, and quick dialogs upon locking, presenting an independent lock screen that prevents screen peering and blocks unauthorized shortcuts.
+- **Instant Manual Lock**: Lock anytime with a global shortcut (**Ctrl+Shift+L** / **Cmd+Shift+L**), from the System Tray, or from the Settings panel.
+
 ### 🌐 Cross-Platform Native Experience
 - **Windows**: NSIS Setup installer & zero-install standalone Portable executable.
 - **Linux**: AppImage, Debian package (`.deb`), and portable green tarball (`.tar.gz`).
-- **macOS**: Native DMG installer and portable ZIP package.
+- **macOS**: Universal DMG installer (Intel & Apple Silicon) and portable ZIP package.
+
+### 👥 Multi-Account Concurrent Login & Profile Isolation (12+ Accounts)
+- **Simultaneous Multi-Account Login**: Sign in to multiple Muse or Meta AI accounts simultaneously (Personal, Work, Research, Family) without logging out.
+- **True Session Isolation**: Powered by Chromium `persist:partition` storage. Cookies, local storage, tokens, caches, and history are completely isolated across accounts to prevent credential collision.
+- **12+ Accounts Non-Squeezing Dock**: Sleek left-hand Dock with 16 distinct avatar color palettes, responsive max-height calculation, and slim translucent scrollbars for unlimited accounts.
+- **Auto-Collapse & Pin (📌)**: Automatically collapses to the screen edge when the mouse leaves (`mouseleave`), or click the pin button (📌) to keep the Dock persistently expanded.
+- **Zero-Latency Instant Switching**: Switch between active accounts in real-time via the sleek left-side Dock with zero page reloads.
+- **Account Management & Customization**:
+  - **Quick Add**: One-click `+` button on the Dock to spin up a fresh isolated login session.
+  - **Custom Aliases**: Right-click any account badge to assign custom nicknames or notes.
+  - **Independent Sign-Out & Wipe**: Log out or permanently delete specific profile caches without affecting other active accounts.
 
 ### 🌐 Internationalization (i18n)
 - **Full Bilingual UI**: Switch between **English** and **简体中文** anytime.
@@ -35,36 +60,20 @@
 - **Deep Compression**: Powered by maximum LZMA compression and aggressive locale stripping (retaining only essential Chinese and English packs), reducing the binary footprint by 15–20MB.
 - **High Performance**: Hardware-accelerated GPU rasterization and zero-copy rendering for fluid scrolling and low memory usage.
 
-### 👥 Multi-Account Concurrent Login & Profile Isolation
-- **Simultaneous Multi-Account Login**: Sign in to multiple Muse or Meta AI accounts simultaneously (e.g., Personal, Work, Project-specific, or Family accounts) without logging out.
-- **True Session Isolation**: Powered by Chromium `persist:partition` storage. Cookies, local storage, tokens, caches, and history are completely isolated across accounts to prevent credential collision.
-- **Zero-Latency Instant Switching**: Switch between active accounts in real-time via the sleek left-side Dock with zero page reloads.
-- **Account Management & Customization**:
-  - **Quick Add**: One-click `+` button on the Dock to spin up a fresh isolated login session.
-  - **Custom Aliases**: Right-click any account badge to assign custom nicknames or notes (e.g., "Company Work", "Research").
-  - **Independent Sign-Out & Wipe**: Log out or permanently delete specific profile caches without affecting other active accounts.
-  - **Collapsible Dock**: Collapse the account Dock anytime to maximize conversational screen estate.
-
 ### 🎨 Visual Style & Theme Customization
 - **Multiple Theme Styles**:
   - **Dark Mode 🌙**: High-contrast, deep night palette tailored for low-light environments and long coding/writing sessions.
   - **Light Mode ☀️**: Clean, crisp, and radiant daytime theme with sharp typography and minimal eye strain.
   - **System Adaptive 💻**: Seamlessly synchronizes with Windows, macOS, or Linux system-wide dark/light theme changes.
 - **Instant Hot-Switching**: Toggle themes instantly via the bottom-left Control Center (`⚙`) popover or the Settings panel (`Ctrl+,` / `Cmd+,`) without reloading pages.
-- **Interface Layout Flexibility**: Customize UI density, toggle the account Dock sidebar, and enjoy a distraction-free conversation canvas.
 
 ### ⚙️ Left-Bottom Unified Control Center
 - **Distraction-Free Screen**: Floating overlay buttons have been consolidated into a sleek `⚙` Control Center button docked at the bottom-left corner to maximize chat visibility.
-- **Quick Controls**: Access Theme/Style switching, Auto-Allow master switches, granular action categories, proxy configurations, and instant language switching in a single unified panel.
+- **Quick Controls**: Access Theme/Style switching, Auto-Allow master switches, granular action categories, proxy configurations, screen lock, and instant language switching in a single unified panel.
 
 ### 🛡️ Smart Automation (Auto-Allow)
 - **Opt-In Safety**: Automation is completely disabled by default.
-- **Granular Approvals**: Customize auto-approvals per action category:
-  - App & Connector Integrations
-  - File and Data Access
-  - External Navigation & Links
-  - Code & Script Execution
-  - Microphone & Media Permissions
+- **Granular Approvals**: Customize auto-approvals per action category (Connector Integrations, File/Data Access, External Links, Code Execution, Microphone/Media).
 - **Per-Site Rules**: Set domain-specific override rules (e.g., `muse.ai` vs `meta.ai`).
 
 ### 🚀 Adaptive Network & Proxy Architecture
@@ -75,6 +84,7 @@
 
 ### ⌨️ Global Hotkeys & Utilities
 - **Quick Chat Window**: Global popup shortcut (**Ctrl+Shift+Space** / **Cmd+Shift+Space**) for instant questions; automatically hides when losing focus.
+- **Lock Screen**: Global shortcut (**Ctrl+Shift+L** / **Cmd+Shift+L**) to lock immediately with master password.
 - **Site Switcher**: Toggle seamlessly between Muse and Meta AI (**Ctrl+Shift+M**).
 - **Mute Toggles**: Independent hotkeys to toggle microphone input (**Ctrl+Shift+U**) and app speaker output (**Ctrl+Shift+O**).
 - **Chat History Exporter**: Export conversations with one click (**Ctrl+Shift+E**) into clean Markdown, formatted HTML, or structured JSON.
@@ -92,7 +102,7 @@ Visit the [GitHub Releases](https://github.com/xusofty-cyber/muse-ai-Desktop/rel
 | **Windows** | `Muse-Portable-x.x.x.exe` | Standalone portable executable (No install required) |
 | **Linux** | `.AppImage` | Universal Linux binary, double-click to run |
 | **Linux** | `.deb` | Debian / Ubuntu / Mint installer package |
-| **Linux** | `.tar.gz` | Portable green archive (extract and execute `muse-desktop`) |
+| **Linux** | `.tar.gz` | Portable green archive (extract and execute `muse`) |
 | **macOS** | `.dmg` | macOS drag-and-drop installer |
 | **macOS** | `.zip` | Portable zipped application bundle |
 
@@ -136,6 +146,7 @@ npm run dist:mac
 | Shortcut (Win / Linux) | Shortcut (macOS) | Action |
 | :--- | :--- | :--- |
 | `Ctrl + Shift + Space` | `Cmd + Shift + Space` | Toggle quick floating chat popup |
+| `Ctrl + Shift + L` | `Cmd + Shift + L` | Lock screen with master password |
 | `Ctrl + Shift + M` | `Cmd + Shift + M` | Switch between Muse and Meta AI |
 | `Ctrl + Shift + N` | `Cmd + Shift + N` | Cycle through saved accounts |
 | `Ctrl + Shift + A` | `Cmd + Shift + A` | Toggle Auto-Allow master switch |
