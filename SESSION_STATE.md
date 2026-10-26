@@ -6,19 +6,53 @@
 
 ## 一、当前任务概览
 
-- **关联需求 / Issue**：Comet Native `multi-account-manager` - Muse 桌面端多账号登录、登出、快速切换与管理能力
-- **会话目标**：实现支持 7~8+ 账号的左侧悬停 Dock 栏、多 Partition 会话安全隔离、独立登出与自定义重命名、全局快捷键轮巡，完成代码落地与验证
+- **关联需求 / Issue**：Comet Native `2026-10-26-lock-and-dock-optimizations` - 锁屏非置顶优化、多账号列表 12+ 扩容防挤压与移开自动收起/固定
+- **会话目标**：
+  1. 锁屏窗口移除强制置顶（`alwaysOnTop: false`），弹出后不阻碍用户在锁定态下操作其他桌面外部软件；
+  2. 左侧多账号 Dock 栏支持至少 12 个账号（无上限限制），增加纵向响应式滚动与 `flex-shrink: 0` 防挤压变形，提供半透明高质感纤细滚动条；
+  3. 切换账号后鼠标移开（`mouseleave`）自动平滑收起至侧边，顶部提供一键固定按钮（📌 Pin），主动点开固定后保持展开常驻，状态跨会话与重启持久化。
 
 ---
 
 ## 二、问题根因定位 / 方案设计
 
-1. **核心机理**：原方案在切换账号时会销毁旧窗口或重新加载 Session URL，导致切换存在白屏与重载过程，无法达到多标签页常驻无感切换的体验。
-2. **改动策略**：
-   - 架构升级为**多窗口/视图常驻（Multi-Window Tab Architecture）**模式：维护 `profileWindows = new Map()` 结构，每个账号对应专属的常驻窗口实例。
-   - **零重载（Zero Reload）秒切**：点击 Dock 上不同账号徽章时，无缝显示目标账号窗口并隐藏前一个窗口，坐标位置/大小严格继承，实现 `< 10ms` 瞬时切换。
-   - **上下文状态完全保留**：每个账号正在编辑的消息、AI 回复内容、滚动位置在切换前后完全不丢失。
-   - **独立生命周期管理**：单账号退出登录仅重新加载该账号视图；删除账号安全销毁对应的窗口与内存；关闭窗口时统一折叠常驻托盘。
+1. **锁屏置顶问题**：原 `lockWindow` 实例在 `main.js` 构造中配置了 `alwaysOnTop: true`，导致锁屏后窗口永久浮于所有外部桌面应用之上，无法切换查看其它软件；改为 `alwaysOnTop: false`，锁屏窗口作为普通层级窗口弹出聚焦，既隐藏 Muse 内部会话，又不影响外部操作。
+2. **多账号挤压与截断**：原 `.acct-dock-list` 固定 `max-height: 380px` 且 `scrollbar: none`，且头像无 `flex-shrink: 0` 保护，9 个账号（388px）以上时最下方账号被截断或挤压；重构为自适应高度 `max-height: min(520px, calc(100vh - 210px))`，头像尺寸规范为 34px，`gap: 6px`，`flex-shrink: 0`，配合 4px 纤细半透明滚动条与当前账号自动滚入视口（`scrollIntoView`），完美支持 12+ 无限账号。
+3. **自动收起与点开固定**：增加 `dockState.pinned` 状态（由 `state.ui.dockPinned` 与 `localStorage` 双重驱动）；未固定时移入展开、移开后 250ms 自动收缩；点击顶部“📌”固定后解除自动收缩，常驻展开。
+
+---
+
+## 三、代码修改与落地清单
+
+- **受影响文件与具体改动**：
+  - [main.js](file:///home/picohood/projects/opensource/muse-ai-Desktop/main.js)：
+    - `lockWindow` 构造移除 `alwaysOnTop: true`，设为 `alwaysOnTop: false`；
+    - `defaultState.ui` 与 `sanitizeAndMergeState` 支持 `dockPinned: false`；
+    - 扩充 `AVATAR_COLORS` 调色盘至 16 色，确保 12 个以上账号拥有各不相同的质感头像配色；
+    - `account:get-state` 与 `broadcastAccountChange` 下发 `dockPinned` 属性；
+    - 新增 `dock:set-pinned` IPC 接口支持修改并广播持久化。
+  - [preload-chat-export.js](file:///home/picohood/projects/opensource/muse-ai-Desktop/preload-chat-export.js)：
+    - 中英文国际化增加 `pinDock` 与 `unpinDock` 字典；
+    - 样式升级：`#acct-dock` 增加 `max-height: calc(100vh - 28px)` 与 `box-sizing: border-box`；`.acct-dock-list` 响应式高度及明暗双色模式纤细滚动条；`.acct-dock-item` 设置 `flex-shrink: 0`；
+    - 顶部操作区新增 Header，内嵌折叠箭头与 📌 固定按钮；
+    - 绑定 `mouseenter` / `mouseleave` 与 `scheduleAutoCollapse` 防抖机制；
+    - 账号切换后自动平滑滚入可视区域。
+  - 规格与验证产物：
+    - [spec.md (screen-lock)](file:///home/picohood/projects/opensource/muse-ai-Desktop/docs/comet/specs/screen-lock/spec.md)
+    - [spec.md (multi-account)](file:///home/picohood/projects/opensource/muse-ai-Desktop/docs/comet/specs/multi-account/spec.md)
+    - [2026-10-26-lock-and-dock-optimizations](file:///home/picohood/projects/opensource/muse-ai-Desktop/docs/comet/archive/2026-10-26-lock-and-dock-optimizations/)
+    - [test-dock-and-lock.js](file:///home/picohood/projects/opensource/muse-ai-Desktop/scratch/test-dock-and-lock.js)
+
+---
+
+## 四、严格验证证据门 (Verification Evidence Gate)
+
+1. **静态语法编译检查**：
+   - 执行命令：`node -c main.js preload-settings.js preload-chat-export.js`
+   - 验证结果：全部通过，退出码 0，无语法错误。
+2. **锁屏与多账号自动化单元测试**：
+   - 执行脚本：`node scratch/test-dock-and-lock.js`
+   - 验证结果：7 项断言全部 PASS（非置顶校验、16 色调色盘、dockPinned 状态持久化与广播、中英双语 i18n、CSS 响应式与防挤压规则、auto-collapse 与 scrollIntoView 逻辑）。
 
 ---
 

@@ -262,7 +262,9 @@ app.userAgentFallback = CHROME_UA;
 // ---- persisted state ----------------------------------------------------
 const AVATAR_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
-  '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'
+  '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16',
+  '#6366f1', '#14b8a6', '#f97316', '#d946ef',
+  '#0284c7', '#16a34a', '#ea580c', '#9333ea',
 ];
 
 // ---- 窗口几何安全 (Ubuntu 多账号窗口唤不回根治) --------------------------------
@@ -410,6 +412,7 @@ function defaultState() {
     locale: detectDefaultLocale(), // 'zh-CN' | 'en'
     ui: {
       autoHideButtons: true, // 自动隐藏右上角与右下角按钮
+      dockPinned: false, // 账号栏是否固定常态展开 (默认 false: 鼠标移开后自动收起)
     },
     lock: defaultLock(),
   };
@@ -426,6 +429,9 @@ function sanitizeAndMergeState(raw) {
   merged.theme = raw.theme || 'dark';
   merged.locale = (raw.locale === 'zh-CN' || raw.locale === 'en') ? raw.locale : detectDefaultLocale();
   merged.ui = { ...defaultState().ui, ...(raw.ui || {}) };
+  if (typeof merged.ui.dockPinned !== 'boolean') {
+    merged.ui.dockPinned = false;
+  }
   merged.automation = {
     ...defaultAutomation(),
     ...(raw.automation || {}),
@@ -1204,6 +1210,7 @@ function broadcastAccountChange() {
   const payload = {
     profiles: state.profiles,
     activeProfileId: state.activeProfileId,
+    dockPinned: !!(state.ui && state.ui.dockPinned),
   };
   for (const win of profileWindows.values()) {
     if (win && !win.isDestroyed()) {
@@ -1543,7 +1550,7 @@ function createLockWindow() {
     minimizable: false,
     maximizable: false,
     closable: false,
-    alwaysOnTop: true,
+    alwaysOnTop: false,
     center: true,
     show: false,
     icon: APP_ICON_PATH,
@@ -2237,7 +2244,17 @@ ipcMain.handle('open-settings', (e, tab) => {
 ipcMain.handle('account:get-state', (e) => (denyUntrusted(e) ? undefined : ({
   profiles: state.profiles,
   activeProfileId: state.activeProfileId,
+  dockPinned: !!(state.ui && state.ui.dockPinned),
 })));
+
+ipcMain.handle('dock:set-pinned', (e, { pinned }) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!state.ui) state.ui = { autoHideButtons: true, dockPinned: false };
+  state.ui.dockPinned = !!pinned;
+  saveState();
+  broadcastAccountChange();
+  return { ok: true, pinned: state.ui.dockPinned };
+});
 
 ipcMain.handle('account:switch', (e, { id }) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
