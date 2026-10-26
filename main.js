@@ -1401,6 +1401,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
 // 并返回 show 后是否真的可见, 供调用方在楔死时走重建兜底。
 function showWindowSafely(win) {
   if (!win || win.isDestroyed()) return false;
+  if (isScreenLocked) return false;
   try { win.setBounds(ensureBoundsVisible(win.getBounds())); } catch {}
   if (win.isMinimized()) win.restore();
   win.show();
@@ -1502,29 +1503,28 @@ function lockScreen() {
   isScreenLocked = true;
 
   // 1. 隐藏快捷聊天浮窗
-  if (quickWindow && !quickWindow.isDestroyed() && quickWindow.isVisible()) {
-    quickWindow.hide();
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    try { quickWindow.hide(); } catch {}
   }
 
   // 2. 隐藏设置窗口
-  if (hotkeyWindow && !hotkeyWindow.isDestroyed() && hotkeyWindow.isVisible()) {
-    hotkeyWindow.hide();
+  if (hotkeyWindow && !hotkeyWindow.isDestroyed()) {
+    try { hotkeyWindow.hide(); } catch {}
   }
 
-  // 3. 隐藏所有账号窗口，防止界面内容被窥视
-  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
-    mainWindow.hide();
-  }
-  for (const win of profileWindows.values()) {
-    if (win && !win.isDestroyed() && win.isVisible()) {
-      win.hide();
+  // 3. 无条件全量隐藏所有已有窗口与子窗口，彻底防止主界面被窥视或交互
+  try {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win && win !== lockWindow && !win.isDestroyed()) {
+        try { win.hide(); } catch {}
+      }
     }
-  }
+  } catch {}
 
   // 4. 更新托盘菜单为锁定保护模式
   buildTrayMenu();
 
-  // 5. 弹出全屏前置锁屏窗
+  // 5. 弹出前置锁屏窗
   createLockWindow();
 }
 
@@ -1692,11 +1692,13 @@ function showMainWindow() {
   // 仍不可见先居中重试, 再过 250ms 仍不可见才判定楔死并重建。
   const win = mainWindow;
   setTimeout(() => {
+    if (isScreenLocked) return;
     if (!win || win.isDestroyed() || mainWindow !== win || win.isVisible()) return;
     try { win.setBounds(ensureBoundsVisible(win.getBounds())); } catch {}
     win.show();
     win.focus();
     setTimeout(() => {
+      if (isScreenLocked) return;
       if (!win || win.isDestroyed() || mainWindow !== win || win.isVisible()) return;
       try {
         if (profileWindows.get(state.activeProfileId) === win) {

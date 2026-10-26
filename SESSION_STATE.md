@@ -234,16 +234,21 @@
       2. 第二阶段（Atomic Publish）：三端构建全部成功后，由单个 `publish` 任务通过 `actions/download-artifact@v4` 统一下载并使用 `gh release create/upload` 单一指令一次性将全平台资产挂载到同一个 Release 并转正；任何一端失败均不触发发布。
     - **验证**：YAML 语法与解析验证通过，已在临时分支 `fix/release-workflow` 提交。
 
+22. **v1.5.21 锁屏隐藏主窗口与异步重显安全门禁彻底修复**：
+    - **现场缺陷**：锁屏窗口弹出时，主窗口未被隐藏，用户仍能滚动主窗口甚至输入。
+    - **根因消除**：
+      1. 移除 `lockScreen()` 中原先脆弱的 `win.isVisible()` 过滤，改为对 `BrowserWindow.getAllWindows()` 全量窗口执行无条件安全隐匿；
+      2. 在统一显示函数 `showWindowSafely(win)` 头部加入 `if (isScreenLocked) return false;` 绝对门禁，任何渠道（ready-to-show、切账号、异步复查）严禁在锁屏期间显示主窗口；
+      3. 在 `showMainWindow()` 的 250ms 异步恢复定时器两段回调中均补充 `if (isScreenLocked) return;` 防御，彻底消除异步重显竞态。
+    - **测试证据**：Node 语法校验 Exit Code 0，`test-dock-and-lock.js` 7 项全 PASS，`test-screen-lock.js` 12 项全 PASS，安全门禁断言全部通过。版本号正式升至 `1.5.21`。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：
-   - 工作流重构代码（commit `3ad3df2`）已正式 Fast-forward 合入 `main` 主分支，并全量推送到远端 `origin/main`；
-   - 临时分支 `fix/release-workflow` 已安全清理；
-   - 后续任何新发版（打 tag `v*`）都将按“阶段一纯构建上传构件 + 阶段二原子单点正式发布”全链路自动化运行，彻底杜绝 Draft 分裂。
+   - 修复已在临时分支 `fix/screen-lock-hide-main-window` 提交；
+   - 准备合入 `main`、创建标签 `v1.5.21` 并全量推送到远端 `origin`；
+   - 远端接收 tag `v1.5.21` 后，GitHub Actions 将执行两阶段原子自动化构建并正式发布 v1.5.21。
 2. **后续待办**：
-   - [x] 重构 `.github/workflows/release.yml`，消除多端 Draft 并发竞态。
-   - [x] 经用户明确授权后合入 `main` 并推送到远端仓库（`origin/main`）。
-
-
-
-
+   - [x] 彻底修复锁屏窗口弹出时主窗口未隐藏及异步重显竞态问题。
+   - [x] 同步 package.json 与 package-lock.json 版本至 1.5.21。
+   - [ ] 合并至 main 分支，打标签 v1.5.21 并推送到 GitHub 远端触发构建发布。
