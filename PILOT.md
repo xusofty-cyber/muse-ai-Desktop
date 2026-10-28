@@ -43,3 +43,10 @@ verification commands (it tried gate/main.js). The working layout
 is: feature_list.json at the project root, tooling in gate/,
 harness run from the project root. This is a pilot usability
 finding for the gate docs, not a code change to the gate itself.
+
+## Pilot finding 2 (Tier 2 result, 2026-10-28)
+
+`npm run dist:linux -- --publish never` passed in this VM
+(exit 0): Muse-1.5.22.AppImage and muse-desktop_1.5.22_amd64.deb
+both produced. Tier 2 is therefore runnable here, not only in
+CI; dist/ itself stays untracked (build output, not committed).
