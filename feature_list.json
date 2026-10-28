@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "features": [
+    {
+      "id": "P1",
+      "priority": 1,
+      "area": "pilot",
+      "title": "Extract pure window-bounds helpers into lib/window-bounds.js with tests",
+      "user_visible_behavior": "Window bounds sanitising and visibility behaviour unchanged; helpers covered by node:test",
+      "status": "passing",
+      "verification": "node --check main.js && node --check preload-chat-export.js && node --check preload-lock.js && node --check preload-settings.js && node --test tests/*.test.js",
+      "evidence": {
+        "command": "node --check main.js && node --check preload-chat-export.js && node --check preload-lock.js && node --check preload-settings.js && node --test tests/*.test.js",
+        "exit_code": 0,
+        "ran_at": "2026-10-28T10:19:50.767672+00:00",
+        "output_summary": "✔ sanitize: non-object input yields empty bounds (1.9134ms)\n✔ sanitize: clamps to min and max sizes and rounds (0.274582ms)\n✔ sanitize: drops coordinates beyond the sanity range (0.26012ms)\n✔ ensureBoundsVisible: on-screen window is kept, sizes filled (0.395944ms)\n✔ ensureBoundsVisible: off-screen window is centred on the primary work area (0.321142ms)\n✔ ensureBoundsVisible: barely-visible window (title rule) is centred (0.170656ms)\n✔ ensureBoundsVisible: no displays yields sanitised bounds unchanged (0.394071ms)\nℹ tests 7\nℹ suites 0\nℹ pass 7\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 133.841501"
+      },
+      "notes": "Pilot task 1. Branch pilot/v3-gate only, never main."
+    }
+  ]
+}
