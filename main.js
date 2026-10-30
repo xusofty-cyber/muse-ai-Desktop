@@ -1330,9 +1330,14 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
   });
 
   // 网络错误处理：加载离线诊断页并自动弹出网络配置界面
-  win.webContents.on('did-fail-load', async (event, errorCode, errorDescription, validatedURL) => {
-    if (errorCode === -3) return; // ERR_ABORTED 忽略
-    console.warn(`[Network] Failed to load ${validatedURL}: [${errorCode}] ${errorDescription}`);
+  win.webContents.on('did-fail-load', async (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    // 仅在主框架（Main Frame）加载失败时触发诊断自愈，子框架/iframe/资源/第三方埋点失败绝不冲毁主界面
+    if (isMainFrame === false) return;
+
+    // 忽略 ERR_ABORTED (-3) 与 ERR_BLOCKED_BY_CSP (-30) 等无害或非致命错误
+    if (errorCode === -3 || errorCode === -30) return;
+
+    console.warn(`[Network] Main frame failed to load ${validatedURL}: [${errorCode}] ${errorDescription}`);
     if (validatedURL && validatedURL.includes('offline.html')) return;
 
     // 若发生连接失败且为严重网络阻断（代理故障/连接被拒/超时），主动唤出网络配置界面引导修复
@@ -1342,11 +1347,14 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
       openHotkeySettings('tab-proxy');
     }
 
+    // 目标地址兜底：必须为内部合法站点（如 muse.ai / meta.ai），防止第三方外链或重定向劫持导致离线重试跳出客户端
+    const safeTargetUrl = (validatedURL && isInternalSiteUrl(validatedURL)) ? validatedURL : currentSite().url;
+
     win.loadFile(path.join(__dirname, 'offline.html'), {
       query: {
         err: errorCode,
         desc: errorDescription,
-        url: validatedURL || currentSite().url,
+        url: safeTargetUrl,
       },
     }).catch(() => {});
   });

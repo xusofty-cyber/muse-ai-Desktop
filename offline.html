@@ -136,7 +136,18 @@
 const params = new URLSearchParams(window.location.search);
 const errCode = params.get('err') || 'ERR_CONNECTION_FAILED';
 const errDesc = params.get('desc') || '';
-const targetUrl = params.get('url') || 'https://muse.ai';
+let targetUrl = params.get('url') || 'https://muse.ai';
+
+// 防御性校验：若传入非内部站点域名，强制兜底回退为官方主站
+try {
+  const u = new URL(targetUrl);
+  const host = u.hostname.toLowerCase();
+  if (!host.endsWith('muse.ai') && !host.endsWith('meta.ai') && !host.endsWith('meta.com')) {
+    targetUrl = 'https://muse.ai';
+  }
+} catch {
+  targetUrl = 'https://muse.ai';
+}
 
 document.getElementById('target-url').textContent = targetUrl;
 document.getElementById('error-code').textContent = `[${errCode}] ${errDesc || ''}`;
