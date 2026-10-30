@@ -36,3 +36,7 @@ The system SHALL support managing and switching between at least 12 user account
 #### Scenario: Pinning dock to keep expanded
 - **WHEN** the user clicks the pin button (📌) on the dock header
 - **THEN** the dock remains persistently expanded and does not auto-collapse when the mouse leaves, until explicitly unpinned
+
+#### Scenario: Drag-and-drop reordering accounts
+- **WHEN** the user drags an account avatar vertically above or below another account item in the dock list
+- **THEN** high-contrast drop indicators indicate the insertion position, and upon drop, the account order updates immediately, persists to local state, and syncs across tray menu and shortcut cycle sequences

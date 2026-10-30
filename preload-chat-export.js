@@ -31,7 +31,7 @@ const I18N_RENDERER = {
     unpinDock: 'Unpin dock (Auto-collapse on leave)',
     myAccount: 'My account',
     currentAccountBadge: 'Current',
-    clickToSwitch: 'Click to switch',
+    clickToSwitch: 'Click to switch (Drag to reorder)',
     addAccountPromptTitle: 'Add New Account',
     addAccountPlaceholder: 'Enter profile nickname...',
     addAccountDefaultName: (n) => `Account ${n}`,
@@ -80,7 +80,7 @@ const I18N_RENDERER = {
     unpinDock: '取消固定 (移开后自动收起)',
     myAccount: '我的账号',
     currentAccountBadge: '当前账号',
-    clickToSwitch: '点击切换',
+    clickToSwitch: '点击切换 (可上下拖动排序)',
     addAccountPromptTitle: '添加新账号',
     addAccountPlaceholder: '输入账号备注昵称...',
     addAccountDefaultName: (n) => `账号 ${n}`,
@@ -1154,11 +1154,14 @@ function injectExportButton() {}
   let activeContextMenu = null;
   let activeModal = null;
   let collapseTimer = null;
+  let isDraggingAccount = false;
+  let draggedAccountId = null;
+  let dragJustEndedAt = 0;
 
   function scheduleAutoCollapse(delay = 250) {
     if (collapseTimer) clearTimeout(collapseTimer);
     collapseTimer = setTimeout(() => {
-      if (!dockState.pinned && !activeContextMenu && !activeModal && dockContainer) {
+      if (!dockState.pinned && !activeContextMenu && !activeModal && !isDraggingAccount && dockContainer) {
         dockState.collapsed = true;
         dockContainer.classList.add('collapsed');
         updateHeaderButtons();
@@ -1334,12 +1337,46 @@ function injectExportButton() {}
         display: flex;
         align-items: center;
         justify-content: center;
-        cursor: pointer;
+        cursor: grab;
         color: #fff;
         font-size: 13px;
         font-weight: 600;
         transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
         flex-shrink: 0;
+        user-select: none;
+        -webkit-user-drag: element;
+      }
+      .acct-dock-item:active {
+        cursor: grabbing;
+      }
+      .acct-dock-item.dragging {
+        opacity: 0.35;
+        transform: scale(0.9);
+        cursor: grabbing;
+      }
+      .acct-dock-drop-indicator {
+        position: absolute;
+        left: -3px;
+        right: -3px;
+        height: 3px;
+        background: #3b82f6;
+        border-radius: 2px;
+        box-shadow: 0 0 8px rgba(59, 130, 246, 0.9);
+        display: none;
+        pointer-events: none;
+        z-index: 2147483646;
+      }
+      .acct-dock-drop-indicator.top {
+        top: -5px;
+      }
+      .acct-dock-drop-indicator.bottom {
+        bottom: -5px;
+      }
+      .acct-dock-item.drop-target-before > .acct-dock-drop-indicator.top {
+        display: block;
+      }
+      .acct-dock-item.drop-target-after > .acct-dock-drop-indicator.bottom {
+        display: block;
       }
       .acct-dock-item:hover {
         transform: scale(1.1);
@@ -1670,7 +1707,7 @@ function injectExportButton() {}
         }
       });
       dockContainer.addEventListener('mouseleave', () => {
-        if (!dockState.pinned) {
+        if (!dockState.pinned && !isDraggingAccount) {
           scheduleAutoCollapse(250);
         }
       });
@@ -1751,6 +1788,14 @@ function injectExportButton() {}
       ? dockState.profiles
       : [{ id: dockState.activeProfileId || 'default', name: t.myAccount, color: '#3b82f6' }];
 
+    const canDrag = profilesToRender.length > 1;
+
+    const cleanupAllDropIndicators = () => {
+      list.querySelectorAll('.acct-dock-item').forEach((el) => {
+        el.classList.remove('drop-target-before', 'drop-target-after');
+      });
+    };
+
     profilesToRender.forEach((p) => {
       const item = document.createElement('div');
       item.className = 'acct-dock-item';
@@ -1762,6 +1807,15 @@ function injectExportButton() {}
       }
       item.style.backgroundColor = p.color || '#3b82f6';
       item.textContent = getInitials(p.name);
+
+      // 上下拖拽高亮指示线
+      const indTop = document.createElement('div');
+      indTop.className = 'acct-dock-drop-indicator top';
+      item.appendChild(indTop);
+
+      const indBottom = document.createElement('div');
+      indBottom.className = 'acct-dock-drop-indicator bottom';
+      item.appendChild(indBottom);
 
       // Tooltip
       const tooltip = document.createElement('div');
@@ -1785,12 +1839,102 @@ function injectExportButton() {}
 
       item.appendChild(tooltip);
 
-      // 点击切换
+      // 点击切换 (防拖拽结束误触)
       item.onclick = () => {
+        if (Date.now() - dragJustEndedAt < 250) return;
         if (p.id !== dockState.activeProfileId) {
           ipcRenderer.invoke('account:switch', { id: p.id }).catch(() => {});
         }
       };
+
+      // 拖拽排序逻辑 (仅在账号数量 > 1 时启用)
+      if (canDrag) {
+        item.draggable = true;
+
+        item.addEventListener('dragstart', (e) => {
+          isDraggingAccount = true;
+          draggedAccountId = p.id;
+          item.classList.add('dragging');
+          cancelAutoCollapse();
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', p.id); } catch {}
+          }
+        });
+
+        item.addEventListener('dragover', (e) => {
+          if (!isDraggingAccount || draggedAccountId === p.id) return;
+          e.preventDefault();
+          if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+          const rect = item.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          if (e.clientY < midY) {
+            if (!item.classList.contains('drop-target-before')) {
+              item.classList.add('drop-target-before');
+              item.classList.remove('drop-target-after');
+            }
+          } else {
+            if (!item.classList.contains('drop-target-after')) {
+              item.classList.add('drop-target-after');
+              item.classList.remove('drop-target-before');
+            }
+          }
+        });
+
+        item.addEventListener('dragleave', (e) => {
+          const rect = item.getBoundingClientRect();
+          if (e.clientY < rect.top || e.clientY >= rect.bottom || e.clientX < rect.left || e.clientX >= rect.right) {
+            item.classList.remove('drop-target-before', 'drop-target-after');
+          }
+        });
+
+        item.addEventListener('drop', (e) => {
+          e.preventDefault();
+          if (!isDraggingAccount || !draggedAccountId || draggedAccountId === p.id) {
+            cleanupAllDropIndicators();
+            return;
+          }
+
+          const isBefore = item.classList.contains('drop-target-before');
+          cleanupAllDropIndicators();
+
+          const currentProfiles = [...(dockState.profiles || [])];
+          const srcIdx = currentProfiles.findIndex((x) => x.id === draggedAccountId);
+          const targetIdx = currentProfiles.findIndex((x) => x.id === p.id);
+
+          if (srcIdx !== -1 && targetIdx !== -1 && srcIdx !== targetIdx) {
+            const [moved] = currentProfiles.splice(srcIdx, 1);
+            let insertIdx = currentProfiles.findIndex((x) => x.id === p.id);
+            if (!isBefore) {
+              insertIdx += 1;
+            }
+            currentProfiles.splice(insertIdx, 0, moved);
+
+            // 本地即时响应重排
+            dockState.profiles = currentProfiles;
+            renderDock();
+
+            // 持久化到主进程
+            ipcRenderer.invoke('account:reorder', {
+              orderedIds: currentProfiles.map((x) => x.id),
+            }).catch((err) => {
+              console.warn('[Account] Reorder sync error:', err);
+            });
+          }
+        });
+
+        item.addEventListener('dragend', () => {
+          dragJustEndedAt = Date.now();
+          isDraggingAccount = false;
+          draggedAccountId = null;
+          item.classList.remove('dragging');
+          cleanupAllDropIndicators();
+          if (!dockState.pinned) {
+            scheduleAutoCollapse(350);
+          }
+        });
+      }
 
       // 右键管理
       item.oncontextmenu = (e) => openItemContextMenu(e, p);
