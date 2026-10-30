@@ -2291,6 +2291,29 @@ ipcMain.handle('account:rename', (e, { id, name }) => {
   return { ok: false, error: 'Account not found' };
 });
 
+ipcMain.handle('account:reorder', (e, { orderedIds }) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!Array.isArray(orderedIds)) return { ok: false, error: 'orderedIds must be an array' };
+  if (!Array.isArray(state.profiles) || state.profiles.length === 0) {
+    return { ok: false, error: 'No profiles' };
+  }
+
+  const profileMap = new Map(state.profiles.map((p) => [p.id, p]));
+  // 必须数量一致且包含全部现有 id，防止数据丢失或注入
+  if (orderedIds.length !== state.profiles.length || !orderedIds.every((id) => profileMap.has(id))) {
+    return { ok: false, error: 'Profiles mismatch or invalid ids' };
+  }
+  if (new Set(orderedIds).size !== orderedIds.length) {
+    return { ok: false, error: 'Duplicate ids in orderedIds' };
+  }
+
+  state.profiles = orderedIds.map((id) => profileMap.get(id));
+  saveState();
+  buildTrayMenu();
+  broadcastAccountChange();
+  return { ok: true };
+});
+
 ipcMain.handle('account:sign-out', async (e, { id }) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   const targetId = id || state.activeProfileId;

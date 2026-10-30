@@ -6,15 +6,12 @@
 
 ## 一、当前任务概览
 
-- **最新已完成任务**：修复网页第三方埋点（如 Snapchat Pixel）及 CSP 策略拦截导致的离线诊断误判黑屏，并完成 v1.5.23 版本发布
-- **核心问题**：
-  - 页面内部子资源/第三方 iframe 请求（如 `tr.snapchat.com`）被 CSP 拦截触发 `did-fail-load`（[-30] ERR_BLOCKED_BY_CSP）；
-  - `did-fail-load` 未校验 `isMainFrame`，误将无害子资源报错当作主站崩溃，强行加载 `offline.html` 冲毁主界面；
-  - 离线页重试导航至该外链时被 `will-navigate` 安全策略拦截，唤起外部系统浏览器打开埋点链接。
-- **解决方案与交付**：
-  1. `main.js`：`did-fail-load` 严格校验 `isMainFrame === true`，过滤 `ERR_BLOCKED_BY_CSP (-30)` 与 `ERR_ABORTED (-3)`，且 `url` 兜底回退为当前站点合法 URL（`currentSite().url`）；
-  2. `offline.html`：增加域名白名单防御校验，非内部站点域名强制回退至官方主站；
-  3. 版本号升级至 `v1.5.23`，合入 `main` 分支并完成 tag 推送，已触发 GitHub Actions 自动化 Release 构建。
+- **最新已完成任务**：左侧账号列表上下拖拽排序（Drag & Drop Reordering）支持，方便多账号聚合归类
+- **核心需求与实现**：
+  - 支持直接在左侧 Dock 栏中拖拽账号头像进行上下拖动排序，将正在工作的账号拖到一块；
+  - 渲染高对比度动态放置指示线（Top / Bottom Indicator），拖拽期间冻结侧边栏自动收缩，松手即刻响应；
+  - 增加 250ms 点击防抖保护，彻底避免拖拽结束误触发账号切换；
+  - `account:reorder` 主进程 IPC 处理，完整校验账号 ID 集合与数量，并实时同步持久化落盘、托盘菜单排序与快捷键切换序列。
 
 ---
 
