@@ -6,11 +6,15 @@
 
 ## 一、当前任务概览
 
-- **关联需求 / Issue**：Comet Native `2026-10-26-lock-and-dock-optimizations` - 锁屏非置顶优化、多账号列表 12+ 扩容防挤压与移开自动收起/固定
-- **会话目标**：
-  1. 锁屏窗口移除强制置顶（`alwaysOnTop: false`），弹出后不阻碍用户在锁定态下操作其他桌面外部软件；
-  2. 左侧多账号 Dock 栏支持至少 12 个账号（无上限限制），增加纵向响应式滚动与 `flex-shrink: 0` 防挤压变形，提供半透明高质感纤细滚动条；
-  3. 切换账号后鼠标移开（`mouseleave`）自动平滑收起至侧边，顶部提供一键固定按钮（📌 Pin），主动点开固定后保持展开常驻，状态跨会话与重启持久化。
+- **最新已完成任务**：修复网页第三方埋点（如 Snapchat Pixel）及 CSP 策略拦截导致的离线诊断误判黑屏，并完成 v1.5.23 版本发布
+- **核心问题**：
+  - 页面内部子资源/第三方 iframe 请求（如 `tr.snapchat.com`）被 CSP 拦截触发 `did-fail-load`（[-30] ERR_BLOCKED_BY_CSP）；
+  - `did-fail-load` 未校验 `isMainFrame`，误将无害子资源报错当作主站崩溃，强行加载 `offline.html` 冲毁主界面；
+  - 离线页重试导航至该外链时被 `will-navigate` 安全策略拦截，唤起外部系统浏览器打开埋点链接。
+- **解决方案与交付**：
+  1. `main.js`：`did-fail-load` 严格校验 `isMainFrame === true`，过滤 `ERR_BLOCKED_BY_CSP (-30)` 与 `ERR_ABORTED (-3)`，且 `url` 兜底回退为当前站点合法 URL（`currentSite().url`）；
+  2. `offline.html`：增加域名白名单防御校验，非内部站点域名强制回退至官方主站；
+  3. 版本号升级至 `v1.5.23`，合入 `main` 分支并完成 tag 推送，已触发 GitHub Actions 自动化 Release 构建。
 
 ---
 
