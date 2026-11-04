@@ -406,6 +406,20 @@ function injectThemeStyles() {
     [data-ui-theme="light"] .acct-dock-list::-webkit-scrollbar-thumb:hover {
       background: rgba(0, 0, 0, 0.35) !important;
     }
+    [data-ui-theme="light"] .acct-dock-hub-btn {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.12)) !important;
+      border-color: rgba(168, 85, 247, 0.35) !important;
+      color: #6366f1 !important;
+      box-shadow: 0 2px 6px rgba(99, 102, 241, 0.1) !important;
+    }
+    [data-ui-theme="light"] .acct-dock-hub-btn:hover {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(168, 85, 247, 0.22)) !important;
+      color: #4f46e5 !important;
+      border-color: #6366f1 !important;
+    }
+    [data-ui-theme="light"] .acct-dock-divider {
+      background: rgba(0, 0, 0, 0.1) !important;
+    }
     [data-ui-theme="light"] .acct-dock-add-btn {
       background: rgba(0, 0, 0, 0.06) !important;
       border-color: rgba(0, 0, 0, 0.1) !important;
@@ -1324,9 +1338,9 @@ function injectExportButton() {}
       .acct-dock-header {
         display: flex;
         align-items: center;
-        justify-content: center;
-        gap: 3px;
+        justify-content: space-between;
         width: 100%;
+        padding: 0 2px;
         margin-bottom: 6px;
         flex-shrink: 0;
       }
@@ -1367,6 +1381,38 @@ function injectExportButton() {}
       .acct-dock-pin-btn.pinned {
         color: #60a5fa;
         background: rgba(59, 130, 246, 0.25);
+      }
+      .acct-dock-hub-btn {
+        position: relative;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(168, 85, 247, 0.35));
+        border: 1px solid rgba(168, 85, 247, 0.5);
+        color: #e0e7ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        cursor: pointer;
+        margin-bottom: 2px;
+        transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+      }
+      .acct-dock-hub-btn:hover {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.6), rgba(168, 85, 247, 0.6));
+        color: #ffffff;
+        border-color: rgba(192, 132, 252, 0.8);
+        transform: scale(1.12);
+        box-shadow: 0 4px 14px rgba(168, 85, 247, 0.45);
+      }
+      .acct-dock-divider {
+        width: 22px;
+        height: 1px;
+        background: rgba(255, 255, 255, 0.15);
+        margin: 2px 0 6px 0;
+        flex-shrink: 0;
       }
       .acct-dock-list {
         display: flex;
@@ -1485,7 +1531,8 @@ function injectExportButton() {}
         gap: 6px;
         z-index: 2147483645;
       }
-      .acct-dock-item:hover .acct-dock-tooltip {
+      .acct-dock-item:hover .acct-dock-tooltip,
+      .acct-dock-hub-btn:hover .acct-dock-tooltip {
         opacity: 1;
         visibility: visible;
         transform: translateY(-50%) translateX(0);
@@ -3064,16 +3111,6 @@ function injectExportButton() {}
     };
     header.appendChild(collapseBtn);
 
-    const hubBtn = document.createElement('div');
-    hubBtn.className = 'acct-dock-hub-btn';
-    hubBtn.title = t.openAccountHubTooltip;
-    hubBtn.innerHTML = '⊞';
-    hubBtn.onclick = (e) => {
-      e.stopPropagation();
-      openAccountHub();
-    };
-    header.appendChild(hubBtn);
-
     const pinBtn = document.createElement('div');
     pinBtn.className = 'acct-dock-pin-btn' + (dockState.pinned ? ' pinned' : '');
     pinBtn.title = dockState.pinned ? t.unpinDock : t.pinDock;
@@ -3096,6 +3133,35 @@ function injectExportButton() {}
     };
     header.appendChild(pinBtn);
     dockContainer.appendChild(header);
+
+    // 九宫格总览看板醒目独立入口 (32px x 32px 方圆按钮，位于账号列表正上方)
+    const hubBtn = document.createElement('div');
+    hubBtn.className = 'acct-dock-hub-btn';
+    hubBtn.innerHTML = '⊞';
+    hubBtn.title = t.openAccountHubTooltip;
+
+    const hubTooltip = document.createElement('div');
+    hubTooltip.className = 'acct-dock-tooltip';
+    const hubSpan = document.createElement('span');
+    hubSpan.textContent = t.accountHubTitle;
+    hubTooltip.appendChild(hubSpan);
+    const hubBadge = document.createElement('span');
+    hubBadge.className = 'acct-dock-tooltip-badge';
+    hubBadge.style.background = 'rgba(99, 102, 241, 0.25)';
+    hubBadge.style.color = '#818cf8';
+    hubBadge.textContent = '九宫格';
+    hubTooltip.appendChild(hubBadge);
+    hubBtn.appendChild(hubTooltip);
+
+    hubBtn.onclick = (e) => {
+      e.stopPropagation();
+      openAccountHub();
+    };
+    dockContainer.appendChild(hubBtn);
+
+    const divider = document.createElement('div');
+    divider.className = 'acct-dock-divider';
+    dockContainer.appendChild(divider);
 
     // 账号列表
     const list = document.createElement('div');
@@ -3367,6 +3433,14 @@ function injectExportButton() {}
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && dockState.hubOpen) {
       closeAccountHub();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'g' || e.key === 'G')) {
+      e.preventDefault();
+      if (dockState.hubOpen) {
+        closeAccountHub();
+      } else {
+        openAccountHub();
+      }
     }
   });
 
