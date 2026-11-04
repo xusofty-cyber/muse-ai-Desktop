@@ -72,6 +72,36 @@ const I18N_RENDERER = {
     openFolder: 'Open Folder',
     openFile: 'Open File',
     closeToast: 'Close',
+    accountHubTitle: 'Account Hub · Grid Overview',
+    openAccountHubTooltip: 'Open Account Grid Overview (Multi-session hub)',
+    allGroups: 'All Groups',
+    searchAccountPlaceholder: 'Search name, purpose, or group...',
+    manageGroups: 'Manage Groups',
+    feishuSyncBtn: 'Feishu Sync',
+    feishuSyncSettings: 'Feishu Settings',
+    feishuSyncNow: 'Sync Now',
+    feishuSyncing: 'Syncing...',
+    purposeLabel: 'Purpose',
+    noPurpose: 'No purpose specified',
+    tokenResetLabel: 'Token Reset',
+    noResetInfo: 'No reset info',
+    usageLabel: 'Usage',
+    switchToAccount: 'Switch to this account',
+    currentActive: 'Active Now',
+    editMeta: 'Edit Details',
+    groupLabel: 'Group',
+    usagePercentLabel: 'Usage Quota (%)',
+    saveChanges: 'Save Changes',
+    feishuAppId: 'Feishu App ID',
+    feishuAppSecret: 'Feishu App Secret',
+    feishuAppToken: 'Bitable Base Token',
+    feishuTableId: 'Table ID',
+    feishuAutoSync: 'Auto sync in background',
+    feishuInterval: 'Interval (minutes)',
+    feishuFieldMap: 'Column Mappings',
+    editProfileTitle: (name) => `Edit Account Details (${name})`,
+    groupManagerTitle: 'Manage Account Groups',
+    addGroupPrompt: 'Enter new group name:',
   },
   'zh-CN': {
     expandDock: '展开多账号栏',
@@ -121,6 +151,36 @@ const I18N_RENDERER = {
     openFolder: '打开所在文件夹',
     openFile: '打开文件',
     closeToast: '关闭',
+    accountHubTitle: '多账号管理中心 · 九宫格看板',
+    openAccountHubTooltip: '打开九宫格账号管理看板 (全景视图)',
+    allGroups: '全部群组',
+    searchAccountPlaceholder: '搜索账号昵称、主要用途或群组...',
+    manageGroups: '群组管理',
+    feishuSyncBtn: '飞书同步',
+    feishuSyncSettings: '飞书同步配置',
+    feishuSyncNow: '立即从飞书同步',
+    feishuSyncing: '正在同步多维表格...',
+    purposeLabel: '主要用途',
+    noPurpose: '未设定用途（点击编辑补充）',
+    tokenResetLabel: 'Token 重置',
+    noResetInfo: '暂无重置记录',
+    usageLabel: '当前用量',
+    switchToAccount: '切换至此账号',
+    currentActive: '当前正在使用',
+    editMeta: '编辑详情',
+    groupLabel: '所属群组',
+    usagePercentLabel: '当前用量占比 (0-100%)',
+    saveChanges: '保存并应用',
+    feishuAppId: '自建应用 App ID (cli_xxx)',
+    feishuAppSecret: '自建应用 App Secret',
+    feishuAppToken: '多维表格 Base Token (bascnxxx)',
+    feishuTableId: '数据表 Table ID (tblxxx)',
+    feishuAutoSync: '开启后台定时自动同步',
+    feishuInterval: '自动同步轮询周期 (分钟)',
+    feishuFieldMap: '多维表格列名映射关系',
+    editProfileTitle: (name) => `编辑账号信息 (${name})`,
+    groupManagerTitle: '管理业务群组与分类',
+    addGroupPrompt: '输入新群组名称：',
   },
 };
 
@@ -1148,9 +1208,15 @@ function injectExportButton() {}
     activeProfileId: 'default',
     pinned: isPinned,
     collapsed: !isPinned,
+    accountGroups: ['默认群组'],
+    feishu: null,
+    hubOpen: false,
+    activeGroupFilter: 'all',
+    searchKeyword: '',
   };
 
   let dockContainer = null;
+  let hubOverlay = null;
   let activeContextMenu = null;
   let activeModal = null;
   let collapseTimer = null;
@@ -1161,7 +1227,7 @@ function injectExportButton() {}
   function scheduleAutoCollapse(delay = 250) {
     if (collapseTimer) clearTimeout(collapseTimer);
     collapseTimer = setTimeout(() => {
-      if (!dockState.pinned && !activeContextMenu && !activeModal && !isDraggingAccount && dockContainer) {
+      if (!dockState.pinned && !dockState.hubOpen && !activeContextMenu && !activeModal && !isDraggingAccount && dockContainer) {
         dockState.collapsed = true;
         dockContainer.classList.add('collapsed');
         updateHeaderButtons();
@@ -1566,6 +1632,409 @@ function injectExportButton() {}
       .acct-modal-btn.confirm:hover {
         background: #2563eb;
       }
+
+      /* Account Hub 全屏/居中看板弹层 */
+      #acct-hub-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483646;
+        background: rgba(0, 0, 0, 0.68);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        animation: hubFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #f1f5f9;
+        user-select: none;
+      }
+      @keyframes hubFadeIn {
+        from { opacity: 0; transform: scale(0.98); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      .acct-hub-modal {
+        width: 1040px;
+        max-width: 95vw;
+        height: 720px;
+        max-height: 90vh;
+        background: rgba(22, 23, 29, 0.96);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 18px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .hub-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-shrink: 0;
+      }
+      .hub-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .hub-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #f8fafc;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .hub-count-badge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #94a3b8;
+        font-weight: 500;
+      }
+      .hub-search-input {
+        width: 240px;
+        padding: 7px 12px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #f8fafc;
+        font-size: 12.5px;
+        outline: none;
+        transition: all 0.2s;
+      }
+      .hub-search-input:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+        width: 270px;
+      }
+      .hub-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .hub-btn {
+        padding: 7px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.15s;
+        border: 1px solid transparent;
+      }
+      .hub-btn-default {
+        background: rgba(255, 255, 255, 0.08);
+        color: #e2e8f0;
+        border-color: rgba(255, 255, 255, 0.1);
+      }
+      .hub-btn-default:hover {
+        background: rgba(255, 255, 255, 0.15);
+        color: #fff;
+      }
+      .hub-btn-primary {
+        background: #2563eb;
+        color: #fff;
+      }
+      .hub-btn-primary:hover {
+        background: #1d4ed8;
+      }
+      .hub-btn-feishu {
+        background: rgba(16, 185, 129, 0.15);
+        color: #34d399;
+        border-color: rgba(16, 185, 129, 0.3);
+      }
+      .hub-btn-feishu:hover {
+        background: rgba(16, 185, 129, 0.25);
+        color: #6ee7b7;
+      }
+      .hub-close-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: #94a3b8;
+        font-size: 16px;
+        transition: all 0.15s;
+      }
+      .hub-close-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+      }
+      .hub-group-tabs {
+        padding: 10px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        overflow-x: auto;
+        flex-shrink: 0;
+      }
+      .hub-group-tabs::-webkit-scrollbar { height: 4px; }
+      .hub-group-tabs::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 2px; }
+      .hub-tab-item {
+        padding: 5px 12px;
+        border-radius: 16px;
+        font-size: 12px;
+        cursor: pointer;
+        color: #94a3b8;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid transparent;
+        white-space: nowrap;
+        transition: all 0.15s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .hub-tab-item:hover {
+        color: #f1f5f9;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .hub-tab-item.active {
+        color: #fff;
+        background: #3b82f6;
+        font-weight: 600;
+        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+      }
+      .hub-tab-badge {
+        font-size: 10px;
+        opacity: 0.8;
+      }
+      .hub-grid-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 16px;
+        align-content: start;
+      }
+      .hub-grid-body::-webkit-scrollbar { width: 6px; }
+      .hub-grid-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 3px; }
+      .hub-card {
+        background: rgba(255, 255, 255, 0.035);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        cursor: pointer;
+        position: relative;
+      }
+      .hub-card:hover {
+        background: rgba(255, 255, 255, 0.06);
+        border-color: rgba(255, 255, 255, 0.18);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+      }
+      .hub-card.active {
+        border-color: #3b82f6;
+        background: rgba(59, 130, 246, 0.08);
+        box-shadow: 0 0 0 1px #3b82f6, 0 8px 24px rgba(59, 130, 246, 0.2);
+      }
+      .hub-card-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .hub-card-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-weight: 700;
+        font-size: 14px;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+      .hub-card-info {
+        flex: 1;
+        min-width: 0;
+      }
+      .hub-card-title-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .hub-card-name {
+        font-size: 14px;
+        font-weight: 700;
+        color: #f8fafc;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .hub-card-group-tag {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #94a3b8;
+        flex-shrink: 0;
+      }
+      .hub-card-active-pill {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+      .hub-card-meta {
+        background: rgba(0, 0, 0, 0.25);
+        border-radius: 8px;
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 11.5px;
+      }
+      .hub-meta-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        color: #cbd5e1;
+        line-height: 1.4;
+      }
+      .hub-meta-label {
+        color: #64748b;
+        flex-shrink: 0;
+      }
+      .hub-meta-val {
+        color: #e2e8f0;
+        word-break: break-all;
+      }
+      .hub-usage-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .hub-usage-head {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+      }
+      .hub-usage-title { color: #64748b; }
+      .hub-usage-stat { font-weight: 600; color: #cbd5e1; }
+      .hub-progress-track {
+        height: 6px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .hub-progress-bar {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.3s ease;
+      }
+      .hub-progress-bar.normal { background: #10b981; }
+      .hub-progress-bar.warning { background: #f59e0b; }
+      .hub-progress-bar.exhausted { background: #ef4444; }
+      .hub-card-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: auto;
+        padding-top: 4px;
+      }
+      .hub-card-switch-btn {
+        flex: 1;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: #2563eb;
+        color: #fff;
+        font-size: 11.5px;
+        font-weight: 600;
+        text-align: center;
+        border: none;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .hub-card-switch-btn:hover { background: #1d4ed8; }
+      .hub-card-switch-btn.active {
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+        cursor: default;
+      }
+      .hub-card-icon-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #94a3b8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.15s;
+      }
+      .hub-card-icon-btn:hover {
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+      }
+      .hub-card-icon-btn.danger:hover {
+        background: rgba(239, 68, 68, 0.2);
+        color: #f87171;
+        border-color: rgba(239, 68, 68, 0.3);
+      }
+      .hub-empty-state {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 60px 20px;
+        color: #64748b;
+        font-size: 14px;
+      }
+
+      /* 详情编辑表单 */
+      .hub-form-row {
+        margin-bottom: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        text-align: left;
+      }
+      .hub-form-label {
+        font-size: 12px;
+        color: #94a3b8;
+        font-weight: 500;
+      }
+      .hub-form-input, .hub-form-select, .hub-form-textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #f8fafc;
+        font-size: 13px;
+        outline: none;
+      }
+      .hub-form-input:focus, .hub-form-select:focus, .hub-form-textarea:focus {
+        border-color: #3b82f6;
+      }
+      .hub-form-textarea {
+        resize: vertical;
+        min-height: 54px;
+      }
     `;
     (document.head || document.documentElement).appendChild(style);
   }
@@ -1625,6 +2094,782 @@ function injectExportButton() {}
     }, 50);
   }
 
+  function showToast(msg) {
+    let tEl = document.getElementById('hub-toast');
+    if (!tEl) {
+      tEl = document.createElement('div');
+      tEl.id = 'hub-toast';
+      Object.assign(tEl.style, {
+        position: 'fixed',
+        top: '24px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: '2147483647',
+        backgroundColor: 'rgba(24, 28, 38, 0.95)',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        color: '#f8fafc',
+        padding: '10px 18px',
+        borderRadius: '10px',
+        fontSize: '13px',
+        fontWeight: '500',
+        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)',
+        transition: 'all 0.2s',
+        pointerEvents: 'none',
+      });
+      document.body.appendChild(tEl);
+    }
+    tEl.textContent = msg;
+    tEl.style.opacity = '1';
+    tEl.style.transform = 'translateX(-50%) translateY(0)';
+    setTimeout(() => {
+      if (tEl) {
+        tEl.style.opacity = '0';
+        tEl.style.transform = 'translateX(-50%) translateY(-8px)';
+      }
+    }, 2800);
+  }
+
+  // ---- 九宫格/多宫格账号管理看板 (Account Hub) -------------------------------
+  function closeAccountHub() {
+    dockState.hubOpen = false;
+    if (hubOverlay && hubOverlay.parentNode) {
+      hubOverlay.parentNode.removeChild(hubOverlay);
+    }
+    hubOverlay = null;
+    if (!dockState.pinned) {
+      scheduleAutoCollapse(350);
+    }
+  }
+
+  function openAccountHub() {
+    closeContextMenu();
+    closeModal();
+    dockState.hubOpen = true;
+    cancelAutoCollapse();
+    if (!dockState.pinned) {
+      dockState.collapsed = false;
+      if (dockContainer) dockContainer.classList.remove('collapsed');
+      updateHeaderButtons();
+    }
+    renderAccountHub();
+  }
+
+  function renderAccountHub() {
+    const t = getT();
+    if (!hubOverlay) {
+      hubOverlay = document.createElement('div');
+      hubOverlay.id = 'acct-hub-overlay';
+      hubOverlay.onclick = (e) => {
+        if (e.target === hubOverlay) closeAccountHub();
+      };
+      document.body.appendChild(hubOverlay);
+    }
+    hubOverlay.innerHTML = '';
+
+    const modal = document.createElement('div');
+    modal.className = 'acct-hub-modal';
+    modal.onclick = (e) => e.stopPropagation();
+
+    // 1. Header
+    const header = document.createElement('div');
+    header.className = 'hub-header';
+
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'hub-title-wrap';
+
+    const title = document.createElement('div');
+    title.className = 'hub-title';
+    title.innerHTML = `<span>⊞</span><span>${t.accountHubTitle}</span>`;
+
+    const countBadge = document.createElement('span');
+    countBadge.className = 'hub-count-badge';
+    countBadge.textContent = `${dockState.profiles.length} 账号 · ${(dockState.accountGroups || []).length} 群组`;
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(countBadge);
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'hub-search-input';
+    searchInput.placeholder = t.searchAccountPlaceholder;
+    searchInput.value = dockState.searchKeyword || '';
+    searchInput.oninput = (e) => {
+      dockState.searchKeyword = e.target.value.trim().toLowerCase();
+      renderHubGridCards();
+    };
+
+    const actions = document.createElement('div');
+    actions.className = 'hub-actions';
+
+    // 飞书同步按钮
+    const feishuSyncBtn = document.createElement('button');
+    feishuSyncBtn.className = 'hub-btn hub-btn-feishu';
+    feishuSyncBtn.type = 'button';
+    feishuSyncBtn.innerHTML = `<span>🔄</span><span>${t.feishuSyncBtn}</span>`;
+    feishuSyncBtn.title = t.feishuSyncNow;
+    feishuSyncBtn.onclick = async () => {
+      feishuSyncBtn.disabled = true;
+      feishuSyncBtn.innerHTML = `<span>⏳</span><span>${t.feishuSyncing}</span>`;
+      try {
+        const res = await ipcRenderer.invoke('feishu:sync-now');
+        if (res && res.ok) {
+          showToast(`飞书同步成功：匹配更新 ${res.updatedProfiles} 个账号`);
+        } else {
+          showToast(`飞书同步提示：${(res && res.error) || '未知错误'}`);
+        }
+      } catch (err) {
+        showToast(`飞书同步失败: ${err.message}`);
+      } finally {
+        feishuSyncBtn.disabled = false;
+        feishuSyncBtn.innerHTML = `<span>🔄</span><span>${t.feishuSyncBtn}</span>`;
+      }
+    };
+
+    // 飞书配置按钮
+    const feishuConfigBtn = document.createElement('button');
+    feishuConfigBtn.className = 'hub-btn hub-btn-default';
+    feishuConfigBtn.type = 'button';
+    feishuConfigBtn.title = t.feishuSyncSettings;
+    feishuConfigBtn.innerHTML = '<span>⚙️ 飞书配置</span>';
+    feishuConfigBtn.onclick = () => openFeishuSettingsModal();
+
+    // 群组管理按钮
+    const groupBtn = document.createElement('button');
+    groupBtn.className = 'hub-btn hub-btn-default';
+    groupBtn.type = 'button';
+    groupBtn.innerHTML = `<span>🏷</span><span>${t.manageGroups}</span>`;
+    groupBtn.onclick = () => openGroupManagerModal();
+
+    // 新增账号按钮
+    const addBtn = document.createElement('button');
+    addBtn.className = 'hub-btn hub-btn-primary';
+    addBtn.type = 'button';
+    addBtn.innerHTML = `<span>➕</span><span>${t.addAccountPromptTitle}</span>`;
+    addBtn.onclick = () => {
+      showPromptModal(t.addAccountPromptTitle, t.addAccountDefaultName(dockState.profiles.length + 1), (name) => {
+        ipcRenderer.invoke('account:add', { name, group: dockState.activeGroupFilter !== 'all' ? dockState.activeGroupFilter : '默认群组' }).catch(() => {});
+      });
+    };
+
+    // 关闭按钮
+    const closeBtn = document.createElement('div');
+    closeBtn.className = 'hub-close-btn';
+    closeBtn.innerHTML = '✕';
+    closeBtn.onclick = closeAccountHub;
+
+    actions.appendChild(feishuSyncBtn);
+    actions.appendChild(feishuConfigBtn);
+    actions.appendChild(groupBtn);
+    actions.appendChild(addBtn);
+    actions.appendChild(closeBtn);
+
+    header.appendChild(titleWrap);
+    header.appendChild(searchInput);
+    header.appendChild(actions);
+    modal.appendChild(header);
+
+    // 2. 群组分类 Tabs
+    const tabsContainer = document.createElement('div');
+    tabsContainer.className = 'hub-group-tabs';
+
+    const groupsList = ['all', ...(dockState.accountGroups || ['默认群组'])];
+    groupsList.forEach((grp) => {
+      const tab = document.createElement('div');
+      const isAll = grp === 'all';
+      const isActive = dockState.activeGroupFilter === grp;
+      tab.className = 'hub-tab-item' + (isActive ? ' active' : '');
+
+      const count = isAll
+        ? dockState.profiles.length
+        : dockState.profiles.filter((p) => (p.group || '默认群组') === grp).length;
+
+      tab.innerHTML = `<span>${isAll ? t.allGroups : grp}</span><span class="hub-tab-badge">(${count})</span>`;
+      tab.onclick = () => {
+        dockState.activeGroupFilter = grp;
+        renderAccountHub();
+      };
+      tabsContainer.appendChild(tab);
+    });
+    modal.appendChild(tabsContainer);
+
+    // 3. Grid 卡片网格容器
+    const gridBody = document.createElement('div');
+    gridBody.className = 'hub-grid-body';
+    modal.appendChild(gridBody);
+
+    function renderHubGridCards() {
+      gridBody.innerHTML = '';
+      const kw = (dockState.searchKeyword || '').toLowerCase();
+      const currentGrp = dockState.activeGroupFilter || 'all';
+
+      const filtered = (dockState.profiles || []).filter((p) => {
+        if (currentGrp !== 'all' && (p.group || '默认群组') !== currentGrp) return false;
+        if (kw) {
+          const matchName = (p.name || '').toLowerCase().includes(kw);
+          const matchPurpose = (p.purpose || '').toLowerCase().includes(kw);
+          const matchGroup = (p.group || '').toLowerCase().includes(kw);
+          if (!matchName && !matchPurpose && !matchGroup) return false;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'hub-empty-state';
+        empty.innerHTML = `<div>🔍 没有找到匹配的账号记录</div><div style="font-size:12px;margin-top:6px;opacity:0.7;">可尝试更换搜索词或选择其他群组标签</div>`;
+        gridBody.appendChild(empty);
+        return;
+      }
+
+      filtered.forEach((p) => {
+        const card = document.createElement('div');
+        const isActive = p.id === dockState.activeProfileId;
+        card.className = 'hub-card' + (isActive ? ' active' : '');
+
+        // 点击卡片主体快捷切号并关闭
+        card.onclick = (e) => {
+          if (p.id !== dockState.activeProfileId) {
+            ipcRenderer.invoke('account:switch', { id: p.id }).catch(() => {});
+            closeAccountHub();
+          }
+        };
+
+        // 卡片头部
+        const cardHeader = document.createElement('div');
+        cardHeader.className = 'hub-card-header';
+
+        const avatar = document.createElement('div');
+        avatar.className = 'hub-card-avatar';
+        avatar.style.backgroundColor = p.color || '#3b82f6';
+        avatar.textContent = getInitials(p.name);
+
+        const cardInfo = document.createElement('div');
+        cardInfo.className = 'hub-card-info';
+
+        const titleRow = document.createElement('div');
+        titleRow.className = 'hub-card-title-row';
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'hub-card-name';
+        nameEl.textContent = p.name;
+        titleRow.appendChild(nameEl);
+
+        const groupTag = document.createElement('span');
+        groupTag.className = 'hub-card-group-tag';
+        groupTag.textContent = p.group || '默认群组';
+        titleRow.appendChild(groupTag);
+
+        if (isActive) {
+          const activePill = document.createElement('span');
+          activePill.className = 'hub-card-active-pill';
+          activePill.textContent = t.currentActive;
+          titleRow.appendChild(activePill);
+        }
+
+        cardInfo.appendChild(titleRow);
+        cardHeader.appendChild(avatar);
+        cardHeader.appendChild(cardInfo);
+        card.appendChild(cardHeader);
+
+        // 卡片内容：主要用途与 Token 重置
+        const metaBox = document.createElement('div');
+        metaBox.className = 'hub-card-meta';
+
+        // 主要用途
+        const purposeRow = document.createElement('div');
+        purposeRow.className = 'hub-meta-row';
+        purposeRow.innerHTML = `<span class="hub-meta-label">📌 ${t.purposeLabel}:</span><span class="hub-meta-val">${p.purpose ? p.purpose : `<span style="color:#64748b;font-style:italic;">${t.noPurpose}</span>`}</span>`;
+        metaBox.appendChild(purposeRow);
+
+        // 重置倒计时
+        const resetRow = document.createElement('div');
+        resetRow.className = 'hub-meta-row';
+        resetRow.innerHTML = `<span class="hub-meta-label">⏳ ${t.tokenResetLabel}:</span><span class="hub-meta-val">${p.tokenResetAt ? p.tokenResetAt : `<span style="color:#64748b;font-style:italic;">${t.noResetInfo}</span>`}</span>`;
+        metaBox.appendChild(resetRow);
+
+        card.appendChild(metaBox);
+
+        // 用量进度条
+        const usageWrap = document.createElement('div');
+        usageWrap.className = 'hub-usage-wrap';
+
+        const usagePercent = typeof p.usagePercent === 'number' ? p.usagePercent : 0;
+        const usageHead = document.createElement('div');
+        usageHead.className = 'hub-usage-head';
+        usageHead.innerHTML = `<span class="hub-usage-title">📊 ${t.usageLabel}</span><span class="hub-usage-stat">${p.usageText ? p.usageText : `${usagePercent}%`}</span>`;
+
+        const track = document.createElement('div');
+        track.className = 'hub-progress-track';
+
+        const bar = document.createElement('div');
+        let statusClass = 'normal';
+        if (usagePercent >= 90 || p.status === 'exhausted') statusClass = 'exhausted';
+        else if (usagePercent >= 70 || p.status === 'warning') statusClass = 'warning';
+        bar.className = `hub-progress-bar ${statusClass}`;
+        bar.style.width = `${Math.min(100, Math.max(0, usagePercent))}%`;
+
+        track.appendChild(bar);
+        usageWrap.appendChild(usageHead);
+        usageWrap.appendChild(track);
+        card.appendChild(usageWrap);
+
+        // 卡片底部操作按钮栏
+        const cardActions = document.createElement('div');
+        cardActions.className = 'hub-card-actions';
+
+        const switchBtn = document.createElement('button');
+        switchBtn.className = 'hub-card-switch-btn' + (isActive ? ' active' : '');
+        switchBtn.type = 'button';
+        switchBtn.textContent = isActive ? `✓ ${t.currentActive}` : t.switchToAccount;
+        switchBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (!isActive) {
+            ipcRenderer.invoke('account:switch', { id: p.id }).catch(() => {});
+            closeAccountHub();
+          }
+        };
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'hub-card-icon-btn';
+        editBtn.type = 'button';
+        editBtn.title = t.editMeta;
+        editBtn.innerHTML = '✏️';
+        editBtn.onclick = (e) => {
+          e.stopPropagation();
+          openEditProfileModal(p);
+        };
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'hub-card-icon-btn danger';
+        delBtn.type = 'button';
+        delBtn.title = t.deleteAccount;
+        delBtn.innerHTML = '🗑';
+        delBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (dockState.profiles.length <= 1) {
+            showToast('至少保留一个账号');
+            return;
+          }
+          if (confirm(t.deleteConfirm(p.name))) {
+            ipcRenderer.invoke('account:delete', { id: p.id }).catch(() => {});
+          }
+        };
+
+        cardActions.appendChild(switchBtn);
+        cardActions.appendChild(editBtn);
+        if (!isActive && dockState.profiles.length > 1) {
+          cardActions.appendChild(delBtn);
+        }
+
+        card.appendChild(cardActions);
+        gridBody.appendChild(card);
+      });
+    }
+
+    renderHubGridCards();
+    hubOverlay.appendChild(modal);
+  }
+
+  // 编辑账号元数据模态框
+  function openEditProfileModal(p) {
+    closeModal();
+    const t = getT();
+    const overlay = document.createElement('div');
+    overlay.className = 'acct-modal-overlay';
+
+    const card = document.createElement('div');
+    card.className = 'acct-modal-card';
+    card.style.width = '420px';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'acct-modal-title';
+    titleEl.textContent = t.editProfileTitle(p.name);
+
+    // 1. 昵称
+    const nameRow = document.createElement('div');
+    nameRow.className = 'hub-form-row';
+    nameRow.innerHTML = `<label class="hub-form-label">${t.renameAccount}</label>`;
+    const nameInput = document.createElement('input');
+    nameInput.className = 'hub-form-input';
+    nameInput.value = p.name || '';
+    nameRow.appendChild(nameInput);
+
+    // 2. 所属群组
+    const grpRow = document.createElement('div');
+    grpRow.className = 'hub-form-row';
+    grpRow.innerHTML = `<label class="hub-form-label">${t.groupLabel}</label>`;
+    const grpSelect = document.createElement('select');
+    grpSelect.className = 'hub-form-select';
+    const groups = dockState.accountGroups || ['默认群组'];
+    groups.forEach((g) => {
+      const opt = document.createElement('option');
+      opt.value = g;
+      opt.textContent = g;
+      if (g === (p.group || '默认群组')) opt.selected = true;
+      grpSelect.appendChild(opt);
+    });
+    grpRow.appendChild(grpSelect);
+
+    // 3. 主要用途
+    const purposeRow = document.createElement('div');
+    purposeRow.className = 'hub-form-row';
+    purposeRow.innerHTML = `<label class="hub-form-label">${t.purposeLabel}</label>`;
+    const purposeInput = document.createElement('textarea');
+    purposeInput.className = 'hub-form-textarea';
+    purposeInput.value = p.purpose || '';
+    purposeInput.placeholder = '例如：竞品技术调研、生产环境自动化测试、客服会话...';
+    purposeRow.appendChild(purposeInput);
+
+    // 4. 用量占比与明细
+    const usageRow = document.createElement('div');
+    usageRow.className = 'hub-form-row';
+    usageRow.innerHTML = `<label class="hub-form-label">${t.usagePercentLabel}</label>`;
+    const usageInput = document.createElement('input');
+    usageInput.type = 'number';
+    usageInput.className = 'hub-form-input';
+    usageInput.min = '0';
+    usageInput.max = '100';
+    usageInput.value = typeof p.usagePercent === 'number' ? p.usagePercent : 0;
+    usageRow.appendChild(usageInput);
+
+    // 5. Token 重置时间
+    const resetRow = document.createElement('div');
+    resetRow.className = 'hub-form-row';
+    resetRow.innerHTML = `<label class="hub-form-label">${t.tokenResetLabel}</label>`;
+    const resetInput = document.createElement('input');
+    resetInput.type = 'text';
+    resetInput.className = 'hub-form-input';
+    resetInput.placeholder = '例如：2026-11-05 00:00:00 或 还有 12 小时';
+    resetInput.value = p.tokenResetAt || '';
+    resetRow.appendChild(resetInput);
+
+    // 底部操作
+    const actions = document.createElement('div');
+    actions.className = 'acct-modal-actions';
+    actions.style.marginTop = '16px';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'acct-modal-btn cancel';
+    cancelBtn.textContent = t.cancel;
+    cancelBtn.onclick = closeModal;
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'acct-modal-btn confirm';
+    confirmBtn.textContent = t.saveChanges;
+    confirmBtn.onclick = async () => {
+      const newName = nameInput.value.trim() || p.name;
+      const newGroup = grpSelect.value || '默认群组';
+      const newPurpose = purposeInput.value.trim();
+      const newUsage = parseFloat(usageInput.value) || 0;
+      const newReset = resetInput.value.trim();
+
+      closeModal();
+      await ipcRenderer.invoke('account:update-meta', {
+        id: p.id,
+        name: newName,
+        group: newGroup,
+        purpose: newPurpose,
+        usagePercent: newUsage,
+        usageText: `${newUsage}%`,
+        tokenResetAt: newReset,
+      }).catch(() => {});
+      if (dockState.hubOpen) renderAccountHub();
+    };
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+
+    card.appendChild(titleEl);
+    card.appendChild(nameRow);
+    card.appendChild(grpRow);
+    card.appendChild(purposeRow);
+    card.appendChild(usageRow);
+    card.appendChild(resetRow);
+    card.appendChild(actions);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    activeModal = overlay;
+  }
+
+  // 群组管理模态框
+  function openGroupManagerModal() {
+    closeModal();
+    const t = getT();
+    const overlay = document.createElement('div');
+    overlay.className = 'acct-modal-overlay';
+
+    const card = document.createElement('div');
+    card.className = 'acct-modal-card';
+    card.style.width = '380px';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'acct-modal-title';
+    titleEl.textContent = t.groupManagerTitle;
+
+    const listWrap = document.createElement('div');
+    listWrap.style.maxHeight = '240px';
+    listWrap.style.overflowY = 'auto';
+    listWrap.style.marginBottom = '12px';
+
+    let groups = [...(dockState.accountGroups || ['默认群组'])];
+
+    function renderGroupItems() {
+      listWrap.innerHTML = '';
+      groups.forEach((g, idx) => {
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.justifyContent = 'space-between';
+        row.style.padding = '6px 8px';
+        row.style.background = 'rgba(255, 255, 255, 0.04)';
+        row.style.borderRadius = '6px';
+        row.style.marginBottom = '6px';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = g;
+        nameSpan.style.fontSize = '13px';
+
+        const countSpan = document.createElement('span');
+        countSpan.textContent = `${dockState.profiles.filter((p) => (p.group || '默认群组') === g).length} 个账号`;
+        countSpan.style.fontSize = '11px';
+        countSpan.style.color = '#94a3b8';
+
+        const rightWrap = document.createElement('div');
+        rightWrap.style.display = 'flex';
+        rightWrap.style.alignItems = 'center';
+        rightWrap.style.gap = '8px';
+        rightWrap.appendChild(countSpan);
+
+        if (g !== '默认群组') {
+          const delBtn = document.createElement('button');
+          delBtn.type = 'button';
+          delBtn.textContent = '✕';
+          delBtn.style.background = 'transparent';
+          delBtn.style.border = 'none';
+          delBtn.style.color = '#f87171';
+          delBtn.style.cursor = 'pointer';
+          delBtn.onclick = () => {
+            groups.splice(idx, 1);
+            renderGroupItems();
+          };
+          rightWrap.appendChild(delBtn);
+        }
+
+        row.appendChild(nameSpan);
+        row.appendChild(rightWrap);
+        listWrap.appendChild(row);
+      });
+    }
+    renderGroupItems();
+
+    const addRow = document.createElement('div');
+    addRow.style.display = 'flex';
+    addRow.style.gap = '6px';
+    addRow.style.marginBottom = '16px';
+
+    const addInput = document.createElement('input');
+    addInput.className = 'hub-form-input';
+    addInput.placeholder = '新群组名称...';
+    addInput.style.flex = '1';
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'hub-btn hub-btn-primary';
+    addBtn.type = 'button';
+    addBtn.textContent = '添加';
+    addBtn.onclick = () => {
+      const val = addInput.value.trim();
+      if (val && !groups.includes(val)) {
+        groups.push(val);
+        addInput.value = '';
+        renderGroupItems();
+      }
+    };
+
+    addRow.appendChild(addInput);
+    addRow.appendChild(addBtn);
+
+    const actions = document.createElement('div');
+    actions.className = 'acct-modal-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'acct-modal-btn cancel';
+    cancelBtn.textContent = t.cancel;
+    cancelBtn.onclick = closeModal;
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'acct-modal-btn confirm';
+    confirmBtn.textContent = t.saveChanges;
+    confirmBtn.onclick = async () => {
+      closeModal();
+      await ipcRenderer.invoke('account:set-groups', { groups }).catch(() => {});
+      dockState.accountGroups = groups;
+      if (dockState.hubOpen) renderAccountHub();
+    };
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+
+    card.appendChild(titleEl);
+    card.appendChild(listWrap);
+    card.appendChild(addRow);
+    card.appendChild(actions);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    activeModal = overlay;
+  }
+
+  // 飞书多维表格同步配置模态框
+  async function openFeishuSettingsModal() {
+    closeModal();
+    const t = getT();
+    const overlay = document.createElement('div');
+    overlay.className = 'acct-modal-overlay';
+
+    const card = document.createElement('div');
+    card.className = 'acct-modal-card';
+    card.style.width = '480px';
+    card.style.maxHeight = '85vh';
+    card.style.overflowY = 'auto';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'acct-modal-title';
+    titleEl.textContent = t.feishuSyncSettings;
+
+    let cfg = {};
+    try {
+      cfg = (await ipcRenderer.invoke('feishu:get-config')) || {};
+    } catch {}
+
+    const createField = (label, value, placeholder = '', type = 'text') => {
+      const row = document.createElement('div');
+      row.className = 'hub-form-row';
+      row.innerHTML = `<label class="hub-form-label">${label}</label>`;
+      const input = document.createElement('input');
+      input.type = type;
+      input.className = 'hub-form-input';
+      input.value = value || '';
+      input.placeholder = placeholder;
+      row.appendChild(input);
+      return { row, input };
+    };
+
+    const appIdF = createField(t.feishuAppId, cfg.appId, 'cli_a1b2c3d4e5f6');
+    const secretF = createField(t.feishuAppSecret, cfg.appSecret, '••••••••••••••••', 'password');
+    const tokenF = createField(t.feishuAppToken, cfg.appToken, 'bascnXXXXXXXXXXXX');
+    const tableF = createField(t.feishuTableId, cfg.tableId, 'tblXXXXXXXXXXXX');
+
+    // 自动同步开关
+    const autoRow = document.createElement('div');
+    autoRow.className = 'hub-form-row';
+    autoRow.style.flexDirection = 'row';
+    autoRow.style.alignItems = 'center';
+    autoRow.style.justifyContent = 'space-between';
+    autoRow.innerHTML = `<label class="hub-form-label">${t.feishuAutoSync}</label>`;
+    const autoCheck = document.createElement('input');
+    autoCheck.type = 'checkbox';
+    autoCheck.checked = !!cfg.autoSync;
+    autoRow.appendChild(autoCheck);
+
+    const intervalF = createField(t.feishuInterval, cfg.syncIntervalMinutes || 30, '30', 'number');
+
+    // 字段映射折叠区
+    const fMapTitle = document.createElement('div');
+    fMapTitle.style.fontSize = '12px';
+    fMapTitle.style.fontWeight = '600';
+    fMapTitle.style.marginTop = '12px';
+    fMapTitle.style.color = '#38bdf8';
+    fMapTitle.textContent = `📋 ${t.feishuFieldMap}`;
+
+    const fm = cfg.fieldMap || {};
+    const mapNameF = createField('账号名称列', fm.name || '账号名称');
+    const mapPurposeF = createField('主要用途列', fm.purpose || '主要用途');
+    const mapUsageF = createField('当前用量列', fm.usage || '当前用量');
+    const mapResetF = createField('重置时间列', fm.tokenReset || '重置时间');
+    const mapGroupF = createField('所属群组列', fm.group || '所属群组');
+
+    // 状态提示
+    const statusBox = document.createElement('div');
+    statusBox.style.fontSize = '11px';
+    statusBox.style.color = '#94a3b8';
+    statusBox.style.margin = '10px 0';
+    statusBox.style.padding = '8px';
+    statusBox.style.background = 'rgba(0, 0, 0, 0.25)';
+    statusBox.style.borderRadius = '6px';
+    statusBox.textContent = cfg.lastSyncStatus || '尚未同步过多维表格数据';
+
+    // 底部操作
+    const actions = document.createElement('div');
+    actions.className = 'acct-modal-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'acct-modal-btn cancel';
+    cancelBtn.textContent = t.cancel;
+    cancelBtn.onclick = closeModal;
+
+    const saveAndSyncBtn = document.createElement('button');
+    saveAndSyncBtn.className = 'acct-modal-btn confirm';
+    saveAndSyncBtn.textContent = '保存并立即同步';
+    saveAndSyncBtn.onclick = async () => {
+      const newConfig = {
+        enabled: true,
+        appId: appIdF.input.value.trim(),
+        appSecret: secretF.input.value.trim(),
+        appToken: tokenF.input.value.trim(),
+        tableId: tableF.input.value.trim(),
+        autoSync: autoCheck.checked,
+        syncIntervalMinutes: parseInt(intervalF.input.value, 10) || 30,
+        fieldMap: {
+          name: mapNameF.input.value.trim() || '账号名称',
+          purpose: mapPurposeF.input.value.trim() || '主要用途',
+          usage: mapUsageF.input.value.trim() || '当前用量',
+          tokenReset: mapResetF.input.value.trim() || '重置时间',
+          group: mapGroupF.input.value.trim() || '所属群组',
+        },
+      };
+
+      saveAndSyncBtn.disabled = true;
+      saveAndSyncBtn.textContent = '同步中...';
+      await ipcRenderer.invoke('feishu:save-config', newConfig).catch(() => {});
+      try {
+        const res = await ipcRenderer.invoke('feishu:sync-now');
+        if (res && res.ok) {
+          showToast(`飞书同步成功：匹配更新 ${res.updatedProfiles} 个账号`);
+        } else {
+          showToast(`飞书同步提示: ${(res && res.error) || '未知错误'}`);
+        }
+      } catch (err) {
+        showToast(`飞书同步失败: ${err.message}`);
+      }
+      closeModal();
+      if (dockState.hubOpen) renderAccountHub();
+    };
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(saveAndSyncBtn);
+
+    card.appendChild(titleEl);
+    card.appendChild(appIdF.row);
+    card.appendChild(secretF.row);
+    card.appendChild(tokenF.row);
+    card.appendChild(tableF.row);
+    card.appendChild(autoRow);
+    card.appendChild(intervalF.row);
+    card.appendChild(fMapTitle);
+    card.appendChild(mapNameF.row);
+    card.appendChild(mapPurposeF.row);
+    card.appendChild(mapUsageF.row);
+    card.appendChild(mapResetF.row);
+    card.appendChild(mapGroupF.row);
+    card.appendChild(statusBox);
+    card.appendChild(actions);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    activeModal = overlay;
+  }
+
   function openItemContextMenu(e, profile) {
     e.preventDefault();
     e.stopPropagation();
@@ -1634,7 +2879,27 @@ function injectExportButton() {}
     const menu = document.createElement('div');
     menu.className = 'acct-context-menu';
 
-    // 1. 修改备注
+    // 0. 打开账号九宫格总览看板
+    const hubItem = document.createElement('div');
+    hubItem.className = 'acct-context-item';
+    hubItem.innerHTML = `<span>⊞</span><span>${t.accountHubTitle}</span>`;
+    hubItem.onclick = () => {
+      closeContextMenu();
+      openAccountHub();
+    };
+    menu.appendChild(hubItem);
+
+    // 1. 编辑详情 (含用途、用量与群组)
+    const editItem = document.createElement('div');
+    editItem.className = 'acct-context-item';
+    editItem.innerHTML = `<span>📝</span><span>${t.editMeta}</span>`;
+    editItem.onclick = () => {
+      closeContextMenu();
+      openEditProfileModal(profile);
+    };
+    menu.appendChild(editItem);
+
+    // 2. 修改备注
     const renameItem = document.createElement('div');
     renameItem.className = 'acct-context-item';
     renameItem.innerHTML = `<span>✏️</span><span>${t.renameAccount}</span>`;
@@ -1755,6 +3020,16 @@ function injectExportButton() {}
       updateHeaderButtons();
     };
     header.appendChild(collapseBtn);
+
+    const hubBtn = document.createElement('div');
+    hubBtn.className = 'acct-dock-hub-btn';
+    hubBtn.title = t.openAccountHubTooltip;
+    hubBtn.innerHTML = '⊞';
+    hubBtn.onclick = (e) => {
+      e.stopPropagation();
+      openAccountHub();
+    };
+    header.appendChild(hubBtn);
 
     const pinBtn = document.createElement('div');
     pinBtn.className = 'acct-dock-pin-btn' + (dockState.pinned ? ' pinned' : '');
@@ -2027,6 +3302,8 @@ function injectExportButton() {}
     if (newState) {
       dockState.profiles = newState.profiles || [];
       dockState.activeProfileId = newState.activeProfileId || 'default';
+      dockState.accountGroups = newState.accountGroups || ['默认群组'];
+      dockState.feishu = newState.feishu || null;
       if (typeof newState.dockPinned === 'boolean') {
         dockState.pinned = newState.dockPinned;
         if (dockState.pinned) {
@@ -2034,6 +3311,15 @@ function injectExportButton() {}
         }
       }
       renderDock();
+      if (dockState.hubOpen) {
+        renderAccountHub();
+      }
+    }
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && dockState.hubOpen) {
+      closeAccountHub();
     }
   });
 
@@ -2044,6 +3330,8 @@ function injectExportButton() {}
       if (res) {
         dockState.profiles = res.profiles || [];
         dockState.activeProfileId = res.activeProfileId || 'default';
+        dockState.accountGroups = res.accountGroups || ['默认群组'];
+        dockState.feishu = res.feishu || null;
         if (typeof res.dockPinned === 'boolean') {
           dockState.pinned = res.dockPinned;
           if (dockState.pinned) {
@@ -2052,6 +3340,9 @@ function injectExportButton() {}
         }
       }
       renderDock();
+      if (dockState.hubOpen) {
+        renderAccountHub();
+      }
     }).catch(() => {
       renderDock();
     });

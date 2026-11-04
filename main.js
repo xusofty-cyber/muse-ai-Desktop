@@ -2,6 +2,7 @@ const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeI
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { defaultFeishuConfig, executeFeishuSync, setupFeishuAutoSync } = require('./feishu-sync');
 
 // ---- 核心加固 1 & 2: 先定身份/UserData 再拿单例锁 + 统一 UserData 目录 -------------
 // 顺序要点 (v1.5.15 修正评审 P1-11): Chromium 单例锁绑定获取时刻的 userData
@@ -403,8 +404,20 @@ function defaultState() {
     window: {},
     windowByProfile: {},
     site: 'muse',
-    profiles: [{ id: 'default', name: '账号 1', color: AVATAR_COLORS[0] }],
+    profiles: [{
+      id: 'default',
+      name: '账号 1',
+      color: AVATAR_COLORS[0],
+      group: '默认群组',
+      purpose: '',
+      usagePercent: 0,
+      usageText: '',
+      tokenResetAt: '',
+      status: 'normal',
+    }],
     activeProfileId: 'default',
+    accountGroups: ['默认群组'],
+    feishu: defaultFeishuConfig(),
     hotkeys: { ...DEFAULT_HOTKEYS },
     automation: defaultAutomation(),
     proxy: defaultProxy(),
@@ -462,6 +475,23 @@ function sanitizeAndMergeState(raw) {
     merged.proxy.mode = 'system';
     merged.proxy.enabled = false;
   }
+  // 群组与飞书多维表格同步配置合并
+  merged.accountGroups = Array.isArray(raw.accountGroups) && raw.accountGroups.length > 0
+    ? [...new Set(raw.accountGroups.filter((g) => typeof g === 'string' && g.trim()))]
+    : ['默认群组'];
+  if (!merged.accountGroups.includes('默认群组')) {
+    merged.accountGroups.unshift('默认群组');
+  }
+
+  merged.feishu = {
+    ...defaultFeishuConfig(),
+    ...(raw.feishu || {}),
+    fieldMap: {
+      ...defaultFeishuConfig().fieldMap,
+      ...((raw.feishu && raw.feishu.fieldMap) || {}),
+    },
+  };
+
   // profiles 合法性校验 (v1.5.16, 评审 P2): 此前只补颜色, 不查 id。空/重复/
   // 非字符串 id 会让多个账号映射到同一 persist:muse-undefined 分区且不可拆分。
   // 现在过滤非法与重复 id (保留首个), 全部非法时回退默认账号。
@@ -476,10 +506,26 @@ function sanitizeAndMergeState(raw) {
       .map((prof, idx) => ({
         ...prof,
         color: prof.color || AVATAR_COLORS[idx % AVATAR_COLORS.length],
+        group: typeof prof.group === 'string' && prof.group.trim() ? prof.group.trim() : '默认群组',
+        purpose: typeof prof.purpose === 'string' ? prof.purpose : '',
+        usagePercent: typeof prof.usagePercent === 'number' ? Math.max(0, Math.min(100, Math.round(prof.usagePercent))) : 0,
+        usageText: typeof prof.usageText === 'string' ? prof.usageText : '',
+        tokenResetAt: typeof prof.tokenResetAt === 'string' ? prof.tokenResetAt : '',
+        status: ['normal', 'warning', 'exhausted', 'idle'].includes(prof.status) ? prof.status : 'normal',
       }));
   }
   if (!Array.isArray(merged.profiles) || merged.profiles.length === 0) {
-    merged.profiles = [{ id: 'default', name: '账号 1', color: AVATAR_COLORS[0] }];
+    merged.profiles = [{
+      id: 'default',
+      name: '账号 1',
+      color: AVATAR_COLORS[0],
+      group: '默认群组',
+      purpose: '',
+      usagePercent: 0,
+      usageText: '',
+      tokenResetAt: '',
+      status: 'normal',
+    }];
   }
   // windowByProfile 只保留现存账号的条目, 防已删账号的几何记录无限堆积
   {
@@ -1211,6 +1257,8 @@ function broadcastAccountChange() {
     profiles: state.profiles,
     activeProfileId: state.activeProfileId,
     dockPinned: !!(state.ui && state.ui.dockPinned),
+    accountGroups: state.accountGroups || ['默认群组'],
+    feishu: state.feishu || defaultFeishuConfig(),
   };
   for (const win of profileWindows.values()) {
     if (win && !win.isDestroyed()) {
@@ -1780,7 +1828,7 @@ function nextAccount() {
   switchAccount(state.profiles[nextIdx].id);
 }
 
-function addProfile(customName) {
+function addProfile(customName, customGroup, customPurpose) {
   // 账号 id 必须全局唯一 (v1.5.16, 评审 P2): 此前用 acc_${Date.now()}, 托盘与
   // 页面两入口同毫秒各触发一次即撞号, 两账号共用同一 partition 完全串号,
   // 删其一还会清掉另一个。改用 randomUUID 并做唯一性兜底。
@@ -1790,8 +1838,24 @@ function addProfile(customName) {
   }
   const color = AVATAR_COLORS[state.profiles.length % AVATAR_COLORS.length];
   const name = (customName && customName.trim()) || `账号 ${state.profiles.length + 1}`;
-  const profile = { id, name, color };
+  const group = (customGroup && customGroup.trim()) || (state.accountGroups && state.accountGroups[0]) || '默认群组';
+  const purpose = (customPurpose && customPurpose.trim()) || '';
+  const profile = {
+    id,
+    name,
+    color,
+    group,
+    purpose,
+    usagePercent: 0,
+    usageText: '',
+    tokenResetAt: '',
+    status: 'normal',
+    updatedAt: Date.now(),
+  };
   state.profiles.push(profile);
+  if (state.accountGroups && !state.accountGroups.includes(group)) {
+    state.accountGroups.push(group);
+  }
   saveState();
   setupDownloadHandler(id);
   setupPermissions(id);
@@ -1799,6 +1863,7 @@ function addProfile(customName) {
   applyProxyToSession(session.fromPartition(partitionFor(id)));
   switchAccount(id);
   notify('新增账号', `${profile.name} 已创建，已就绪独立会话环境。`);
+  return profile;
 }
 
 // ---- 会话清除工具 (v1.5.16, 评审 P1-13) -------------------------------------
@@ -2255,6 +2320,8 @@ ipcMain.handle('account:get-state', (e) => (denyUntrusted(e) ? undefined : ({
   profiles: state.profiles,
   activeProfileId: state.activeProfileId,
   dockPinned: !!(state.ui && state.ui.dockPinned),
+  accountGroups: state.accountGroups || ['默认群组'],
+  feishu: state.feishu || defaultFeishuConfig(),
 })));
 
 ipcMain.handle('dock:set-pinned', (e, { pinned }) => {
@@ -2272,10 +2339,101 @@ ipcMain.handle('account:switch', (e, { id }) => {
   return { ok: true };
 });
 
-ipcMain.handle('account:add', (e, { name }) => {
+ipcMain.handle('account:add', (e, { name, group, purpose }) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
-  addProfile(name);
-  return { ok: true };
+  const prof = addProfile(name, group, purpose);
+  return { ok: true, profile: prof };
+});
+
+ipcMain.handle('account:update-meta', (e, { id, name, group, purpose, usagePercent, usageText, tokenResetAt, status }) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const p = state.profiles.find((item) => item.id === id);
+  if (!p) return { ok: false, error: 'Account not found' };
+
+  if (typeof name === 'string' && name.trim()) p.name = name.trim();
+  if (typeof group === 'string' && group.trim()) {
+    p.group = group.trim();
+    if (!state.accountGroups.includes(p.group)) {
+      state.accountGroups.push(p.group);
+    }
+  }
+  if (typeof purpose === 'string') p.purpose = purpose.trim();
+  if (typeof usagePercent === 'number') {
+    p.usagePercent = Math.max(0, Math.min(100, Math.round(usagePercent)));
+  }
+  if (typeof usageText === 'string') p.usageText = usageText.trim();
+  if (typeof tokenResetAt === 'string') p.tokenResetAt = tokenResetAt.trim();
+  if (['normal', 'warning', 'exhausted', 'idle'].includes(status)) {
+    p.status = status;
+  }
+  p.updatedAt = Date.now();
+
+  saveState();
+  buildTrayMenu();
+  broadcastAccountChange();
+  return { ok: true, profile: p };
+});
+
+ipcMain.handle('account:set-groups', (e, { groups }) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!Array.isArray(groups)) return { ok: false, error: 'groups must be an array' };
+  const cleanGroups = [...new Set(groups.filter((g) => typeof g === 'string' && g.trim()))];
+  if (!cleanGroups.includes('默认群组')) cleanGroups.unshift('默认群组');
+  state.accountGroups = cleanGroups;
+
+  for (const prof of state.profiles) {
+    if (!state.accountGroups.includes(prof.group)) {
+      prof.group = '默认群组';
+    }
+  }
+
+  saveState();
+  broadcastAccountChange();
+  return { ok: true, groups: state.accountGroups };
+});
+
+ipcMain.handle('feishu:get-config', (e) => {
+  if (denyUntrusted(e)) return undefined;
+  return state.feishu || defaultFeishuConfig();
+});
+
+ipcMain.handle('feishu:save-config', (e, config) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!config || typeof config !== 'object') return { ok: false, error: 'Invalid config' };
+
+  state.feishu = {
+    ...defaultFeishuConfig(),
+    ...(state.feishu || {}),
+    ...config,
+    fieldMap: {
+      ...defaultFeishuConfig().fieldMap,
+      ...((state.feishu && state.feishu.fieldMap) || {}),
+      ...(config.fieldMap || {}),
+    },
+  };
+
+  saveState();
+  setupFeishuAutoSync(state.feishu, () => state.profiles, () => {
+    saveState();
+    buildTrayMenu();
+    broadcastAccountChange();
+  });
+  broadcastAccountChange();
+  return { ok: true, feishu: state.feishu };
+});
+
+ipcMain.handle('feishu:sync-now', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  try {
+    const res = await executeFeishuSync(state.feishu, state.profiles, () => {
+      saveState();
+      buildTrayMenu();
+      broadcastAccountChange();
+    });
+    return res;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });
 
 ipcMain.handle('account:rename', (e, { id, name }) => {
@@ -3404,6 +3562,13 @@ app.whenReady().then(async () => {
   });
   setupAutoUpdate();
   startAutoLockTimer();
+  if (state.feishu && state.feishu.enabled && state.feishu.autoSync) {
+    setupFeishuAutoSync(state.feishu, () => state.profiles, () => {
+      saveState();
+      buildTrayMenu();
+      broadcastAccountChange();
+    });
+  }
   app.on('browser-window-focus', () => recordUserActivity());
   if (state.lock && state.lock.enabled && state.lock.hash) {
     lockScreen();
