@@ -3360,6 +3360,10 @@ function injectExportButton() {}
     }
   });
 
+  ipcRenderer.on('account:open-hub', () => {
+    openAccountHub();
+  });
+
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && dockState.hubOpen) {
       closeAccountHub();

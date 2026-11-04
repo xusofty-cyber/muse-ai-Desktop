@@ -130,6 +130,9 @@ const I18N_MAIN = {
     hintMedia: 'Approve microphone, camera, audio, and media permission requests',
     showOnScreenWidget: 'Show On-Screen Widget',
     settingsKeybinds: 'Settings & Keybinds…',
+    openAccountHub: '⊞ Open Account Hub (Grid View)…',
+    sessionTools: 'Session & Media Tools',
+    preferencesMenu: 'Preferences & Settings',
     profileMenu: (name) => `Profile: ${name}`,
     addProfile: 'Add profile…',
     signOutFrom: (site) => `Sign out of ${site}…`,
@@ -191,6 +194,9 @@ const I18N_MAIN = {
     hintMedia: '自动批准麦克风、摄像头与媒体访问权限',
     showOnScreenWidget: '显示屏幕悬浮组件',
     settingsKeybinds: '自动化与快捷键设置…',
+    openAccountHub: '⊞ 打开账号总览看板 (九宫格全景)…',
+    sessionTools: '会话与多媒体工具',
+    preferencesMenu: '偏好与系统设置',
     profileMenu: (name) => `当前账号: ${name}`,
     addProfile: '添加新账号…',
     signOutFrom: (site) => `退出 ${site} 登录…`,
@@ -731,7 +737,14 @@ const webPrefs = () => ({
 
 function attachZoomShortcuts(win) {
   win.webContents.on('before-input-event', (e, input) => {
-    if (!(input.control && !input.meta && !input.alt && input.type === 'keyDown')) return;
+    if (input.type !== 'keyDown') return;
+    if ((input.key === 'q' || input.key === 'Q') && (input.control || input.meta) && !input.alt) {
+      e.preventDefault();
+      app.quitting = true;
+      app.quit();
+      return;
+    }
+    if (!(input.control && !input.meta && !input.alt)) return;
     const z = win.webContents.getZoomFactor();
     if (input.key === '=' || input.key === '+') {
       win.webContents.setZoomFactor(Math.min(2.0, +(z + 0.1).toFixed(2)));
@@ -3379,16 +3392,27 @@ function buildTrayMenu() {
       label: lang === 'zh-CN' ? `🔒 锁定客户端  (${prettyHotkey(state.hotkeys.lock)})` : `🔒 Lock Client  (${prettyHotkey(state.hotkeys.lock)})`,
       click: () => lockScreen(),
     }] : []),
+    { type: 'separator' },
     {
-      label: t.multiAccounts,
+      label: lang === 'zh-CN' ? `账号管理 (当前: ${activeProfile().name})` : `Accounts (Current: ${activeProfile().name})`,
       submenu: [
+        {
+          label: t.openAccountHub,
+          click: () => {
+            showMainWindow();
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('account:open-hub');
+            }
+          },
+        },
+        { type: 'separator' },
         ...profileItems,
         { type: 'separator' },
         { label: t.nextAccount(prettyHotkey(state.hotkeys.metaAccount)), click: nextAccount },
         { label: t.addAccount, click: () => addProfile() },
+        { label: t.signOutFrom(currentSite().name), click: signOut },
       ],
     },
-    { type: 'separator' },
     {
       label: t.automationMenu,
       submenu: [
@@ -3472,60 +3496,62 @@ function buildTrayMenu() {
         { label: t.settingsKeybinds, click: openHotkeySettings },
       ],
     },
-    { type: 'separator' },
     {
-      label: t.profileMenu(activeProfile().name),
+      label: t.sessionTools,
       submenu: [
-        ...profileItems,
+        { label: t.saveClipboard, click: saveClipboardAsFile },
+        { label: t.exportChat(prettyHotkey(state.hotkeys.export)), click: exportChat },
         { type: 'separator' },
-        { label: t.addProfile, click: addProfile },
-        { label: t.signOutFrom(currentSite().name), click: signOut },
+        { label: t.muteMic(prettyHotkey(state.hotkeys.mic)), click: toggleMic },
+        { label: t.muteSpeaker(prettyHotkey(state.hotkeys.speaker)), click: toggleSpeaker },
       ],
     },
-    { label: t.saveClipboard, click: saveClipboardAsFile },
-    { label: t.exportChat(prettyHotkey(state.hotkeys.export)), click: exportChat },
-    { type: 'separator' },
-    { label: t.muteMic(prettyHotkey(state.hotkeys.mic)), click: toggleMic },
-    { label: t.muteSpeaker(prettyHotkey(state.hotkeys.speaker)), click: toggleSpeaker },
-    { label: t.customizeHotkeys, click: () => openHotkeySettings() },
-    { label: t.networkProxy, click: () => openHotkeySettings('tab-proxy') },
-    { label: t.resetGoogleSession, click: promptResetGoogleSession },
     { type: 'separator' },
     {
-      label: t.appearance(state.theme === 'light' ? t.lightMode : state.theme === 'system' ? t.systemMode : t.darkMode),
+      label: t.preferencesMenu,
       submenu: [
-        { label: t.darkMode, type: 'radio', checked: state.theme === 'dark', click: () => setAppTheme('dark') },
-        { label: t.lightMode, type: 'radio', checked: state.theme === 'light', click: () => setAppTheme('light') },
-        { label: t.systemMode, type: 'radio', checked: state.theme === 'system', click: () => setAppTheme('system') },
+        { label: t.customizeHotkeys, click: () => openHotkeySettings() },
+        { label: t.networkProxy, click: () => openHotkeySettings('tab-proxy') },
+        { label: t.resetGoogleSession, click: promptResetGoogleSession },
+        { type: 'separator' },
+        {
+          label: t.appearance(state.theme === 'light' ? t.lightMode : state.theme === 'system' ? t.systemMode : t.darkMode),
+          submenu: [
+            { label: t.darkMode, type: 'radio', checked: state.theme === 'dark', click: () => setAppTheme('dark') },
+            { label: t.lightMode, type: 'radio', checked: state.theme === 'light', click: () => setAppTheme('light') },
+            { label: t.systemMode, type: 'radio', checked: state.theme === 'system', click: () => setAppTheme('system') },
+          ],
+        },
+        {
+          label: t.language,
+          submenu: [
+            { label: t.langEn, type: 'radio', checked: (state.locale || 'en') === 'en', click: () => setAppLocale('en') },
+            { label: t.langZh, type: 'radio', checked: state.locale === 'zh-CN', click: () => setAppLocale('zh-CN') },
+          ],
+        },
+        {
+          label: t.autoHideButtons,
+          type: 'checkbox',
+          checked: !!(state.ui && state.ui.autoHideButtons),
+          click: (item) => setUIAutoHide(item.checked),
+        },
+        { type: 'separator' },
+        {
+          label: t.runOnStartup,
+          type: 'checkbox',
+          checked: loginSettings.openAtLogin,
+          click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
+        },
+        { label: t.checkUpdates, click: () => checkForUpdates(true) },
+        ...(updateDownloaded
+          ? [{ label: t.restartInstall, click: installUpdateAndRestart }]
+          : []),
       ],
     },
-    {
-      label: t.language,
-      submenu: [
-        { label: t.langEn, type: 'radio', checked: (state.locale || 'en') === 'en', click: () => setAppLocale('en') },
-        { label: t.langZh, type: 'radio', checked: state.locale === 'zh-CN', click: () => setAppLocale('zh-CN') },
-      ],
-    },
-    {
-      label: t.autoHideButtons,
-      type: 'checkbox',
-      checked: !!(state.ui && state.ui.autoHideButtons),
-      click: (item) => setUIAutoHide(item.checked),
-    },
-    { type: 'separator' },
-    {
-      label: t.runOnStartup,
-      type: 'checkbox',
-      checked: loginSettings.openAtLogin,
-      click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
-    },
-    { label: t.checkUpdates, click: () => checkForUpdates(true) },
-    ...(updateDownloaded
-      ? [{ label: t.restartInstall, click: installUpdateAndRestart }]
-      : []),
     { type: 'separator' },
     {
       label: t.quitMuse,
+      accelerator: 'CmdOrCtrl+Q',
       click: () => {
         app.quitting = true;
         app.quit();
