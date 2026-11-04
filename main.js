@@ -2,7 +2,7 @@ const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeI
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { defaultFeishuConfig, executeFeishuSync, setupFeishuAutoSync } = require('./feishu-sync');
+const { defaultFeishuConfig, detectFeishuCli, executeFeishuSync, setupFeishuAutoSync } = require('./feishu-sync');
 
 // ---- 核心加固 1 & 2: 先定身份/UserData 再拿单例锁 + 统一 UserData 目录 -------------
 // 顺序要点 (v1.5.15 修正评审 P1-11): Chromium 单例锁绑定获取时刻的 userData
@@ -2395,6 +2395,11 @@ ipcMain.handle('account:set-groups', (e, { groups }) => {
 ipcMain.handle('feishu:get-config', (e) => {
   if (denyUntrusted(e)) return undefined;
   return state.feishu || defaultFeishuConfig();
+});
+
+ipcMain.handle('feishu:detect-cli', async (e, customCliPath) => {
+  if (denyUntrusted(e)) return { available: false, error: 'untrusted sender' };
+  return await detectFeishuCli(customCliPath || (state.feishu && state.feishu.customCliPath));
 });
 
 ipcMain.handle('feishu:save-config', (e, config) => {

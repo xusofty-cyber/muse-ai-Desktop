@@ -1,10 +1,13 @@
-// feishu-sync.js - 飞书多维表格 (Bitable) 账号元数据与用量定时同步服务
+// feishu-sync.js - 飞书多维表格 (Bitable) 账号元数据与用量定时同步服务 (OpenAPI + CLI 双模驱动)
 const https = require('https');
 const { URL } = require('url');
+const { execFile } = require('child_process');
 
 function defaultFeishuConfig() {
   return {
     enabled: false,
+    syncMode: 'auto', // 'auto' (优先尝试CLI，未安装则无缝走OpenAPI) | 'api' (纯OpenAPI) | 'cli' (纯CLI)
+    customCliPath: '',
     appId: '',
     appSecret: '',
     appToken: '',
@@ -21,6 +24,49 @@ function defaultFeishuConfig() {
       group: '所属群组',
     },
   };
+}
+
+// 探测系统飞书 CLI 是否安装并可用
+function detectFeishuCli(customCliPath) {
+  return new Promise((resolve) => {
+    const candidates = customCliPath ? [customCliPath] : (process.platform === 'win32' ? ['feishu.cmd', 'feishu.exe', 'lark.cmd', 'lark.exe'] : ['feishu', 'lark']);
+    let idx = 0;
+
+    function tryNext() {
+      if (idx >= candidates.length) {
+        return resolve({ available: false, path: null, error: '未检测到系统安装的飞书 CLI 命令' });
+      }
+      const bin = candidates[idx++];
+      execFile(bin, ['--version'], { timeout: 3000 }, (err, stdout) => {
+        if (!err && stdout && stdout.trim()) {
+          resolve({ available: true, path: bin, version: stdout.trim() });
+        } else {
+          tryNext();
+        }
+      });
+    }
+    tryNext();
+  });
+}
+
+// 通过飞书 CLI 执行多维表格记录拉取
+function fetchRecordsViaCli(cliPath, appToken, tableId) {
+  return new Promise((resolve, reject) => {
+    const bin = cliPath || (process.platform === 'win32' ? 'feishu.cmd' : 'feishu');
+    const args = ['bitable', 'records', 'list', '--app-token', appToken.trim(), '--table-id', tableId.trim(), '--json'];
+    execFile(bin, args, { timeout: 20000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
+        return reject(new Error(`飞书 CLI 运行异常: ${stderr ? stderr.trim() : err.message}`));
+      }
+      try {
+        const parsed = JSON.parse(stdout);
+        const items = parsed.items || (parsed.data && parsed.data.items) || (Array.isArray(parsed) ? parsed : []);
+        resolve(items);
+      } catch (parseErr) {
+        reject(new Error(`飞书 CLI 返回的 JSON 数据解析失败: ${parseErr.message}`));
+      }
+    });
+  });
 }
 
 // 通用 HTTPS 请求封装
@@ -187,12 +233,42 @@ function parseUsageValue(raw) {
 
 // 3. 执行单次同步，将飞书记录匹配更新至本地 profiles
 async function executeFeishuSync(feishuConfig, currentProfiles, saveCallback) {
-  if (!feishuConfig || !feishuConfig.appId || !feishuConfig.appSecret || !feishuConfig.appToken || !feishuConfig.tableId) {
-    return { ok: false, error: '飞书配置不完整，请先在配置中心填写 App ID / Secret / Table ID' };
+  if (!feishuConfig || !feishuConfig.appToken || !feishuConfig.tableId) {
+    return { ok: false, error: '缺少飞书多维表格 Base Token 或 Table ID' };
   }
 
-  const token = await fetchTenantAccessToken(feishuConfig.appId, feishuConfig.appSecret);
-  const records = await fetchBitableRecords(token, feishuConfig.appToken, feishuConfig.tableId);
+  const syncMode = feishuConfig.syncMode || 'auto';
+  let records = [];
+  let usedEngine = 'openapi';
+
+  // 1. 如果配置了 CLI 模式或 auto 模式，尝试优先走 CLI
+  if (syncMode === 'cli' || syncMode === 'auto') {
+    const cliCheck = await detectFeishuCli(feishuConfig.customCliPath);
+    if (cliCheck.available) {
+      try {
+        console.log(`[FeishuSync] Using Feishu CLI at ${cliCheck.path} (${cliCheck.version})`);
+        records = await fetchRecordsViaCli(cliCheck.path, feishuConfig.appToken, feishuConfig.tableId);
+        usedEngine = 'cli';
+      } catch (cliErr) {
+        console.warn(`[FeishuSync] CLI execution failed: ${cliErr.message}`);
+        if (syncMode === 'cli') {
+          return { ok: false, error: `飞书 CLI 执行失败: ${cliErr.message}` };
+        }
+      }
+    } else if (syncMode === 'cli') {
+      return { ok: false, error: `未找到飞书 CLI 命令，请先安装飞书开发者工具或切换为 OpenAPI 模式` };
+    }
+  }
+
+  // 2. 如果 CLI 未获取到记录，且允许 API 模式，则走标准 OpenAPI
+  if (records.length === 0 && (syncMode === 'api' || syncMode === 'auto')) {
+    if (!feishuConfig.appId || !feishuConfig.appSecret) {
+      return { ok: false, error: '飞书配置不完整，缺少自建应用的 App ID 或 App Secret' };
+    }
+    const token = await fetchTenantAccessToken(feishuConfig.appId, feishuConfig.appSecret);
+    records = await fetchBitableRecords(token, feishuConfig.appToken, feishuConfig.tableId);
+    usedEngine = 'openapi';
+  }
 
   const fieldMap = {
     name: (feishuConfig.fieldMap && feishuConfig.fieldMap.name) || '账号名称',
@@ -249,7 +325,7 @@ async function executeFeishuSync(feishuConfig, currentProfiles, saveCallback) {
   }
 
   feishuConfig.lastSyncTime = new Date().toISOString();
-  feishuConfig.lastSyncStatus = `成功同步：找到 ${records.length} 条表格记录，更新了 ${updatedCount} 个匹配账号`;
+  feishuConfig.lastSyncStatus = `成功通过 [${usedEngine === 'cli' ? '飞书 CLI' : '飞书 OpenAPI'}] 同步：共 ${records.length} 条记录，更新了 ${updatedCount} 个匹配账号`;
 
   if (typeof saveCallback === 'function') {
     saveCallback();
@@ -257,6 +333,7 @@ async function executeFeishuSync(feishuConfig, currentProfiles, saveCallback) {
 
   return {
     ok: true,
+    engine: usedEngine,
     totalRecords: records.length,
     updatedProfiles: updatedCount,
     lastSyncTime: feishuConfig.lastSyncTime,
@@ -294,6 +371,8 @@ function setupFeishuAutoSync(feishuConfig, getProfilesFn, onSaveAndBroadcast) {
 
 module.exports = {
   defaultFeishuConfig,
+  detectFeishuCli,
+  fetchRecordsViaCli,
   fetchTenantAccessToken,
   fetchBitableRecords,
   parseUsageValue,

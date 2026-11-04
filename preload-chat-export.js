@@ -2755,6 +2755,44 @@ function injectExportButton() {}
       return { row, input };
     };
 
+    // 同步引擎模式选择 (CLI / OpenAPI 双模)
+    const modeRow = document.createElement('div');
+    modeRow.className = 'hub-form-row';
+    modeRow.innerHTML = `<label class="hub-form-label">同步引擎模式 (Feishu Engine)</label>`;
+    const modeSelect = document.createElement('select');
+    modeSelect.className = 'hub-form-select';
+    modeSelect.innerHTML = `
+      <option value="auto">自适应 (优先飞书 CLI，未安装则走 OpenAPI)</option>
+      <option value="api">纯飞书 OpenAPI (填 App ID / Secret)</option>
+      <option value="cli">纯飞书 CLI (调用系统已登录凭证)</option>
+    `;
+    modeSelect.value = cfg.syncMode || 'auto';
+    modeRow.appendChild(modeSelect);
+
+    // 本机 CLI 状态检测条
+    const cliStatusBox = document.createElement('div');
+    cliStatusBox.style.fontSize = '11.5px';
+    cliStatusBox.style.padding = '6px 10px';
+    cliStatusBox.style.borderRadius = '6px';
+    cliStatusBox.style.background = 'rgba(59, 130, 246, 0.12)';
+    cliStatusBox.style.color = '#93c5fd';
+    cliStatusBox.style.marginBottom = '10px';
+    cliStatusBox.textContent = '正在检测系统飞书 CLI 状态...';
+
+    ipcRenderer.invoke('feishu:detect-cli', cfg.customCliPath).then((res) => {
+      if (res && res.available) {
+        cliStatusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+        cliStatusBox.style.color = '#34d399';
+        cliStatusBox.textContent = `✓ 已检测到本机飞书 CLI: ${res.path} (${res.version})`;
+      } else {
+        cliStatusBox.style.background = 'rgba(255, 255, 255, 0.05)';
+        cliStatusBox.style.color = '#94a3b8';
+        cliStatusBox.textContent = `ℹ️ 未检测到系统飞书 CLI（将自动使用内置纯 OpenAPI 引擎）`;
+      }
+    }).catch(() => {});
+
+    const cliPathF = createField('自定义飞书 CLI 路径 (可选，留空则自动探测)', cfg.customCliPath || '', '如: /usr/local/bin/feishu 或 C:\\...\\feishu.exe');
+
     const appIdF = createField(t.feishuAppId, cfg.appId, 'cli_a1b2c3d4e5f6');
     const secretF = createField(t.feishuAppSecret, cfg.appSecret, '••••••••••••••••', 'password');
     const tokenF = createField(t.feishuAppToken, cfg.appToken, 'bascnXXXXXXXXXXXX');
@@ -2814,6 +2852,8 @@ function injectExportButton() {}
     saveAndSyncBtn.onclick = async () => {
       const newConfig = {
         enabled: true,
+        syncMode: modeSelect.value || 'auto',
+        customCliPath: cliPathF.input.value.trim(),
         appId: appIdF.input.value.trim(),
         appSecret: secretF.input.value.trim(),
         appToken: tokenF.input.value.trim(),
@@ -2850,6 +2890,9 @@ function injectExportButton() {}
     actions.appendChild(saveAndSyncBtn);
 
     card.appendChild(titleEl);
+    card.appendChild(modeRow);
+    card.appendChild(cliStatusBox);
+    card.appendChild(cliPathF.row);
     card.appendChild(appIdF.row);
     card.appendChild(secretF.row);
     card.appendChild(tokenF.row);
