@@ -2322,7 +2322,6 @@ function injectExportButton() {}
         const matchPurpose = (p.purpose || '').toLowerCase().includes(kw);
         return matchName || matchPurpose;
       });
-      });
 
       if (filtered.length === 0) {
         const empty = document.createElement('div');
