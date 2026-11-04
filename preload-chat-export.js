@@ -1443,20 +1443,51 @@ function injectExportButton() {}
       }
       .acct-dock-item {
         position: relative;
-        width: 34px;
-        height: 34px;
+        width: 38px;
+        height: 38px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: grab;
         color: #fff;
-        font-size: 13px;
-        font-weight: 600;
-        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
+        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
         flex-shrink: 0;
         user-select: none;
         -webkit-user-drag: element;
+      }
+      .acct-dock-ring {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 38px;
+        height: 38px;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .acct-dock-ring-bg {
+        stroke: rgba(255, 255, 255, 0.16);
+      }
+      .acct-dock-ring-progress {
+        transition: stroke-dashoffset 0.4s ease, stroke 0.3s ease;
+      }
+      [data-ui-theme="light"] .acct-dock-ring-bg {
+        stroke: rgba(0, 0, 0, 0.12) !important;
+      }
+      .acct-dock-avatar {
+        position: relative;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        z-index: 2;
+        transition: box-shadow 0.2s ease;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
       }
       .acct-dock-item:active {
         cursor: grabbing;
@@ -1493,19 +1524,20 @@ function injectExportButton() {}
       .acct-dock-item:hover {
         transform: scale(1.1);
       }
-      .acct-dock-item.active {
-        box-shadow: 0 0 0 2.5px #fff, 0 4px 12px rgba(0, 0, 0, 0.4);
+      .acct-dock-item.active .acct-dock-avatar {
+        box-shadow: 0 0 0 1.5px #fff, 0 2px 8px rgba(0, 0, 0, 0.5);
       }
       .acct-dock-item.active::after {
         content: '';
         position: absolute;
-        right: -2px;
-        bottom: -2px;
+        right: 0px;
+        bottom: 0px;
         width: 8px;
         height: 8px;
         background: #10b981;
         border: 2px solid #141416;
         border-radius: 50%;
+        z-index: 3;
       }
       .acct-dock-tooltip {
         position: absolute;
@@ -2613,45 +2645,19 @@ function injectExportButton() {}
       return { row, input };
     };
 
-    // 同步引擎模式选择 (内置集成 CLI / 系统 CLI / OpenAPI)
-    const modeRow = document.createElement('div');
-    modeRow.className = 'hub-form-row';
-    modeRow.innerHTML = `<label class="hub-form-label">同步引擎模式 (Feishu Engine)</label>`;
-    const modeSelect = document.createElement('select');
-    modeSelect.className = 'hub-form-select';
-    modeSelect.innerHTML = `
-      <option value="auto">内置集成飞书 CLI (推荐，无需安装任何系统工具)</option>
-      <option value="api">纯飞书 OpenAPI (填 App ID / Secret)</option>
-      <option value="cli">系统外部飞书 CLI (指定自定义路径)</option>
-    `;
-    modeSelect.value = cfg.syncMode || 'auto';
-    modeRow.appendChild(modeSelect);
-
-    // 本机 CLI 状态检测条
+    // 内置飞书引擎状态条
     const cliStatusBox = document.createElement('div');
-    cliStatusBox.style.fontSize = '11.5px';
-    cliStatusBox.style.padding = '7px 12px';
-    cliStatusBox.style.borderRadius = '6px';
-    cliStatusBox.style.background = 'rgba(59, 130, 246, 0.12)';
-    cliStatusBox.style.color = '#93c5fd';
-    cliStatusBox.style.marginBottom = '10px';
-    cliStatusBox.textContent = '正在检测飞书 CLI 状态...';
-
-    ipcRenderer.invoke('feishu:detect-cli', cfg.customCliPath).then((res) => {
-      if (res && res.available) {
-        cliStatusBox.style.background = 'rgba(16, 185, 129, 0.15)';
-        cliStatusBox.style.color = '#34d399';
-        cliStatusBox.textContent = res.isEmbedded
-          ? `✓ 飞书 CLI: 已集成至当前客户端（内置全功能引擎，无需系统安装）`
-          : `✓ 已检测到系统外部飞书 CLI: ${res.path} (${res.version})`;
-      } else {
-        cliStatusBox.style.background = 'rgba(255, 255, 255, 0.05)';
-        cliStatusBox.style.color = '#94a3b8';
-        cliStatusBox.textContent = `ℹ️ 使用内置飞书引擎（零外部依赖）`;
-      }
-    }).catch(() => {});
-
-    const cliPathF = createField('自定义系统飞书 CLI 路径 (可选，留空则默认使用内置集成引擎)', cfg.customCliPath || '', '如: /usr/local/bin/feishu 或 C:\\...\\feishu.exe');
+    cliStatusBox.style.fontSize = '12px';
+    cliStatusBox.style.padding = '8px 12px';
+    cliStatusBox.style.borderRadius = '8px';
+    cliStatusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+    cliStatusBox.style.color = '#34d399';
+    cliStatusBox.style.border = '1px solid rgba(16, 185, 129, 0.25)';
+    cliStatusBox.style.marginBottom = '12px';
+    cliStatusBox.style.display = 'flex';
+    cliStatusBox.style.alignItems = 'center';
+    cliStatusBox.style.gap = '8px';
+    cliStatusBox.innerHTML = '<span>⚡</span><span><strong>飞书 CLI:</strong> 已内置集成 (零系统依赖，免安装任何外部工具)</span>';
 
     const appIdF = createField(t.feishuAppId, cfg.appId, 'cli_a1b2c3d4e5f6');
     const secretF = createField(t.feishuAppSecret, cfg.appSecret, '••••••••••••••••', 'password');
@@ -2685,7 +2691,6 @@ function injectExportButton() {}
     const mapPurposeF = createField('主要用途列', fm.purpose || '主要用途');
     const mapUsageF = createField('当前用量列', fm.usage || '当前用量');
     const mapResetF = createField('重置时间列', fm.tokenReset || '重置时间');
-    const mapGroupF = createField('所属群组列', fm.group || '所属群组');
 
     // 状态提示
     const statusBox = document.createElement('div');
@@ -2712,8 +2717,7 @@ function injectExportButton() {}
     saveAndSyncBtn.onclick = async () => {
       const newConfig = {
         enabled: true,
-        syncMode: modeSelect.value || 'auto',
-        customCliPath: cliPathF.input.value.trim(),
+        syncMode: 'auto',
         appId: appIdF.input.value.trim(),
         appSecret: secretF.input.value.trim(),
         appToken: tokenF.input.value.trim(),
@@ -2749,9 +2753,7 @@ function injectExportButton() {}
     actions.appendChild(saveAndSyncBtn);
 
     card.appendChild(titleEl);
-    card.appendChild(modeRow);
     card.appendChild(cliStatusBox);
-    card.appendChild(cliPathF.row);
     card.appendChild(appIdF.row);
     card.appendChild(secretF.row);
     card.appendChild(tokenF.row);
@@ -3000,8 +3002,33 @@ function injectExportButton() {}
           try { item.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
         }, 50);
       }
-      item.style.backgroundColor = p.color || '#3b82f6';
-      item.textContent = getInitials(p.name);
+
+      // 用量外环计算 (SVG 环形进度条，半径 17，周长 106.81)
+      const pct = Math.max(0, Math.min(100, typeof p.usagePercent === 'number' ? p.usagePercent : 0));
+      let ringColor = '#10b981'; // 默认健康翠绿 (<70%)
+      if (pct >= 90) {
+        ringColor = '#ef4444'; // 严重耗尽/用满 (>=90%)
+      } else if (pct >= 70) {
+        ringColor = '#f59e0b'; // 适中偏高告警 (70%~89%)
+      }
+      const circumference = 106.81; // 2 * PI * 17
+      const strokeOffset = +(circumference * (1 - pct / 100)).toFixed(2);
+
+      const ringSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      ringSvg.setAttribute('class', 'acct-dock-ring');
+      ringSvg.setAttribute('viewBox', '0 0 38 38');
+      ringSvg.innerHTML = `
+        <circle class="acct-dock-ring-bg" cx="19" cy="19" r="17" stroke-width="2.5" fill="none" />
+        <circle class="acct-dock-ring-progress" cx="19" cy="19" r="17" stroke-width="2.5" stroke="${ringColor}" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${strokeOffset}" fill="none" transform="rotate(-90 19 19)" />
+      `;
+      item.appendChild(ringSvg);
+
+      // 内层账号圆形头像 (30px 直径，居中陈列)
+      const avatar = document.createElement('div');
+      avatar.className = 'acct-dock-avatar';
+      avatar.style.backgroundColor = p.color || '#3b82f6';
+      avatar.textContent = getInitials(p.name);
+      item.appendChild(avatar);
 
       // 上下拖拽高亮指示线
       const indTop = document.createElement('div');
@@ -3012,25 +3039,43 @@ function injectExportButton() {}
       indBottom.className = 'acct-dock-drop-indicator bottom';
       item.appendChild(indBottom);
 
-      // Tooltip
+      // Tooltip 增强，展示名称、激活状态与当前用量明细
       const tooltip = document.createElement('div');
       tooltip.className = 'acct-dock-tooltip';
+      tooltip.style.flexDirection = 'column';
+      tooltip.style.alignItems = 'flex-start';
+      tooltip.style.gap = '3px';
+
+      const tooltipTop = document.createElement('div');
+      tooltipTop.style.display = 'flex';
+      tooltipTop.style.alignItems = 'center';
+      tooltipTop.style.gap = '6px';
 
       const nameSpan = document.createElement('span');
       nameSpan.textContent = p.name;
-      tooltip.appendChild(nameSpan);
+      tooltipTop.appendChild(nameSpan);
 
       if (p.id === dockState.activeProfileId) {
         const badge = document.createElement('span');
         badge.className = 'acct-dock-tooltip-badge';
         badge.textContent = t.currentAccountBadge;
-        tooltip.appendChild(badge);
+        tooltipTop.appendChild(badge);
       } else {
         const hint = document.createElement('span');
         hint.className = 'acct-dock-tooltip-hint';
         hint.textContent = t.clickToSwitch;
-        tooltip.appendChild(hint);
+        tooltipTop.appendChild(hint);
       }
+      tooltip.appendChild(tooltipTop);
+
+      const usageRow = document.createElement('div');
+      usageRow.style.fontSize = '11px';
+      usageRow.style.color = ringColor;
+      usageRow.style.display = 'flex';
+      usageRow.style.alignItems = 'center';
+      usageRow.style.gap = '5px';
+      usageRow.innerHTML = `<span>用量: ${p.usageText || (pct + '%')}</span>${p.tokenResetAt ? `<span style="color:rgba(255,255,255,0.45);font-size:10px;">· 重置: ${p.tokenResetAt}</span>` : ''}`;
+      tooltip.appendChild(usageRow);
 
       item.appendChild(tooltip);
 
