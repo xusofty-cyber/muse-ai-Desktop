@@ -15,6 +15,7 @@
     "files": [
       "main.js",
       "feishu-sync.js",
+      "bin/**/*",
       "hotkeys.html",
       "lock.html",
       "offline.html",

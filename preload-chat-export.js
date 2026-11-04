@@ -2280,13 +2280,6 @@ function injectExportButton() {}
     feishuConfigBtn.innerHTML = '<span>⚙️ 飞书配置</span>';
     feishuConfigBtn.onclick = () => openFeishuSettingsModal();
 
-    // 群组管理按钮
-    const groupBtn = document.createElement('button');
-    groupBtn.className = 'hub-btn hub-btn-default';
-    groupBtn.type = 'button';
-    groupBtn.innerHTML = `<span>🏷</span><span>${t.manageGroups}</span>`;
-    groupBtn.onclick = () => openGroupManagerModal();
-
     // 新增账号按钮
     const addBtn = document.createElement('button');
     addBtn.className = 'hub-btn hub-btn-primary';
@@ -2294,7 +2287,7 @@ function injectExportButton() {}
     addBtn.innerHTML = `<span>➕</span><span>${t.addAccountPromptTitle}</span>`;
     addBtn.onclick = () => {
       showPromptModal(t.addAccountPromptTitle, t.addAccountDefaultName(dockState.profiles.length + 1), (name) => {
-        ipcRenderer.invoke('account:add', { name, group: dockState.activeGroupFilter !== 'all' ? dockState.activeGroupFilter : '默认群组' }).catch(() => {});
+        ipcRenderer.invoke('account:add', { name }).catch(() => {});
       });
     };
 
@@ -2306,7 +2299,6 @@ function injectExportButton() {}
 
     actions.appendChild(feishuSyncBtn);
     actions.appendChild(feishuConfigBtn);
-    actions.appendChild(groupBtn);
     actions.appendChild(addBtn);
     actions.appendChild(closeBtn);
 
@@ -2315,31 +2307,7 @@ function injectExportButton() {}
     header.appendChild(actions);
     modal.appendChild(header);
 
-    // 2. 群组分类 Tabs
-    const tabsContainer = document.createElement('div');
-    tabsContainer.className = 'hub-group-tabs';
-
-    const groupsList = ['all', ...(dockState.accountGroups || ['默认群组'])];
-    groupsList.forEach((grp) => {
-      const tab = document.createElement('div');
-      const isAll = grp === 'all';
-      const isActive = dockState.activeGroupFilter === grp;
-      tab.className = 'hub-tab-item' + (isActive ? ' active' : '');
-
-      const count = isAll
-        ? dockState.profiles.length
-        : dockState.profiles.filter((p) => (p.group || '默认群组') === grp).length;
-
-      tab.innerHTML = `<span>${isAll ? t.allGroups : grp}</span><span class="hub-tab-badge">(${count})</span>`;
-      tab.onclick = () => {
-        dockState.activeGroupFilter = grp;
-        renderAccountHub();
-      };
-      tabsContainer.appendChild(tab);
-    });
-    modal.appendChild(tabsContainer);
-
-    // 3. Grid 卡片网格容器
+    // Grid 卡片网格容器 (全景卡片直观陈列，无需分组层级)
     const gridBody = document.createElement('div');
     gridBody.className = 'hub-grid-body';
     modal.appendChild(gridBody);
@@ -2347,17 +2315,13 @@ function injectExportButton() {}
     function renderHubGridCards() {
       gridBody.innerHTML = '';
       const kw = (dockState.searchKeyword || '').toLowerCase();
-      const currentGrp = dockState.activeGroupFilter || 'all';
 
       const filtered = (dockState.profiles || []).filter((p) => {
-        if (currentGrp !== 'all' && (p.group || '默认群组') !== currentGrp) return false;
-        if (kw) {
-          const matchName = (p.name || '').toLowerCase().includes(kw);
-          const matchPurpose = (p.purpose || '').toLowerCase().includes(kw);
-          const matchGroup = (p.group || '').toLowerCase().includes(kw);
-          if (!matchName && !matchPurpose && !matchGroup) return false;
-        }
-        return true;
+        if (!kw) return true;
+        const matchName = (p.name || '').toLowerCase().includes(kw);
+        const matchPurpose = (p.purpose || '').toLowerCase().includes(kw);
+        return matchName || matchPurpose;
+      });
       });
 
       if (filtered.length === 0) {
@@ -2400,11 +2364,6 @@ function injectExportButton() {}
         nameEl.className = 'hub-card-name';
         nameEl.textContent = p.name;
         titleRow.appendChild(nameEl);
-
-        const groupTag = document.createElement('span');
-        groupTag.className = 'hub-card-group-tag';
-        groupTag.textContent = p.group || '默认群组';
-        titleRow.appendChild(groupTag);
 
         if (isActive) {
           const activePill = document.createElement('span');
@@ -2541,23 +2500,7 @@ function injectExportButton() {}
     nameInput.value = p.name || '';
     nameRow.appendChild(nameInput);
 
-    // 2. 所属群组
-    const grpRow = document.createElement('div');
-    grpRow.className = 'hub-form-row';
-    grpRow.innerHTML = `<label class="hub-form-label">${t.groupLabel}</label>`;
-    const grpSelect = document.createElement('select');
-    grpSelect.className = 'hub-form-select';
-    const groups = dockState.accountGroups || ['默认群组'];
-    groups.forEach((g) => {
-      const opt = document.createElement('option');
-      opt.value = g;
-      opt.textContent = g;
-      if (g === (p.group || '默认群组')) opt.selected = true;
-      grpSelect.appendChild(opt);
-    });
-    grpRow.appendChild(grpSelect);
-
-    // 3. 主要用途
+    // 2. 主要用途
     const purposeRow = document.createElement('div');
     purposeRow.className = 'hub-form-row';
     purposeRow.innerHTML = `<label class="hub-form-label">${t.purposeLabel}</label>`;
@@ -2567,7 +2510,7 @@ function injectExportButton() {}
     purposeInput.placeholder = '例如：竞品技术调研、生产环境自动化测试、客服会话...';
     purposeRow.appendChild(purposeInput);
 
-    // 4. 用量占比与明细
+    // 3. 用量占比与明细
     const usageRow = document.createElement('div');
     usageRow.className = 'hub-form-row';
     usageRow.innerHTML = `<label class="hub-form-label">${t.usagePercentLabel}</label>`;
@@ -2579,7 +2522,7 @@ function injectExportButton() {}
     usageInput.value = typeof p.usagePercent === 'number' ? p.usagePercent : 0;
     usageRow.appendChild(usageInput);
 
-    // 5. Token 重置时间
+    // 4. Token 重置时间
     const resetRow = document.createElement('div');
     resetRow.className = 'hub-form-row';
     resetRow.innerHTML = `<label class="hub-form-label">${t.tokenResetLabel}</label>`;
@@ -2605,7 +2548,6 @@ function injectExportButton() {}
     confirmBtn.textContent = t.saveChanges;
     confirmBtn.onclick = async () => {
       const newName = nameInput.value.trim() || p.name;
-      const newGroup = grpSelect.value || '默认群组';
       const newPurpose = purposeInput.value.trim();
       const newUsage = parseFloat(usageInput.value) || 0;
       const newReset = resetInput.value.trim();
@@ -2614,7 +2556,6 @@ function injectExportButton() {}
       await ipcRenderer.invoke('account:update-meta', {
         id: p.id,
         name: newName,
-        group: newGroup,
         purpose: newPurpose,
         usagePercent: newUsage,
         usageText: `${newUsage}%`,
@@ -2628,138 +2569,9 @@ function injectExportButton() {}
 
     card.appendChild(titleEl);
     card.appendChild(nameRow);
-    card.appendChild(grpRow);
     card.appendChild(purposeRow);
     card.appendChild(usageRow);
     card.appendChild(resetRow);
-    card.appendChild(actions);
-
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-    activeModal = overlay;
-  }
-
-  // 群组管理模态框
-  function openGroupManagerModal() {
-    closeModal();
-    const t = getT();
-    const overlay = document.createElement('div');
-    overlay.className = 'acct-modal-overlay';
-
-    const card = document.createElement('div');
-    card.className = 'acct-modal-card';
-    card.style.width = '380px';
-
-    const titleEl = document.createElement('div');
-    titleEl.className = 'acct-modal-title';
-    titleEl.textContent = t.groupManagerTitle;
-
-    const listWrap = document.createElement('div');
-    listWrap.style.maxHeight = '240px';
-    listWrap.style.overflowY = 'auto';
-    listWrap.style.marginBottom = '12px';
-
-    let groups = [...(dockState.accountGroups || ['默认群组'])];
-
-    function renderGroupItems() {
-      listWrap.innerHTML = '';
-      groups.forEach((g, idx) => {
-        const row = document.createElement('div');
-        row.style.display = 'flex';
-        row.style.alignItems = 'center';
-        row.style.justifyContent = 'space-between';
-        row.style.padding = '6px 8px';
-        row.style.background = 'rgba(255, 255, 255, 0.04)';
-        row.style.borderRadius = '6px';
-        row.style.marginBottom = '6px';
-
-        const nameSpan = document.createElement('span');
-        nameSpan.textContent = g;
-        nameSpan.style.fontSize = '13px';
-
-        const countSpan = document.createElement('span');
-        countSpan.textContent = `${dockState.profiles.filter((p) => (p.group || '默认群组') === g).length} 个账号`;
-        countSpan.style.fontSize = '11px';
-        countSpan.style.color = '#94a3b8';
-
-        const rightWrap = document.createElement('div');
-        rightWrap.style.display = 'flex';
-        rightWrap.style.alignItems = 'center';
-        rightWrap.style.gap = '8px';
-        rightWrap.appendChild(countSpan);
-
-        if (g !== '默认群组') {
-          const delBtn = document.createElement('button');
-          delBtn.type = 'button';
-          delBtn.textContent = '✕';
-          delBtn.style.background = 'transparent';
-          delBtn.style.border = 'none';
-          delBtn.style.color = '#f87171';
-          delBtn.style.cursor = 'pointer';
-          delBtn.onclick = () => {
-            groups.splice(idx, 1);
-            renderGroupItems();
-          };
-          rightWrap.appendChild(delBtn);
-        }
-
-        row.appendChild(nameSpan);
-        row.appendChild(rightWrap);
-        listWrap.appendChild(row);
-      });
-    }
-    renderGroupItems();
-
-    const addRow = document.createElement('div');
-    addRow.style.display = 'flex';
-    addRow.style.gap = '6px';
-    addRow.style.marginBottom = '16px';
-
-    const addInput = document.createElement('input');
-    addInput.className = 'hub-form-input';
-    addInput.placeholder = '新群组名称...';
-    addInput.style.flex = '1';
-
-    const addBtn = document.createElement('button');
-    addBtn.className = 'hub-btn hub-btn-primary';
-    addBtn.type = 'button';
-    addBtn.textContent = '添加';
-    addBtn.onclick = () => {
-      const val = addInput.value.trim();
-      if (val && !groups.includes(val)) {
-        groups.push(val);
-        addInput.value = '';
-        renderGroupItems();
-      }
-    };
-
-    addRow.appendChild(addInput);
-    addRow.appendChild(addBtn);
-
-    const actions = document.createElement('div');
-    actions.className = 'acct-modal-actions';
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'acct-modal-btn cancel';
-    cancelBtn.textContent = t.cancel;
-    cancelBtn.onclick = closeModal;
-
-    const confirmBtn = document.createElement('button');
-    confirmBtn.className = 'acct-modal-btn confirm';
-    confirmBtn.textContent = t.saveChanges;
-    confirmBtn.onclick = async () => {
-      closeModal();
-      await ipcRenderer.invoke('account:set-groups', { groups }).catch(() => {});
-      dockState.accountGroups = groups;
-      if (dockState.hubOpen) renderAccountHub();
-    };
-
-    actions.appendChild(cancelBtn);
-    actions.appendChild(confirmBtn);
-
-    card.appendChild(titleEl);
-    card.appendChild(listWrap);
-    card.appendChild(addRow);
     card.appendChild(actions);
 
     overlay.appendChild(card);
@@ -2802,16 +2614,16 @@ function injectExportButton() {}
       return { row, input };
     };
 
-    // 同步引擎模式选择 (CLI / OpenAPI 双模)
+    // 同步引擎模式选择 (内置集成 CLI / 系统 CLI / OpenAPI)
     const modeRow = document.createElement('div');
     modeRow.className = 'hub-form-row';
     modeRow.innerHTML = `<label class="hub-form-label">同步引擎模式 (Feishu Engine)</label>`;
     const modeSelect = document.createElement('select');
     modeSelect.className = 'hub-form-select';
     modeSelect.innerHTML = `
-      <option value="auto">自适应 (优先飞书 CLI，未安装则走 OpenAPI)</option>
+      <option value="auto">内置集成飞书 CLI (推荐，无需安装任何系统工具)</option>
       <option value="api">纯飞书 OpenAPI (填 App ID / Secret)</option>
-      <option value="cli">纯飞书 CLI (调用系统已登录凭证)</option>
+      <option value="cli">系统外部飞书 CLI (指定自定义路径)</option>
     `;
     modeSelect.value = cfg.syncMode || 'auto';
     modeRow.appendChild(modeSelect);
@@ -2819,26 +2631,28 @@ function injectExportButton() {}
     // 本机 CLI 状态检测条
     const cliStatusBox = document.createElement('div');
     cliStatusBox.style.fontSize = '11.5px';
-    cliStatusBox.style.padding = '6px 10px';
+    cliStatusBox.style.padding = '7px 12px';
     cliStatusBox.style.borderRadius = '6px';
     cliStatusBox.style.background = 'rgba(59, 130, 246, 0.12)';
     cliStatusBox.style.color = '#93c5fd';
     cliStatusBox.style.marginBottom = '10px';
-    cliStatusBox.textContent = '正在检测系统飞书 CLI 状态...';
+    cliStatusBox.textContent = '正在检测飞书 CLI 状态...';
 
     ipcRenderer.invoke('feishu:detect-cli', cfg.customCliPath).then((res) => {
       if (res && res.available) {
         cliStatusBox.style.background = 'rgba(16, 185, 129, 0.15)';
         cliStatusBox.style.color = '#34d399';
-        cliStatusBox.textContent = `✓ 已检测到本机飞书 CLI: ${res.path} (${res.version})`;
+        cliStatusBox.textContent = res.isEmbedded
+          ? `✓ 飞书 CLI: 已集成至当前客户端（内置全功能引擎，无需系统安装）`
+          : `✓ 已检测到系统外部飞书 CLI: ${res.path} (${res.version})`;
       } else {
         cliStatusBox.style.background = 'rgba(255, 255, 255, 0.05)';
         cliStatusBox.style.color = '#94a3b8';
-        cliStatusBox.textContent = `ℹ️ 未检测到系统飞书 CLI（将自动使用内置纯 OpenAPI 引擎）`;
+        cliStatusBox.textContent = `ℹ️ 使用内置飞书引擎（零外部依赖）`;
       }
     }).catch(() => {});
 
-    const cliPathF = createField('自定义飞书 CLI 路径 (可选，留空则自动探测)', cfg.customCliPath || '', '如: /usr/local/bin/feishu 或 C:\\...\\feishu.exe');
+    const cliPathF = createField('自定义系统飞书 CLI 路径 (可选，留空则默认使用内置集成引擎)', cfg.customCliPath || '', '如: /usr/local/bin/feishu 或 C:\\...\\feishu.exe');
 
     const appIdF = createField(t.feishuAppId, cfg.appId, 'cli_a1b2c3d4e5f6');
     const secretF = createField(t.feishuAppSecret, cfg.appSecret, '••••••••••••••••', 'password');
@@ -2912,7 +2726,6 @@ function injectExportButton() {}
           purpose: mapPurposeF.input.value.trim() || '主要用途',
           usage: mapUsageF.input.value.trim() || '当前用量',
           tokenReset: mapResetF.input.value.trim() || '重置时间',
-          group: mapGroupF.input.value.trim() || '所属群组',
         },
       };
 
@@ -2951,7 +2764,6 @@ function injectExportButton() {}
     card.appendChild(mapPurposeF.row);
     card.appendChild(mapUsageF.row);
     card.appendChild(mapResetF.row);
-    card.appendChild(mapGroupF.row);
     card.appendChild(statusBox);
     card.appendChild(actions);
 
