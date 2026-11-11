@@ -22,6 +22,9 @@
   4. **账号中心节点队列分配与看板展示 (`preload-chat-export.js`)**：
      - 宫格看板卡片新增“🛡️ 代理出口”标识（显示主用节点名称与备用数量）；
      - 编辑账号弹窗新增专属代理队列多选与优先级排序器，支持自由添加/删除/清空节点。
+  5. **架构设计与操作指引文档归档 (`docs/`)**：
+     - 系统架构：`docs/architecture/ARCH-002-embedded-mihomo-proxy.md`（模块拓扑、动态 Inbound/Fallback 策略组、进程生命周期与 ADR 决策）；
+     - 操作手册：`docs/guides/GUIDE-002-embedded-mihomo-proxy.md`（机场订阅填入、一键测速、出口队列分配与排障 FAQ）。
 - **真实验证证据**：
   - 单元与集成测试：`node scratch/test-mihomo-manager.js`（全部 6 项测试通过，包含内核启动、/version 响应、热重载与退出）；
   - 端到端模型与分流测试：`node scratch/test-e2e-mihomo.js`（全部 4 项测试通过，验证了多账号多端口与 Session setProxy 规则隔离）；

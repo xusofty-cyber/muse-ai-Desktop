@@ -51,7 +51,7 @@
   - `bin/`：内置免安装辅助 CLI 工具（`bin/feishu-cli.js` 等）。
   - `bin/mihomo/`：本地 Mihomo 内核二进制目录（受 `.gitignore` 保护）。
   - `assets/`：应用程序图标与静态素材（`icon.ico` 等）。
-  - `docs/`：技术架构、产品规约与参考文档。
+  - `docs/`：技术架构、产品规约与参考文档（核心架构见 `docs/architecture/ARCH-002-embedded-mihomo-proxy.md`，操作指南见 `docs/guides/GUIDE-002-embedded-mihomo-proxy.md`）。
   - `tasks/`：任务规划 (`todo.md`) 与研发经验沉淀 (`lessons.md`)。
 
 ---
@@ -81,6 +81,13 @@
     1. 采用 `profileWindows = new Map()` 维护常驻窗口实例，账号切换通过可见性瞬切与 Bounds 继承，实现 `< 10ms` 零重载、输入状态 100% 保留；
     2. 默认采用 `mode: 'system'` 自适应 Windows 系统代理与 TUN 虚拟网卡（开箱即用免配置），设置界面支持手动覆盖；禁用 `PostQuantumKeyAgreement` 彻底打通 TLS 握手，搭配 `offline.html` 离线诊断页保障黑屏自愈。
   - **影响**：多账号切换达到原生多标签体验，新环境部署免配置直接联网，彻底根治握手超时与黑屏。
+- **2026-11-11**：[内置轻量 Mihomo 代理分流引擎与多账号独立出口队列]
+  - **背景**：海外 AI 服务（Meta AI 等）对请求源 IP 与指纹极为敏感，多账号共用单代理/单出口 IP 极易触发联防风控、验证码拦截与集体封号。
+  - **决策**：
+    1. **子进程级内置协同**：将轻量跨平台 Mihomo (Clash.Meta) 二进制作为子进程嵌入，自动解析机场 Clash 订阅 YAML 并提取全量节点；
+    2. **物理端口级隔离分流**：为每个账号 Profile 动态分配专属本地 Inbound 端口（`18001+`）并绑定专属 Fallback 故障转移策略组，主节点抖动时自动毫秒级漂移；
+    3. **Session 级无感注入**：在主进程 `applyProxyToSession` 中将 Electron 分区 Session 直连映射到对应本地端口，上层业务与 WebContents 透明解耦。
+  - **影响**：实现账号级出口 IP 隔离防封，支持一键拉取机场订阅与全节点延迟测速，大幅提升海量账号矩阵的稳定性与反风控能力。
 - **2026-10-15**：[网络代理全局设备级统一持久化与异常自动唤起配置]
   - **背景**：多账号标签页各自配置代理会产生割裂，需实现全局统一网络设备管理；且配置后必须持久化，重启直接生效，发生阻断时需主动引导修复。
   - **决策**：
