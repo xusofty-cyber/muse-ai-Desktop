@@ -399,11 +399,14 @@
 
         <!-- 内核状态卡片 -->
         <div style="margin-top:10px; background:#1e2128; border:1px solid #2d323e; border-radius:6px; padding:10px;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
             <div style="font-size:11.5px; color:#cfd3dc;">
-              <span>内核状态: </span><span id="mihomo-kernel-status" style="font-weight:600; color:#8a909d;">未启动</span>
+              <span>内核状态: </span><span id="mihomo-kernel-status" style="font-weight:600; color:#8a909d;">待检测</span>
             </div>
-            <button type="button" class="action" id="btn-mihomo-test-all" style="padding:2px 8px; font-size:11px;">一键全节点测速</button>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button type="button" class="action primary" id="btn-mihomo-start" style="padding:2px 10px; font-size:11px; display:none;">▶ 启动内核</button>
+              <button type="button" class="action" id="btn-mihomo-test-all" style="padding:2px 8px; font-size:11px;">一键全节点测速</button>
+            </div>
           </div>
           <div id="mihomo-port-map" style="margin-top:6px; font-size:11px; color:#8a909d;"></div>
         </div>
@@ -608,6 +611,9 @@ const I18N_SETTINGS = {
     modeCustomDesc: 'Directly forward traffic to a specified local/LAN proxy server.',
     modeDirectTitle: 'Direct Connection (No Proxy)',
     modeDirectDesc: 'Bypass any proxy settings and connect directly to the destination site.',
+    modeMihomoTitle: 'Embedded Mihomo Proxy Engine (Airport Subscription & Multi-Account Isolation)',
+    modeMihomoDesc: 'Embedded lightweight Mihomo core manages airport subscriptions, allocating dedicated ports and fallback queues per profile for physical IP isolation.',
+    badgeMihomo: 'Account IP Isolation',
     recommendedBadge: 'Recommended',
     proxyTypeLabel: 'Type:',
     proxyHostLabel: 'Host:',
@@ -713,6 +719,9 @@ const I18N_SETTINGS = {
     modeCustomDesc: '强制指定 HTTP / SOCKS5 代理地址与端口（如本机 7897/7890 端口）。',
     modeDirectTitle: '直接连接 (Direct Connection)',
     modeDirectDesc: '绕过任何系统代理或 VPN，客户端直接发起网络请求。',
+    modeMihomoTitle: '内置 Mihomo 智能分流 (机场订阅与多账号独立队列)',
+    modeMihomoDesc: '内置轻量 Mihomo 内核托管机场订阅，自动为每个 Muse 账号分配独立端口和故障自动转移节点队列，实现真正物理级出口 IP 隔离。',
+    badgeMihomo: '多账号出口隔离',
     recommendedBadge: '推荐 · 默认开箱即用',
     proxyTypeLabel: '代理协议 (Type)',
     proxyHostLabel: '代理服务器 (Host)',
@@ -884,6 +893,12 @@ function applySettingsLocale(loc) {
   if (lblModeDirect) lblModeDirect.textContent = t.modeDirectTitle;
   const descModeDirect = document.getElementById('desc-mode-direct');
   if (descModeDirect) descModeDirect.textContent = t.modeDirectDesc;
+  const lblModeMihomo = document.getElementById('lbl-mode-mihomo');
+  if (lblModeMihomo && t.modeMihomoTitle) lblModeMihomo.textContent = t.modeMihomoTitle;
+  const badgeMihomo = document.getElementById('badge-mode-mihomo');
+  if (badgeMihomo && t.badgeMihomo) badgeMihomo.textContent = t.badgeMihomo;
+  const descModeMihomo = document.getElementById('desc-mode-mihomo');
+  if (descModeMihomo && t.modeMihomoDesc) descModeMihomo.textContent = t.modeMihomoDesc;
   const lblProxyType = document.getElementById('lbl-proxy-type');
   if (lblProxyType) lblProxyType.textContent = t.proxyTypeLabel;
   const lblProxyHost = document.getElementById('lbl-proxy-host');
@@ -1519,13 +1534,29 @@ function renderMihomoNodeList(nodes) {
   currentMihomoNodes.forEach((node, idx) => {
     const item = document.createElement('div');
     item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:5px 8px; border-bottom:1px solid #23262e; font-size:11.5px;';
-    item.innerHTML = `
-      <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:260px;" title="${node.name}">
-        <span style="color:#818cf8; font-weight:600; margin-right:4px;">[${node.type.toUpperCase()}]</span>
-        <span style="color:#cfd3dc;">${node.name}</span>
-      </div>
-      <div id="delay-badge-${idx}" style="font-size:10.5px; color:#8a909d; min-width:50px; text-align:right;">--</div>
-    `;
+
+    const infoWrap = document.createElement('div');
+    infoWrap.style.cssText = 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:260px;';
+    infoWrap.title = node && node.name ? node.name : '';
+
+    const typeSpan = document.createElement('span');
+    typeSpan.style.cssText = 'color:#818cf8; font-weight:600; margin-right:4px;';
+    typeSpan.textContent = `[${String((node && node.type) || '').toUpperCase()}]`;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.style.cssText = 'color:#cfd3dc;';
+    nameSpan.textContent = (node && node.name) || '';
+
+    infoWrap.appendChild(typeSpan);
+    infoWrap.appendChild(nameSpan);
+
+    const badge = document.createElement('div');
+    badge.id = `delay-badge-${idx}`;
+    badge.style.cssText = 'font-size:10.5px; color:#8a909d; min-width:50px; text-align:right;';
+    badge.textContent = '--';
+
+    item.appendChild(infoWrap);
+    item.appendChild(badge);
     listEl.appendChild(item);
   });
 }
@@ -1556,10 +1587,11 @@ document.getElementById('btn-mihomo-sync').onclick = async () => {
   try {
     const res = await mihomoApi.syncSubscription(url);
     if (res && res.ok) {
+      const mCfg = await loadMihomoState();
       statusEl.style.color = '#7ee2a8';
-      statusEl.textContent = `同步成功！已成功解析 ${res.nodeCount} 个代理节点。`;
-      renderMihomoNodeList(res.proxies || []);
-      await loadMihomoState();
+      statusEl.textContent = (mCfg && mCfg.isRunning)
+        ? `同步成功！已成功解析 ${res.nodeCount} 个代理节点并已热重载。`
+        : `同步成功！已解析 ${res.nodeCount} 个节点，请点击下方【▶ 启动内核】或【一键全节点测速】生效。`;
     } else {
       statusEl.style.color = '#ff9a9a';
       statusEl.textContent = '同步失败: ' + ((res && res.error) || '未知错误');
@@ -1573,35 +1605,120 @@ document.getElementById('btn-mihomo-sync').onclick = async () => {
   }
 };
 
+async function ensureMihomoKernelStarted() {
+  if (!mihomoApi) return { ok: false, error: 'mihomoAPI 不可用' };
+  const mCfg = await mihomoApi.getConfig();
+  if (mCfg && mCfg.isRunning) return { ok: true, mCfg };
+
+  const subUrl = (document.getElementById('txt-mihomo-sub-url')?.value || '').trim();
+  const statusEl = document.getElementById('mihomo-sub-status');
+  if (statusEl) {
+    statusEl.style.color = '#7aa2ff';
+    statusEl.textContent = '正在启动内置 Mihomo 内核进程...';
+  }
+  const res = await mihomoApi.setConfig({ enabled: true, subscriptionUrl: subUrl });
+  if (!res || !res.ok) {
+    const errMsg = (res && res.error) || '内核启动失败';
+    if (statusEl) {
+      statusEl.style.color = '#ff9a9a';
+      statusEl.textContent = '内核启动失败: ' + errMsg;
+    }
+    return { ok: false, error: errMsg };
+  }
+  updateModeUI('mihomo');
+  const updatedCfg = await loadMihomoState();
+  if (statusEl) {
+    statusEl.style.color = '#7ee2a8';
+    statusEl.textContent = 'Mihomo 内核已成功启动！各账号独立出口端口已生效。';
+  }
+  return { ok: true, mCfg: updatedCfg };
+}
+
+const btnMihomoStart = document.getElementById('btn-mihomo-start');
+if (btnMihomoStart) {
+  btnMihomoStart.onclick = async () => {
+    btnMihomoStart.disabled = true;
+    btnMihomoStart.textContent = '启动中...';
+    try {
+      await ensureMihomoKernelStarted();
+    } finally {
+      btnMihomoStart.disabled = false;
+    }
+  };
+}
+
 document.getElementById('btn-mihomo-test-all').onclick = async () => {
   if (!currentMihomoNodes || currentMihomoNodes.length === 0) return;
   const btn = document.getElementById('btn-mihomo-test-all');
   btn.disabled = true;
-  btn.textContent = '测速中...';
-  for (let i = 0; i < currentMihomoNodes.length; i++) {
-    const node = currentMihomoNodes[i];
-    const badge = document.getElementById(`delay-badge-${i}`);
-    if (badge) {
-      badge.textContent = '...';
-      badge.style.color = '#7aa2ff';
+  btn.textContent = '启动内核...';
+
+  try {
+    // 若内核尚未运行，先自动按需启动并刷新端口映射，避免全员误报“超时”
+    const bootRes = await ensureMihomoKernelStarted();
+    if (!bootRes || !bootRes.ok) {
+      return;
     }
-    try {
-      const res = await mihomoApi.testDelay(node.name);
+
+    // 测速时自动展开节点列表以便实时观察延迟色标
+    const listEl = document.getElementById('mihomo-node-list');
+    const txtEl = document.getElementById('txt-toggle-nodes');
+    if (listEl && listEl.style.display === 'none') {
+      listEl.style.display = 'block';
+      if (txtEl) txtEl.textContent = '收起列表 ▲';
+    }
+
+    btn.textContent = '测速中...';
+
+    // 1. 先重置所有节点的测速占位徽章
+    for (let i = 0; i < currentMihomoNodes.length; i++) {
+      const badge = document.getElementById(`delay-badge-${i}`);
       if (badge) {
-        if (res && res.ok && typeof res.delay === 'number') {
-          badge.textContent = `${res.delay}ms`;
-          badge.style.color = res.delay < 300 ? '#7ee2a8' : (res.delay < 800 ? '#fbbf24' : '#ff9a9a');
-        } else {
-          badge.textContent = '超时';
-          badge.style.color = '#ff9a9a';
+        badge.textContent = '...';
+        badge.style.color = '#7aa2ff';
+      }
+    }
+
+    // 2. 并发池并发测速 (CONCURRENCY = 6) 极大缩短全量探测耗时
+    const CONCURRENCY = 6;
+    let cursor = 0;
+    async function testWorker() {
+      while (cursor < currentMihomoNodes.length) {
+        const idx = cursor++;
+        const node = currentMihomoNodes[idx];
+        const badge = document.getElementById(`delay-badge-${idx}`);
+        try {
+          const res = await mihomoApi.testDelay(node.name);
+          if (badge) {
+            if (res && res.ok && typeof res.delay === 'number') {
+              badge.textContent = `${res.delay}ms`;
+              badge.style.color = res.delay < 300 ? '#7ee2a8' : (res.delay < 800 ? '#fbbf24' : '#ff9a9a');
+            } else if (res && res.error && res.error.includes('未运行')) {
+              badge.textContent = '未启动';
+              badge.style.color = '#ff9a9a';
+            } else {
+              badge.textContent = '超时';
+              badge.style.color = '#ff9a9a';
+            }
+          }
+        } catch (_) {
+          if (badge) {
+            badge.textContent = '错误';
+            badge.style.color = '#ff9a9a';
+          }
         }
       }
-    } catch (_) {
-      if (badge) { badge.textContent = '错误'; badge.style.color = '#ff9a9a'; }
     }
+
+    const pool = [];
+    for (let c = 0; c < Math.min(CONCURRENCY, currentMihomoNodes.length); c++) {
+      pool.push(testWorker());
+    }
+    await Promise.all(pool);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '一键全节点测速';
   }
-  btn.disabled = false;
-  btn.textContent = '一键全节点测速';
 };
 
 async function loadMihomoState() {
@@ -1613,20 +1730,30 @@ async function loadMihomoState() {
       if (subInput && mCfg.subscriptionUrl) subInput.value = mCfg.subscriptionUrl;
 
       const kStatus = document.getElementById('mihomo-kernel-status');
+      const startBtn = document.getElementById('btn-mihomo-start');
       if (kStatus) {
         if (mCfg.isRunning) {
           kStatus.textContent = '运行中 (PID 活跃 · 127.0.0.1:19090)';
           kStatus.style.color = '#7ee2a8';
+          if (startBtn) startBtn.style.display = 'none';
+        } else if (mCfg.executablePath) {
+          kStatus.textContent = '内核文件已就绪 · 待启动';
+          kStatus.style.color = '#fbbf24';
+          if (startBtn) {
+            startBtn.style.display = 'inline-block';
+            startBtn.textContent = '▶ 启动内核';
+          }
         } else {
-          kStatus.textContent = mCfg.executablePath ? '未启动 (内核就绪)' : '未找到内核二进制文件';
-          kStatus.style.color = '#8a909d';
+          kStatus.textContent = '未找到内核二进制文件 (请放至 bin/mihomo/)';
+          kStatus.style.color = '#ff9a9a';
+          if (startBtn) startBtn.style.display = 'none';
         }
       }
 
       const pMapEl = document.getElementById('mihomo-port-map');
       if (pMapEl && mCfg.portMap) {
         const ports = Object.entries(mCfg.portMap).map(([id, p]) => `${id} → :${p}`).join(' | ');
-        pMapEl.textContent = ports ? `当前账号端口映射: ${ports}` : '暂无运行中的独立账号端口分配';
+        pMapEl.textContent = ports ? `当前账号端口映射: ${ports}` : '尚未开启代理端口映射 (启动内核后自动分配)';
       }
 
       const nodes = await mihomoApi.getNodes();
@@ -1716,12 +1843,6 @@ document.getElementById('btn-save-proxy').onclick = async () => {
   } catch (err) {
     pMsg.style.color = '#ff9a9a';
     pMsg.textContent = '保存失败: ' + err.message;
-  }
-};
-    }
-  } catch (err) {
-    pMsg.style.color = '#ff9a9a';
-    pMsg.textContent = '保存出错: ' + err.message;
   }
 };
 

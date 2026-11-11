@@ -26,6 +26,9 @@
       "assets/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "bin/**/*"
+    ],
     "nsis": {
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,

@@ -26,9 +26,9 @@
      - 系统架构：`docs/architecture/ARCH-002-embedded-mihomo-proxy.md`（模块拓扑、动态 Inbound/Fallback 策略组、进程生命周期与 ADR 决策）；
      - 操作手册：`docs/guides/GUIDE-002-embedded-mihomo-proxy.md`（机场订阅填入、一键测速、出口队列分配与排障 FAQ）。
 - **真实验证证据**：
-  - 单元与集成测试：`node scratch/test-mihomo-manager.js`（全部 6 项测试通过，包含内核启动、/version 响应、热重载与退出）；
-  - 端到端模型与分流测试：`node scratch/test-e2e-mihomo.js`（全部 4 项测试通过，验证了多账号多端口与 Session setProxy 规则隔离）；
-  - 全量回归测试：`node scratch/test-account-hub-and-feishu.js`、`scratch/test-account-reorder.js`、`scratch/test-tray-menu.js` 全绿。
+  - 代码审查与全量缺陷修复：已攻克 P0 语法错误（`hotkeys.html` 残留 catch 剔除）、P1 安全 XSS 消除（`preload-chat-export.js` / `hotkeys.html` 节点名安全绑定）、P1 冷启动自愈与账号增删重排同步重载（`main.js`）、P1 `mihomo:set-config` 失败状态回滚与可见窗口热刷新、P1 Listener 显式绑定 `listen: '127.0.0.1'` 防局域网端口暴露及 `path.resolve(dataDir)` 绝对路径热重载保障、P2 二进制通配扫描（兼容 `mihomo-windows-amd64-v3.exe` 与 `app.asar.unpacked`）、测速自动按需启动内核与【▶ 启动内核】快捷按钮、测速目标换用 gstatic 204、Gzip 订阅解压、并发测速池（6 并发）与 `asarUnpack` 配置；
+  - 真机二进制与集成单元测试：`node scratch/test-embedded-mihomo.js`（全部 6 项测试 100% 通过，实际拉起 `bin/mihomo/mihomo-windows-amd64-v3.exe` v1.19.34 验证 `/version` 响应、空节点兼容、动态新增账号热重载监听 18804 端口及 `mihomo.log` 实时落盘）；
+  - 核心脚本语法与编译校验：`node -c main.js preload-settings.js preload-chat-export.js mihomo-manager.js` 与 `hotkeys.html` 内联脚本均 Exit Code 0，无语法错误。
 
 ---
 

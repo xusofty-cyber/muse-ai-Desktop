@@ -17,11 +17,13 @@ const http = require('http');
 const https = require('https');
 const { spawn, execSync } = require('child_process');
 const crypto = require('crypto');
+const zlib = require('zlib');
+const net = require('net');
 const yaml = require('js-yaml');
 
 const DEFAULT_CONTROLLER_PORT = 19090;
 const DEFAULT_BASE_PROXY_PORT = 18001;
-const DEFAULT_TEST_URL = 'https://muse.ai';
+const DEFAULT_TEST_URL = 'http://www.gstatic.com/generate_204';
 const SUB_USER_AGENT = 'clash-verge/v1.7.7 (Clash.Meta)';
 
 class MihomoManager {
@@ -34,13 +36,14 @@ class MihomoManager {
    * @param {string} [options.secret] Controller Secret (留空自动生成)
    */
   constructor(options = {}) {
-    this.dataDir = options.dataDir || path.join(process.cwd(), '.mihomo-runtime');
+    this.dataDir = path.resolve(options.dataDir || path.join(process.cwd(), '.mihomo-runtime'));
     this.binPath = options.binPath || '';
     this.basePort = options.basePort || DEFAULT_BASE_PROXY_PORT;
     this.controllerPort = options.controllerPort || DEFAULT_CONTROLLER_PORT;
     this.secret = options.secret || crypto.randomBytes(16).toString('hex');
 
     this.process = null;
+    this.logStream = null;
     this.isRunning = false;
     this.cachedProxies = [];
     this.portMap = {}; // { [profileId]: port }
@@ -62,13 +65,66 @@ class MihomoManager {
     }
 
     const isWin = process.platform === 'win32';
-    const exeName = isWin ? 'mihomo.exe' : 'mihomo';
+    const exeNames = isWin
+      ? [
+          'mihomo.exe',
+          'mihomo-windows-amd64.exe',
+          'mihomo-windows-amd64-v3.exe',
+          'mihomo-windows-amd64-v2.exe',
+          'mihomo-windows-amd64-v1.exe',
+          'mihomo-windows-amd64-compatible.exe',
+          'mihomo-windows-arm64.exe'
+        ]
+      : [
+          'mihomo',
+          'mihomo-linux-amd64',
+          'mihomo-linux-amd64-v3',
+          'mihomo-linux-arm64',
+          'mihomo-darwin-universal',
+          'mihomo-darwin-arm64'
+        ];
 
-    // 1. 项目本地目录 bin/mihomo/
-    candidates.push(path.join(__dirname, 'bin', 'mihomo', exeName));
-    candidates.push(path.join(__dirname, 'bin', exeName));
+    // 处理 Electron asar 打包后的 unpacked 目录优先权 (asar 内不可 spawn 执行)
+    const unpackedBase = __dirname.includes('app.asar')
+      ? __dirname.replace(/app\.asar([\\/]|$)/, 'app.asar.unpacked$1')
+      : null;
 
-    // 2. 常见系统安装路径
+    const searchDirs = [
+      ...(unpackedBase ? [path.join(unpackedBase, 'bin', 'mihomo'), path.join(unpackedBase, 'bin')] : []),
+      path.join(__dirname, 'bin', 'mihomo'),
+      path.join(__dirname, 'bin'),
+      this.dataDir,
+      path.join(this.dataDir, '..', 'bin', 'mihomo'),
+      path.join(this.dataDir, '..', 'bin'),
+      path.join(this.dataDir, '..', 'mihomo'),
+      ...(process.resourcesPath ? [path.join(process.resourcesPath, 'bin', 'mihomo'), path.join(process.resourcesPath, 'bin')] : []),
+    ];
+
+    // 1. 精确文件名优先级探测
+    for (const dir of searchDirs) {
+      for (const name of exeNames) {
+        candidates.push(path.join(dir, name));
+      }
+    }
+
+    // 2. 动态通配扫描目录内的任意 mihomo 官方命名变体 (如 v3/alpha/compatible 等)
+    for (const dir of searchDirs) {
+      try {
+        if (!fs.existsSync(dir)) continue;
+        const files = fs.readdirSync(dir);
+        for (const f of files) {
+          if (isWin) {
+            if (/^mihomo.*\.exe$/i.test(f)) candidates.push(path.join(dir, f));
+          } else {
+            if (/^mihomo/i.test(f) && !/\.(gitkeep|log|ya?ml|json|txt|db|mmdb|dat|gz|zip|tar)$/i.test(f)) {
+              candidates.push(path.join(dir, f));
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. 常见系统安装路径
     if (!isWin) {
       candidates.push('/usr/bin/verge-mihomo');
       candidates.push('/usr/local/bin/mihomo');
@@ -77,14 +133,16 @@ class MihomoManager {
 
     for (const c of candidates) {
       try {
-        if (fs.existsSync(c)) {
+        // 避免返回 app.asar 内部的虚拟路径 (无法 spawn)
+        if (c.includes('app.asar') && !c.includes('app.asar.unpacked')) continue;
+        if (fs.existsSync(c) && fs.statSync(c).isFile()) {
           fs.accessSync(c, fs.constants.X_OK);
           return c;
         }
       } catch (_) {}
     }
 
-    // 3. 从系统 PATH 中查找
+    // 4. 从系统 PATH 中查找
     try {
       const cmd = isWin ? 'where mihomo' : 'which mihomo';
       const out = execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
@@ -203,6 +261,7 @@ class MihomoManager {
         name: `listener_${acct.id}`,
         type: 'mixed',
         port: port,
+        listen: '127.0.0.1',
         proxy: groupName
       });
 
@@ -268,11 +327,22 @@ class MihomoManager {
       return { ok: false, error: '未找到可用的 Mihomo 二进制内核，请确保已安装或放置于 bin/mihomo/' };
     }
 
+    // 启动前探针: 检测 Controller 端口是否已被旧残留进程霸占
+    const ctrlBusy = await this._isPortInUse(this.controllerPort);
+    if (ctrlBusy) {
+      console.warn(`[MihomoCore] Controller port ${this.controllerPort} is already in use.`);
+    }
+
     const { configYaml, portMap } = this.generateConfig(accounts, proxies);
     const configFile = path.join(this.dataDir, 'config.yaml');
     fs.writeFileSync(configFile, configYaml, 'utf8');
 
     try {
+      const logFile = path.join(this.dataDir, 'mihomo.log');
+      const logStream = fs.createWriteStream(logFile, { flags: 'a' });
+      this.logStream = logStream;
+      logStream.write(`\n=== [${new Date().toISOString()}] Mihomo Process Starting ===\n`);
+
       const child = spawn(exe, ['-d', this.dataDir, '-f', configFile], {
         detached: false,
         stdio: ['ignore', 'pipe', 'pipe']
@@ -283,6 +353,7 @@ class MihomoManager {
       this.lastError = null;
 
       child.stdout.on('data', (d) => {
+        if (this.logStream) this.logStream.write(d);
         const msg = d.toString();
         if (msg.includes('level=error') || msg.includes('level=fatal')) {
           console.error('[MihomoCore STDOUT]', msg.trim());
@@ -290,16 +361,19 @@ class MihomoManager {
       });
 
       child.stderr.on('data', (d) => {
+        if (this.logStream) this.logStream.write(d);
         console.warn('[MihomoCore STDERR]', d.toString().trim());
       });
 
       child.on('exit', (code, sig) => {
+        if (this.logStream) this.logStream.write(`[MihomoCore] Exited with code=${code}, signal=${sig}\n`);
         console.log(`[MihomoCore] Exited with code=${code}, signal=${sig}`);
         this.isRunning = false;
         this.process = null;
       });
 
       child.on('error', (err) => {
+        if (this.logStream) this.logStream.write(`[MihomoCore] Error: ${err.message}\n`);
         console.error('[MihomoCore] Process error:', err);
         this.lastError = err.message;
         this.isRunning = false;
@@ -333,6 +407,10 @@ class MihomoManager {
         try { this.process.kill('SIGKILL'); } catch (__) {}
       }
       this.process = null;
+    }
+    if (this.logStream) {
+      try { this.logStream.end(); } catch (_) {}
+      this.logStream = null;
     }
     this.isRunning = false;
     console.log('[MihomoCore] Stopped.');
@@ -419,6 +497,10 @@ class MihomoManager {
     const start = Date.now();
     return new Promise((resolve) => {
       const check = async () => {
+        // 若子进程已经退出或崩溃，不再空等直接失败退出
+        if (!this.process || !this.isRunning) {
+          return resolve(false);
+        }
         try {
           const res = await this._controllerRequest('GET', '/version');
           if (res.statusCode === 200) {
@@ -431,6 +513,19 @@ class MihomoManager {
         setTimeout(check, 150);
       };
       check();
+    });
+  }
+
+  _isPortInUse(port) {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      server.once('error', (err) => {
+        resolve(err.code === 'EADDRINUSE');
+      });
+      server.once('listening', () => {
+        server.close(() => resolve(false));
+      });
+      server.listen(port, '127.0.0.1');
     });
   }
 
@@ -447,7 +542,7 @@ class MihomoManager {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(dataStr)
         },
-        timeout: 4000
+        timeout: 6000
       }, (res) => {
         let body = '';
         res.on('data', chunk => { body += chunk; });
@@ -474,17 +569,31 @@ class MihomoManager {
       const req = client.get(urlStr, options, (res) => {
         // 处理 301 / 302 重定向
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          try { res.resume(); } catch (_) {} // 显式消耗流，释放底层 Socket 句柄防泄漏
           const nextUrl = new URL(res.headers.location, urlStr).toString();
           return resolve(this._httpGetWithRedirect(nextUrl, options, redirectCount + 1));
         }
 
-        let body = '';
-        res.on('data', chunk => { body += chunk; });
-        res.on('end', () => resolve({
-          statusCode: res.statusCode,
-          headers: res.headers,
-          body
-        }));
+        const chunks = [];
+        res.on('data', chunk => { chunks.push(chunk); });
+        res.on('end', () => {
+          try {
+            let buffer = Buffer.concat(chunks);
+            const encoding = (res.headers['content-encoding'] || '').toLowerCase();
+            if (encoding.includes('gzip')) {
+              buffer = zlib.gunzipSync(buffer);
+            } else if (encoding.includes('deflate')) {
+              buffer = zlib.inflateSync(buffer);
+            }
+            resolve({
+              statusCode: res.statusCode,
+              headers: res.headers,
+              body: buffer.toString('utf8')
+            });
+          } catch (decodeErr) {
+            reject(new Error(`订阅数据解压缩或解码失败: ${decodeErr.message}`));
+          }
+        });
       });
 
       req.on('error', reject);

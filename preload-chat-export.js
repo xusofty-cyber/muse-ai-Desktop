@@ -2431,7 +2431,26 @@ function injectExportButton() {}
         const queueText = queue 
           ? (queue.length === 1 ? queue[0] : `${queue[0]} (备用+${queue.length - 1})`)
           : '自适应系统/TUN';
-        proxyRow.innerHTML = `<span class="hub-meta-label">🛡️ 代理出口:</span><span class="hub-meta-val" title="${queue ? queue.join(' ➔ ') : '自适应系统/TUN'}">${queue ? `<span style="color:#818cf8;font-weight:600;">${queueText}</span>` : `<span style="color:#64748b;font-style:italic;">${queueText}</span>`}</span>`;
+        
+        const proxyLabel = document.createElement('span');
+        proxyLabel.className = 'hub-meta-label';
+        proxyLabel.textContent = '🛡️ 代理出口:';
+
+        const proxyVal = document.createElement('span');
+        proxyVal.className = 'hub-meta-val';
+        proxyVal.title = queue ? queue.join(' ➔ ') : '自适应系统/TUN';
+
+        const proxyInner = document.createElement('span');
+        if (queue) {
+          proxyInner.style.cssText = 'color:#818cf8;font-weight:600;';
+        } else {
+          proxyInner.style.cssText = 'color:#64748b;font-style:italic;';
+        }
+        proxyInner.textContent = queueText;
+
+        proxyVal.appendChild(proxyInner);
+        proxyRow.appendChild(proxyLabel);
+        proxyRow.appendChild(proxyVal);
         metaBox.appendChild(proxyRow);
 
         card.appendChild(metaBox);
@@ -2598,11 +2617,20 @@ function injectExportButton() {}
       currentQueue.forEach((nodeName, idx) => {
         const tag = document.createElement('span');
         tag.style.cssText = 'display:inline-flex; align-items:center; background:rgba(99,102,241,0.18); color:#a5b4fc; border:1px solid rgba(99,102,241,0.35); border-radius:4px; padding:2px 6px; margin:2px 4px 2px 0; font-size:11px;';
-        tag.innerHTML = `<span>${idx === 0 ? '👑 ' : `${idx + 1}. `}${nodeName}</span><span style="margin-left:5px; cursor:pointer; color:#f87171; font-weight:bold;">×</span>`;
-        tag.querySelector('span:last-child').onclick = () => {
+        
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = `${idx === 0 ? '👑 ' : `${idx + 1}. `}${nodeName}`;
+
+        const delSpan = document.createElement('span');
+        delSpan.style.cssText = 'margin-left:5px; cursor:pointer; color:#f87171; font-weight:bold;';
+        delSpan.textContent = '×';
+        delSpan.onclick = () => {
           currentQueue.splice(idx, 1);
           renderQueueTags();
         };
+
+        tag.appendChild(titleSpan);
+        tag.appendChild(delSpan);
         tagsBox.appendChild(tag);
       });
     };

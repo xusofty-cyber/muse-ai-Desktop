@@ -1937,6 +1937,8 @@ function addProfile(customName, customGroup, customPurpose) {
     usageText: '',
     tokenResetAt: '',
     status: 'normal',
+    proxyQueue: [],
+    proxyStrategy: 'fallback',
     updatedAt: Date.now(),
   };
   state.profiles.push(profile);
@@ -1947,7 +1949,20 @@ function addProfile(customName, customGroup, customPurpose) {
   setupDownloadHandler(id);
   setupPermissions(id);
   setupSessionPersistence(id);
-  applyProxyToSession(session.fromPartition(partitionFor(id)), id);
+
+  if (state.mihomo && state.mihomo.enabled) {
+    const mm = getMihomoManager();
+    if (mm && mm.isRunning) {
+      mm.reload(state.profiles, state.mihomo.cachedProxies)
+        .then(() => applyProxySettings())
+        .catch((e) => console.warn('[Mihomo] Reload on addProfile failed:', e));
+    } else {
+      applyProxyToSession(session.fromPartition(partitionFor(id)), id);
+    }
+  } else {
+    applyProxyToSession(session.fromPartition(partitionFor(id)), id);
+  }
+
   switchAccount(id);
   notify('新增账号', `${profile.name} 已创建，已就绪独立会话环境。`);
   return profile;
@@ -2561,6 +2576,16 @@ ipcMain.handle('account:reorder', (e, { orderedIds }) => {
   saveState();
   buildTrayMenu();
   broadcastAccountChange();
+
+  if (state.mihomo && state.mihomo.enabled) {
+    const mm = getMihomoManager();
+    if (mm && mm.isRunning) {
+      mm.reload(state.profiles, state.mihomo.cachedProxies)
+        .then(() => applyProxySettings())
+        .catch((e) => console.warn('[Mihomo] Reload on account reorder failed:', e));
+    }
+  }
+
   return { ok: true };
 });
 
@@ -2625,6 +2650,16 @@ ipcMain.handle('account:delete', async (e, { id }) => {
     mainWindow = getOrCreateProfileWindow(state.activeProfileId);
     showWindowSafely(mainWindow);
   }
+
+  if (state.mihomo && state.mihomo.enabled) {
+    const mm = getMihomoManager();
+    if (mm && mm.isRunning) {
+      mm.reload(state.profiles, state.mihomo.cachedProxies)
+        .then(() => applyProxySettings())
+        .catch((e) => console.warn('[Mihomo] Reload on account delete failed:', e));
+    }
+  }
+
   return { ok: true };
 });
 
@@ -2684,26 +2719,52 @@ ipcMain.handle('mihomo:set-config', async (e, cfg) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (!cfg || typeof cfg !== 'object') return { ok: false, error: 'Invalid configuration' };
 
-  const prevEnabled = state.mihomo && state.mihomo.enabled;
+  const prevState = state.mihomo ? { ...state.mihomo } : defaultMihomoConfig();
+  const prevEnabled = !!prevState.enabled;
   state.mihomo = {
     ...defaultMihomoConfig(),
-    ...(state.mihomo || {}),
+    ...prevState,
     ...cfg,
   };
-  saveState();
 
   const mm = getMihomoManager();
   if (state.mihomo.enabled) {
+    let coreRes = null;
     if (!mm.isRunning) {
-      await mm.start(state.profiles, state.mihomo.cachedProxies);
+      coreRes = await mm.start(state.profiles, state.mihomo.cachedProxies);
     } else {
-      await mm.reload(state.profiles, state.mihomo.cachedProxies);
+      coreRes = await mm.reload(state.profiles, state.mihomo.cachedProxies);
+    }
+    if (!coreRes || !coreRes.ok) {
+      // 启动/重载失败时不保存假启用状态，直接回滚并透传真实错误
+      state.mihomo.enabled = prevEnabled;
+      saveState();
+      return {
+        ok: false,
+        error: (coreRes && coreRes.error) || 'Mihomo 内核启动失败，请检查 mihomo.log',
+        isRunning: mm.isRunning,
+        portMap: mm.portMap,
+      };
     }
   } else if (prevEnabled && !state.mihomo.enabled) {
     mm.stop();
   }
 
+  saveState();
   await applyProxySettings();
+
+  // 同步重载可见窗口（隐藏窗口打脏标记），确保网页即时切至独立 Mihomo 端口或恢复常规代理
+  for (const win of profileWindows.values()) {
+    if (win && !win.isDestroyed()) {
+      if (win.isVisible()) win.webContents.reload();
+      else markWindowNavPending(win, 'reload');
+    }
+  }
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    if (quickWindow.isVisible()) quickWindow.webContents.reload();
+    else markWindowNavPending(quickWindow, 'reload');
+  }
+
   return { ok: true, isRunning: mm.isRunning, portMap: mm.portMap };
 });
 
@@ -3799,6 +3860,18 @@ app.whenReady().then(async () => {
         if (res.ok) {
           console.log('[Mihomo] Kernel started on boot, re-applying proxies...');
           await applyProxySettings();
+          // 自愈冷启动掉入 offline.html 或在代理就绪前已发起连接的活动窗口
+          for (const [profId, win] of profileWindows.entries()) {
+            if (win && !win.isDestroyed() && win.isVisible()) {
+              const currentUrl = win.webContents.getURL() || '';
+              if (currentUrl.includes('offline.html') || currentUrl === 'about:blank' || !currentUrl) {
+                console.log(`[Mihomo] Self-healing window from offline page for profile: ${profId}`);
+                win.loadURL(currentSite().url);
+              } else {
+                win.webContents.reload();
+              }
+            }
+          }
         } else {
           console.warn('[Mihomo] Failed to start on boot:', res.error);
         }
