@@ -6,7 +6,8 @@
 
 ## 一、当前任务概览
 
-- **关联需求 / 分支**：独立特性分支 `feature/embedded-mihomo-proxy`（基于 `feature/account-hub-and-feishu-sync`）
+- **关联需求 / 分支**：独立特性分支 `feature/embedded-mihomo-proxy`（基于 `feature/account-hub-and-feishu-sync`，已成功推送到远端 `origin/feature/embedded-mihomo-proxy`）
+- **远程分支追踪与 PR 链接**：`https://github.com/xusofty-cyber/muse-ai-Desktop/pull/new/feature/embedded-mihomo-proxy`
 - **核心成果**：
   1. **内置 Mihomo 智能分流与订阅解析引擎 (`mihomo-manager.js`)**：
      - 支持填入机场 Clash 订阅 URL，自动带 User-Agent 请求并追踪重定向，解析并持久化提取 `proxies` 节点列表；
