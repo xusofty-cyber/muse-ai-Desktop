@@ -70,4 +70,14 @@ contextBridge.exposeInMainWorld('lockAPI', {
   lockNow: () => ipcRenderer.invoke('lock:lock-now'),
 });
 
+contextBridge.exposeInMainWorld('mihomoAPI', {
+  getConfig: () => ipcRenderer.invoke('mihomo:get-config'),
+  setConfig: (config) => ipcRenderer.invoke('mihomo:set-config', config),
+  syncSubscription: (subUrl) => ipcRenderer.invoke('mihomo:sync-subscription', subUrl),
+  getNodes: () => ipcRenderer.invoke('mihomo:get-nodes'),
+  testDelay: (proxyName) => ipcRenderer.invoke('mihomo:test-delay', proxyName),
+  setProfileQueue: (payload) => ipcRenderer.invoke('account:set-proxy-queue', payload),
+});
+
+
 

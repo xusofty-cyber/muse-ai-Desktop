@@ -2424,6 +2424,16 @@ function injectExportButton() {}
         resetRow.innerHTML = `<span class="hub-meta-label">⏳ ${t.tokenResetLabel}:</span><span class="hub-meta-val">${p.tokenResetAt ? p.tokenResetAt : `<span style="color:#64748b;font-style:italic;">${t.noResetInfo}</span>`}</span>`;
         metaBox.appendChild(resetRow);
 
+        // 代理出口队列
+        const proxyRow = document.createElement('div');
+        proxyRow.className = 'hub-meta-row';
+        const queue = Array.isArray(p.proxyQueue) && p.proxyQueue.length > 0 ? p.proxyQueue : null;
+        const queueText = queue 
+          ? (queue.length === 1 ? queue[0] : `${queue[0]} (备用+${queue.length - 1})`)
+          : '自适应系统/TUN';
+        proxyRow.innerHTML = `<span class="hub-meta-label">🛡️ 代理出口:</span><span class="hub-meta-val" title="${queue ? queue.join(' ➔ ') : '自适应系统/TUN'}">${queue ? `<span style="color:#818cf8;font-weight:600;">${queueText}</span>` : `<span style="color:#64748b;font-style:italic;">${queueText}</span>`}</span>`;
+        metaBox.appendChild(proxyRow);
+
         card.appendChild(metaBox);
 
         // 用量进度条
@@ -2564,6 +2574,92 @@ function injectExportButton() {}
     resetInput.value = p.tokenResetAt || '';
     resetRow.appendChild(resetInput);
 
+    // 5. 专属代理出口队列 (Mihomo)
+    const proxyRow = document.createElement('div');
+    proxyRow.className = 'hub-form-row';
+    proxyRow.style.marginTop = '10px';
+    proxyRow.innerHTML = `<label class="hub-form-label">🛡️ 专属代理出口队列 (Mihomo 故障转移)</label>`;
+
+    const queueWrap = document.createElement('div');
+    queueWrap.style.cssText = 'background:#1e2128; border:1px solid #2d323e; border-radius:6px; padding:8px; font-size:11.5px;';
+
+    let currentQueue = Array.isArray(p.proxyQueue) ? [...p.proxyQueue] : [];
+    let currentStrategy = p.proxyStrategy || 'fallback';
+
+    const tagsBox = document.createElement('div');
+    tagsBox.style.cssText = 'min-height:28px; display:flex; flex-wrap:wrap; align-items:center; margin-bottom:8px;';
+
+    const renderQueueTags = () => {
+      tagsBox.innerHTML = '';
+      if (currentQueue.length === 0) {
+        tagsBox.innerHTML = '<span style="color:#64748b;font-style:italic;">未分配专属队列 (将跟随系统代理/直连)</span>';
+        return;
+      }
+      currentQueue.forEach((nodeName, idx) => {
+        const tag = document.createElement('span');
+        tag.style.cssText = 'display:inline-flex; align-items:center; background:rgba(99,102,241,0.18); color:#a5b4fc; border:1px solid rgba(99,102,241,0.35); border-radius:4px; padding:2px 6px; margin:2px 4px 2px 0; font-size:11px;';
+        tag.innerHTML = `<span>${idx === 0 ? '👑 ' : `${idx + 1}. `}${nodeName}</span><span style="margin-left:5px; cursor:pointer; color:#f87171; font-weight:bold;">×</span>`;
+        tag.querySelector('span:last-child').onclick = () => {
+          currentQueue.splice(idx, 1);
+          renderQueueTags();
+        };
+        tagsBox.appendChild(tag);
+      });
+    };
+    renderQueueTags();
+    queueWrap.appendChild(tagsBox);
+
+    // 下拉选择添加节点
+    const addWrap = document.createElement('div');
+    addWrap.style.cssText = 'display:flex; gap:6px; align-items:center;';
+
+    const nodeSelect = document.createElement('select');
+    nodeSelect.className = 'hub-form-input';
+    nodeSelect.style.cssText = 'flex:1; padding:4px 8px; font-size:11.5px; height:28px;';
+    nodeSelect.innerHTML = '<option value="">-- 选择要加入队列的节点 --</option>';
+
+    ipcRenderer.invoke('mihomo:get-nodes').then((nodes) => {
+      if (Array.isArray(nodes) && nodes.length > 0) {
+        nodes.forEach((n) => {
+          const opt = document.createElement('option');
+          opt.value = n.name;
+          opt.textContent = `[${n.type.toUpperCase()}] ${n.name}`;
+          nodeSelect.appendChild(opt);
+        });
+      } else {
+        nodeSelect.innerHTML = '<option value="">(尚未拉取机场订阅，请先在网络设置中同步)</option>';
+      }
+    }).catch(() => {});
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'acct-modal-btn';
+    addBtn.style.cssText = 'padding:4px 10px; font-size:11px; height:28px; flex-shrink:0;';
+    addBtn.textContent = '+ 添加';
+    addBtn.onclick = () => {
+      const val = nodeSelect.value;
+      if (val && !currentQueue.includes(val)) {
+        currentQueue.push(val);
+        renderQueueTags();
+      }
+    };
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'acct-modal-btn';
+    clearBtn.style.cssText = 'padding:4px 8px; font-size:11px; height:28px; flex-shrink:0; color:#94a3b8;';
+    clearBtn.textContent = '清空';
+    clearBtn.onclick = () => {
+      currentQueue = [];
+      renderQueueTags();
+    };
+
+    addWrap.appendChild(nodeSelect);
+    addWrap.appendChild(addBtn);
+    addWrap.appendChild(clearBtn);
+    queueWrap.appendChild(addWrap);
+    proxyRow.appendChild(queueWrap);
+
     // 底部操作
     const actions = document.createElement('div');
     actions.className = 'acct-modal-actions';
@@ -2592,6 +2688,13 @@ function injectExportButton() {}
         usageText: `${newUsage}%`,
         tokenResetAt: newReset,
       }).catch(() => {});
+
+      await ipcRenderer.invoke('account:set-proxy-queue', {
+        profileId: p.id,
+        proxyQueue: currentQueue,
+        proxyStrategy: currentStrategy,
+      }).catch(() => {});
+
       if (dockState.hubOpen) renderAccountHub();
     };
 
@@ -2603,6 +2706,7 @@ function injectExportButton() {}
     card.appendChild(purposeRow);
     card.appendChild(usageRow);
     card.appendChild(resetRow);
+    card.appendChild(proxyRow);
     card.appendChild(actions);
 
     overlay.appendChild(card);

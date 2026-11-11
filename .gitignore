@@ -31,4 +31,26 @@ scratch/
 !/.comet/
 /.comet/*
 !/.comet/config.yaml
-# <<< Comet managed project state <<<
+.comet-archive-staging/
+.*.comet-archive-cas-*
+.*.comet-runtime-migration.json*
+.*.comet-runtime-source-*
+.*.comet-runtime-stage-*
+**/comet/changes/*/runtime
+**/comet/archive/*/runtime
+**/.comet/run-state.json
+**/.comet/pending-action.json
+**/.comet/trajectory.jsonl
+**/.comet/context.md
+**/.comet/artifacts.json
+**/.comet/checkpoint.json
+**/.comet/skill-snapshots
+**/.comet/checks
+**/.comet/coordination.json
+**/.comet/subagent-progress.md
+.comet-state.lock
+.comet-state-transaction.json
+# mihomo local core binaries
+bin/mihomo/mihomo*
+!bin/mihomo/.gitkeep
+

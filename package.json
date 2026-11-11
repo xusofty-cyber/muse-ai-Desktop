@@ -15,6 +15,7 @@
     "files": [
       "main.js",
       "feishu-sync.js",
+      "mihomo-manager.js",
       "bin/**/*",
       "hotkeys.html",
       "lock.html",
@@ -84,7 +85,9 @@
       ]
     }
   },
-  "dependencies": {},
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
   "description": "Muse for Desktop (Windows, macOS, Linux): your personal AI agent in a native desktop app",
   "devDependencies": {
     "electron": "^44.6.0",

@@ -2,7 +2,9 @@ const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeI
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const os = require('os');
 const { defaultFeishuConfig, detectFeishuCli, executeFeishuSync, setupFeishuAutoSync } = require('./feishu-sync');
+const { MihomoManager, DEFAULT_CONTROLLER_PORT, DEFAULT_BASE_PROXY_PORT } = require('./mihomo-manager');
 
 // ---- 核心加固 1 & 2: 先定身份/UserData 再拿单例锁 + 统一 UserData 目录 -------------
 // 顺序要点 (v1.5.15 修正评审 P1-11): Chromium 单例锁绑定获取时刻的 userData
@@ -405,6 +407,19 @@ function verifyPassword(password, salt, storedHash) {
   }
 }
 
+function defaultMihomoConfig() {
+  return {
+    enabled: false,
+    subscriptionUrl: '',
+    autoUpdateInterval: 24,
+    lastUpdated: '',
+    basePort: DEFAULT_BASE_PROXY_PORT,
+    controllerPort: DEFAULT_CONTROLLER_PORT,
+    customBinPath: '',
+    cachedProxies: [],
+  };
+}
+
 function defaultState() {
   return {
     window: {},
@@ -420,6 +435,8 @@ function defaultState() {
       usageText: '',
       tokenResetAt: '',
       status: 'normal',
+      proxyQueue: [],
+      proxyStrategy: 'fallback',
     }],
     activeProfileId: 'default',
     accountGroups: ['默认群组'],
@@ -427,6 +444,7 @@ function defaultState() {
     hotkeys: { ...DEFAULT_HOTKEYS },
     automation: defaultAutomation(),
     proxy: defaultProxy(),
+    mihomo: defaultMihomoConfig(),
     theme: 'dark', // 'dark' | 'light' | 'system'
     locale: detectDefaultLocale(), // 'zh-CN' | 'en'
     ui: {
@@ -498,6 +516,12 @@ function sanitizeAndMergeState(raw) {
     },
   };
 
+  merged.mihomo = {
+    ...defaultMihomoConfig(),
+    ...(raw.mihomo || {}),
+    cachedProxies: Array.isArray(raw.mihomo && raw.mihomo.cachedProxies) ? raw.mihomo.cachedProxies : [],
+  };
+
   // profiles 合法性校验 (v1.5.16, 评审 P2): 此前只补颜色, 不查 id。空/重复/
   // 非字符串 id 会让多个账号映射到同一 persist:muse-undefined 分区且不可拆分。
   // 现在过滤非法与重复 id (保留首个), 全部非法时回退默认账号。
@@ -518,6 +542,8 @@ function sanitizeAndMergeState(raw) {
         usageText: typeof prof.usageText === 'string' ? prof.usageText : '',
         tokenResetAt: typeof prof.tokenResetAt === 'string' ? prof.tokenResetAt : '',
         status: ['normal', 'warning', 'exhausted', 'idle'].includes(prof.status) ? prof.status : 'normal',
+        proxyQueue: Array.isArray(prof.proxyQueue) ? prof.proxyQueue.filter((n) => typeof n === 'string' && n.trim()) : [],
+        proxyStrategy: ['fallback', 'url-test', 'load-balance', 'select'].includes(prof.proxyStrategy) ? prof.proxyStrategy : 'fallback',
       }));
   }
   if (!Array.isArray(merged.profiles) || merged.profiles.length === 0) {
@@ -531,6 +557,8 @@ function sanitizeAndMergeState(raw) {
       usageText: '',
       tokenResetAt: '',
       status: 'normal',
+      proxyQueue: [],
+      proxyStrategy: 'fallback',
     }];
   }
   // windowByProfile 只保留现存账号的条目, 防已删账号的几何记录无限堆积
@@ -1040,9 +1068,55 @@ function setupExternalLinkHandler(win, profileId) {
   win.webContents.on('will-redirect', handleNavigation);
 }
 
+let mihomoManager = null;
+function getMihomoManager() {
+  if (!mihomoManager) {
+    const mihomoDataDir = path.join(app.getPath('userData'), 'mihomo');
+    mihomoManager = new MihomoManager({
+      dataDir: mihomoDataDir,
+      binPath: state.mihomo && state.mihomo.customBinPath,
+      basePort: (state.mihomo && state.mihomo.basePort) || DEFAULT_BASE_PROXY_PORT,
+      controllerPort: (state.mihomo && state.mihomo.controllerPort) || DEFAULT_CONTROLLER_PORT,
+    });
+  }
+  return mihomoManager;
+}
+
 // ---- network & proxy settings ---------------------------------------------
-async function applyProxyToSession(targetSession) {
+async function applyProxyToSession(targetSession, profileId = null) {
   if (!targetSession) return;
+
+  // 1. 若开启了内置 Mihomo 多账号独立代理分流模式
+  if (state.mihomo && state.mihomo.enabled) {
+    const mm = getMihomoManager();
+    if (mm && mm.isRunning) {
+      // 优先从 portMap 中找该 profileId 对应的独立端口
+      const dedicatedPort = profileId ? mm.portMap[profileId] : null;
+      if (dedicatedPort) {
+        try {
+          const proxyRules = `http://127.0.0.1:${dedicatedPort}`;
+          const proxyBypassRules = '<local>;localhost;127.0.0.1';
+          await targetSession.setProxy({ proxyRules, proxyBypassRules });
+          console.log(`[Proxy] Applied Mihomo dedicated port ${dedicatedPort} to session for profile: ${profileId}`);
+          return;
+        } catch (err) {
+          console.error(`[Proxy] Failed to apply Mihomo port ${dedicatedPort} to profile ${profileId}:`, err);
+        }
+      } else if (!profileId) {
+        // defaultSession 无特定账号时走首个端口
+        try {
+          const fallbackPort = mm.basePort || DEFAULT_BASE_PROXY_PORT;
+          await targetSession.setProxy({
+            proxyRules: `http://127.0.0.1:${fallbackPort}`,
+            proxyBypassRules: '<local>;localhost;127.0.0.1'
+          });
+          return;
+        } catch (_) {}
+      }
+    }
+  }
+
+  // 2. 传统通用代理策略 (Custom / Direct / System 自适应)
   const p = state.proxy || defaultProxy();
   try {
     if (p.mode === 'custom' && p.enabled !== false) {
@@ -1191,7 +1265,7 @@ async function applyProxySettings() {
   await applyProxyToSession(session.defaultSession);
   for (const p of state.profiles) {
     const s = session.fromPartition(partitionFor(p.id));
-    await applyProxyToSession(s);
+    await applyProxyToSession(s, p.id);
   }
 }
 
@@ -1356,7 +1430,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
 
   // 确保新窗口的 Session 立即继承全局统一的网络代理配置
   const ses = session.fromPartition(partitionFor(profileId));
-  applyProxyToSession(ses);
+  applyProxyToSession(ses, profileId);
 
   const saved = ensureBoundsVisible(
     targetBounds || (state.windowByProfile && state.windowByProfile[profileId]) || state.window || {}
@@ -1873,7 +1947,7 @@ function addProfile(customName, customGroup, customPurpose) {
   setupDownloadHandler(id);
   setupPermissions(id);
   setupSessionPersistence(id);
-  applyProxyToSession(session.fromPartition(partitionFor(id)));
+  applyProxyToSession(session.fromPartition(partitionFor(id)), id);
   switchAccount(id);
   notify('新增账号', `${profile.name} 已创建，已就绪独立会话环境。`);
   return profile;
@@ -2591,6 +2665,122 @@ ipcMain.handle('proxy-set', async (e, config) => {
     else markWindowNavPending(quickWindow, 'reload');
   }
   return { ok: true };
+});
+
+// 内置 Mihomo 智能代理分流 IPC handlers
+ipcMain.handle('mihomo:get-config', (e) => {
+  if (denyUntrusted(e)) return undefined;
+  const mm = getMihomoManager();
+  return {
+    ...(state.mihomo || defaultMihomoConfig()),
+    isRunning: mm ? mm.isRunning : false,
+    portMap: mm ? mm.portMap : {},
+    executablePath: mm ? mm.findExecutable() : null,
+    nodeCount: (state.mihomo && Array.isArray(state.mihomo.cachedProxies)) ? state.mihomo.cachedProxies.length : 0,
+  };
+});
+
+ipcMain.handle('mihomo:set-config', async (e, cfg) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!cfg || typeof cfg !== 'object') return { ok: false, error: 'Invalid configuration' };
+
+  const prevEnabled = state.mihomo && state.mihomo.enabled;
+  state.mihomo = {
+    ...defaultMihomoConfig(),
+    ...(state.mihomo || {}),
+    ...cfg,
+  };
+  saveState();
+
+  const mm = getMihomoManager();
+  if (state.mihomo.enabled) {
+    if (!mm.isRunning) {
+      await mm.start(state.profiles, state.mihomo.cachedProxies);
+    } else {
+      await mm.reload(state.profiles, state.mihomo.cachedProxies);
+    }
+  } else if (prevEnabled && !state.mihomo.enabled) {
+    mm.stop();
+  }
+
+  await applyProxySettings();
+  return { ok: true, isRunning: mm.isRunning, portMap: mm.portMap };
+});
+
+ipcMain.handle('mihomo:sync-subscription', async (e, urlToSync) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const targetUrl = typeof urlToSync === 'string' && urlToSync.trim() ? urlToSync.trim() : (state.mihomo && state.mihomo.subscriptionUrl);
+  if (!targetUrl) return { ok: false, error: '请先填写有效的机场订阅 URL' };
+
+  const mm = getMihomoManager();
+  const subRes = await mm.fetchSubscription(targetUrl);
+  if (!subRes.ok) {
+    return { ok: false, error: subRes.error };
+  }
+
+  state.mihomo = {
+    ...defaultMihomoConfig(),
+    ...(state.mihomo || {}),
+    subscriptionUrl: targetUrl,
+    lastUpdated: new Date().toISOString(),
+    cachedProxies: subRes.proxies || [],
+  };
+  saveState();
+
+  // 若已开启，自动热更新内核配置
+  if (state.mihomo.enabled) {
+    if (mm.isRunning) {
+      await mm.reload(state.profiles, state.mihomo.cachedProxies);
+    } else {
+      await mm.start(state.profiles, state.mihomo.cachedProxies);
+    }
+    await applyProxySettings();
+  }
+
+  return {
+    ok: true,
+    nodeCount: subRes.proxies.length,
+    proxies: subRes.proxies,
+    subInfo: subRes.subInfo
+  };
+});
+
+ipcMain.handle('mihomo:get-nodes', (e) => {
+  if (denyUntrusted(e)) return undefined;
+  return (state.mihomo && Array.isArray(state.mihomo.cachedProxies)) ? state.mihomo.cachedProxies : [];
+});
+
+ipcMain.handle('mihomo:test-delay', async (e, proxyName) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const mm = getMihomoManager();
+  if (!mm || !mm.isRunning) return { ok: false, error: 'Mihomo 内核未运行' };
+  return mm.testNodeDelay(proxyName);
+});
+
+ipcMain.handle('account:set-proxy-queue', async (e, payload) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const { profileId, proxyQueue, proxyStrategy } = payload || {};
+  if (!profileId || typeof profileId !== 'string') return { ok: false, error: 'Invalid profileId' };
+
+  const targetProf = state.profiles.find((p) => p.id === profileId);
+  if (!targetProf) return { ok: false, error: 'Profile not found' };
+
+  targetProf.proxyQueue = Array.isArray(proxyQueue) ? proxyQueue.filter((n) => typeof n === 'string' && n.trim()) : [];
+  if (['fallback', 'url-test', 'load-balance', 'select'].includes(proxyStrategy)) {
+    targetProf.proxyStrategy = proxyStrategy;
+  }
+  saveState();
+
+  const mm = getMihomoManager();
+  if (state.mihomo && state.mihomo.enabled && mm.isRunning) {
+    await mm.reload(state.profiles, state.mihomo.cachedProxies);
+    // 重新应用该账号的分区代理
+    const s = session.fromPartition(partitionFor(profileId));
+    await applyProxyToSession(s, profileId);
+  }
+
+  broadcastAccountChange();
+  return { ok: true, profile: targetProf };
 });
 
 // 主题与外观配置 IPC handlers
@@ -3600,6 +3790,21 @@ app.whenReady().then(async () => {
       broadcastAccountChange();
     });
   }
+  // 启动内置 Mihomo 多账号代理内核 (若已启用)
+  if (state.mihomo && state.mihomo.enabled) {
+    const mm = getMihomoManager();
+    mm.loadCachedSubscription();
+    mm.start(state.profiles, state.mihomo.cachedProxies)
+      .then(async (res) => {
+        if (res.ok) {
+          console.log('[Mihomo] Kernel started on boot, re-applying proxies...');
+          await applyProxySettings();
+        } else {
+          console.warn('[Mihomo] Failed to start on boot:', res.error);
+        }
+      })
+      .catch((err) => console.error('[Mihomo] Boot start error:', err));
+  }
   app.on('browser-window-focus', () => recordUserActivity());
   if (state.lock && state.lock.enabled && state.lock.hash) {
     lockScreen();
@@ -3618,6 +3823,9 @@ app.on('window-all-closed', () => {
 
 let isFlushingOnQuit = false;
 app.on('before-quit', async (e) => {
+  if (mihomoManager) {
+    try { mihomoManager.stop(); } catch (_) {}
+  }
   if (!isFlushingOnQuit) {
     e.preventDefault();
     isFlushingOnQuit = true;
@@ -3630,8 +3838,17 @@ app.on('before-quit', async (e) => {
 });
 
 app.on('will-quit', () => {
+  if (mihomoManager) {
+    try { mihomoManager.stop(); } catch (_) {}
+  }
   if (autoLockTimer) clearInterval(autoLockTimer);
   globalShortcut.unregisterAll();
+});
+
+process.on('exit', () => {
+  if (mihomoManager) {
+    try { mihomoManager.stop(); } catch (_) {}
+  }
 });
 
 // 仅供本地冒烟测试引用内部纯函数; Electron 运行时忽略该导出。
