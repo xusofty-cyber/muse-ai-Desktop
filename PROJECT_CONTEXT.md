@@ -11,10 +11,12 @@
 - **核心业务矩阵**：
   1. **主窗口与双站点切换 (Main Window & Site Toggle)**：原生窗口封装 muse.ai 与 meta.ai，支持快捷键 (Ctrl+Shift+M) 或托盘菜单在两站点间快速切换并复用窗口，记忆窗口尺寸和位置，启用 GPU 光栅化以保证平滑滚动。
   2. **快速对话浮窗 (Quick Chat Popup)**：全局快捷键 (Ctrl+Shift+Space) 在任意界面唤起轻量快捷聊天窗口，失去焦点时自动隐藏。
-  3. **多 Profile 与账号会话隔离 (Profiles & Account Switcher)**：基于 Electron Session Partition 实现多用户 Profile 独立登录与隔离；在 Meta AI 模式下提供多账号快速切换 (Ctrl+Shift+N) 与“添加 Meta AI 账号”能力。
-  4. **系统级原生集成与控制 (System & Audio Controls)**：系统托盘驻留与菜单、开机自启、麦克风与扬声器全局静音切换、快捷键自定义配置页面 (`hotkeys.html`)、剪贴板超长文本导出为文件 (`Documents/Muse clips/`) 以及原生下载管理。
-  5. **自动化控制与安全放行 (Automation / Auto-Allow Controls)**：显式 Opt-in 的自动化主开关、屏幕悬浮小部件、细粒度连接器/动作分类放行规则。
-  6. **自动更新与跨端分发 (Auto-Update & Distribution)**：集成 GitHub Releases 自动检测与静默下载更新；支持构建 Windows NSIS 安装包 (`dist/Muse Setup 1.1.0.exe`) 及免安装便携版 (`dist/Muse-Portable-1.1.0.exe`)。
+  3. **多 Profile 与账号会话隔离 (Profiles & Account Switcher)**：基于 Electron Session Partition 实现多用户 Profile 独立登录与隔离；在 Meta AI 模式下提供多账号快速切换 (Ctrl+Shift+N) 与“添加 Meta AI 账号”能力。支持侧边栏头像 SVG 用量进度外环与悬浮重置倒计时提示。
+  4. **账号宫格看板与飞书多维表格同步 (Account Hub & Feishu Sync)**：独立入口看板 (⊞ / Ctrl+Shift+G) 提供大图卡片看板、多维状态与搜索过滤；内置纯 Node 实现的 `bin/feishu-cli.js` 同步引擎，支持多维表格字段智能映射与定时轮询。
+  5. **内置 Mihomo 智能分流与多账号独立出口队列 (Embedded Mihomo Proxy Engine)**：内置轻量 Mihomo (Clash.Meta) 内核，支持机场 Clash 订阅链接一键同步与全节点延迟测速；为每个 Muse 账号分配独立本地端口（18001+），通过 Session 分立代理与专属 Fallback 故障转移队列，实现账号间物理级出口 IP 隔离与防风控关联。
+  6. **系统级原生集成与控制 (System & Audio Controls)**：系统托盘驻留与菜单、开机自启、麦克风与扬声器全局静音切换、快捷键自定义配置页面 (`hotkeys.html`)、剪贴板超长文本导出为文件 (`Documents/Muse clips/`) 以及原生下载管理。
+  7. **自动化控制与安全放行 (Automation / Auto-Allow Controls)**：显式 Opt-in 的自动化主开关、屏幕悬浮小部件、细粒度连接器/动作分类放行规则。
+  8. **自动更新与跨端分发 (Auto-Update & Distribution)**：集成 GitHub Releases 自动检测与静默下载更新；支持构建 Windows NSIS 安装包 (`dist/Muse Setup 1.1.0.exe`) 及免安装便携版 (`dist/Muse-Portable-1.1.0.exe`)。
 
 ---
 
@@ -41,9 +43,13 @@
 - **架构模式**：Electron 主进程 (Main Process) + 预加载桥接 (Preload Scripts) + 多渲染上下文 (WebContents & Settings UI) 的桌面混合分层架构
 - **关键模块与目录职责**：
   - `main.js`：Electron 主进程入口，负责应用生命周期、多窗口管理 (`mainWindow`, `quickWindow`, `settingsWindow`)、系统托盘、全局快捷键注册与状态持久化。
+  - `mihomo-manager.js`：内置 Mihomo 内核协同引擎，负责机场订阅拉取、配置动态合成、子进程生命周期守护与 External Controller REST API 通信。
+  - `feishu-sync.js`：飞书 OpenAPI 与多维表格（Bitable）数据同步引擎。
   - `preload-settings.js`：快捷键与设置页面的预加载桥接脚本，暴露安全的 IPC 接口。
-  - `preload-chat-export.js`：网页注入预加载脚本，实现聊天内容抓取与导出等集成交互。
-  - `hotkeys.html`：快捷键自定义配置页面（渲染进程 UI）。
+  - `preload-chat-export.js`：网页注入预加载脚本，实现多账号侧边栏、宫格看板与聊天交互。
+  - `hotkeys.html`：快捷键与综合设置页面（渲染进程 UI）。
+  - `bin/`：内置免安装辅助 CLI 工具（`bin/feishu-cli.js` 等）。
+  - `bin/mihomo/`：本地 Mihomo 内核二进制目录（受 `.gitignore` 保护）。
   - `assets/`：应用程序图标与静态素材（`icon.ico` 等）。
   - `docs/`：技术架构、产品规约与参考文档。
   - `tasks/`：任务规划 (`todo.md`) 与研发经验沉淀 (`lessons.md`)。

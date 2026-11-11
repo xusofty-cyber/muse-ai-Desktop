@@ -6,11 +6,25 @@
 
 ## 一、当前任务概览
 
-- **关联需求 / 分支**：独立分支 `feature/account-hub-and-feishu-sync`（与 main 隔离，不合入主干）
-- **核心目标**：
-  1. 重构账号管理：扩展数据模型（群组、主要用途、用量占比与文本、Token 重置时间、健康状态）；
-  2. 九宫格 / 多宫格账号总览看板（Account Hub）：支持海量账号卡片视图、群组分类筛选、实时搜索过滤、一键切换、编辑元数据及群组管理；
-  3. 飞书 OpenAPI 与多维表格（Bitable）定时同步：支持凭证配置、字段规则映射、智能用量解析、手动同步与后台定时轮询。
+- **关联需求 / 分支**：独立特性分支 `feature/embedded-mihomo-proxy`（基于 `feature/account-hub-and-feishu-sync`）
+- **核心成果**：
+  1. **内置 Mihomo 智能分流与订阅解析引擎 (`mihomo-manager.js`)**：
+     - 支持填入机场 Clash 订阅 URL，自动带 User-Agent 请求并追踪重定向，解析并持久化提取 `proxies` 节点列表；
+     - 动态 `config.yaml` 模版合成器：为每个 Muse 账号分配独立 Inbound 端口（如 18001、18002...）并绑定专属 `fallback` 故障转移策略组；
+     - 子进程生命周期守护、端口防冲突检测及 `127.0.0.1:19090` External Controller REST API 通信（热重载与单/全节点延迟测速）；
+  2. **主进程 Session 动态端口分流路由 (`main.js`)**：
+     - `applyProxyToSession(session, profileId)`：当启用 Mihomo 模式时，各账号的分区 Session 自动绑定至专属本地端口，实现不同账号物理级出口 IP 隔离；
+     - 应用启动自动初始化内核、退出时优雅释放子进程防孤儿进程；
+     - 注册 `mihomo:get-config`, `mihomo:set-config`, `mihomo:sync-subscription`, `mihomo:get-nodes`, `mihomo:test-delay`, `account:set-proxy-queue` 完整 IPC 通道；
+  3. **网络与代理设置 UI 升级 (`hotkeys.html` / `preload-settings.js`)**：
+     - 在 `tab-proxy` 增加【内置 Mihomo 智能分流】卡片，支持一键填入订阅链接、实时同步节点数量、全节点延迟测速展示与端口映射状态查看；
+  4. **账号中心节点队列分配与看板展示 (`preload-chat-export.js`)**：
+     - 宫格看板卡片新增“🛡️ 代理出口”标识（显示主用节点名称与备用数量）；
+     - 编辑账号弹窗新增专属代理队列多选与优先级排序器，支持自由添加/删除/清空节点。
+- **真实验证证据**：
+  - 单元与集成测试：`node scratch/test-mihomo-manager.js`（全部 6 项测试通过，包含内核启动、/version 响应、热重载与退出）；
+  - 端到端模型与分流测试：`node scratch/test-e2e-mihomo.js`（全部 4 项测试通过，验证了多账号多端口与 Session setProxy 规则隔离）；
+  - 全量回归测试：`node scratch/test-account-hub-and-feishu.js`、`scratch/test-account-reorder.js`、`scratch/test-tray-menu.js` 全绿。
 
 ---
 
