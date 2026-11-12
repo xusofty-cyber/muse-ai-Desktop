@@ -25,7 +25,12 @@
   5. **架构设计与操作指引文档归档 (`docs/`)**：
      - 系统架构：`docs/architecture/ARCH-002-embedded-mihomo-proxy.md`（模块拓扑、动态 Inbound/Fallback 策略组、进程生命周期与 ADR 决策）；
      - 操作手册：`docs/guides/GUIDE-002-embedded-mihomo-proxy.md`（机场订阅填入、一键测速、出口队列分配与排障 FAQ）。
+  6. **聊天外部超链接与 GitHub 卡片点击无响应修复 (`main.js` / `preload-chat-export.js`)**：
+     - 精确收窄 `isAuthOrConnectorUrl`：仅针对纯认证专属域与明确包含 `/oauth`、`/login`、`client_id=` 的授权请求放行应用内子窗口；将 GitHub/Slack/Notion 仓库与文档链接解绑；
+     - 重构主进程 `setWindowOpenHandler`：外部链接（无论是否带 `target="_blank"`）一律调用 `shell.openExternal` 唤起系统默认浏览器；
+     - 强化 Preload 捕获层事件监听：兼容常规超链接、卡片容器及卡片内嵌链接，取消针对 `target="_blank"` 的跳过，彻底恢复系统浏览器一键打开。
 - **真实验证证据**：
+  - 外链与卡片跳转拦截自动化测试：`node scratch/test-external-links.js`（全部断言 100% 通过，验证了 GitHub 仓库与文档链接被正确识别为外部链接、在 `setWindowOpenHandler` 中派发 `shell.openExternal`，以及在 Preload 捕获层拦截 `target="_blank"` 与卡片容器）；
   - 代码审查与全量缺陷修复：已攻克 P0 语法错误（`hotkeys.html` 残留 catch 剔除）、P1 安全 XSS 消除（`preload-chat-export.js` / `hotkeys.html` 节点名安全绑定）、P1 冷启动自愈与账号增删重排同步重载（`main.js`）、P1 `mihomo:set-config` 失败状态回滚与可见窗口热刷新、P1 Listener 显式绑定 `listen: '127.0.0.1'` 防局域网端口暴露及 `path.resolve(dataDir)` 绝对路径热重载保障、P2 二进制通配扫描（兼容 `mihomo-windows-amd64-v3.exe` 与 `app.asar.unpacked`）、测速自动按需启动内核与【▶ 启动内核】快捷按钮、测速目标换用 gstatic 204、Gzip 订阅解压、并发测速池（6 并发）与 `asarUnpack` 配置；
   - 真机二进制与集成单元测试：`node scratch/test-embedded-mihomo.js`（全部 6 项测试 100% 通过，实际拉起 `bin/mihomo/mihomo-windows-amd64-v3.exe` v1.19.34 验证 `/version` 响应、空节点兼容、动态新增账号热重载监听 18804 端口及 `mihomo.log` 实时落盘）；
   - 核心脚本语法与编译校验：`node -c main.js preload-settings.js preload-chat-export.js mihomo-manager.js` 与 `hotkeys.html` 内联脚本均 Exit Code 0，无语法错误。

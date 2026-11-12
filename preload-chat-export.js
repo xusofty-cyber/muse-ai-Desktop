@@ -3508,16 +3508,74 @@ function injectExportButton() {}
       const host = parsed.hostname.toLowerCase();
       if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
       if (host === 'meta.ai' || host.endsWith('.meta.ai')) return true;
-      // 常见认证回调、连接器与页面跳转
-      const authHosts = [
+      if (host === 'meta.com' || host.endsWith('.meta.com')) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  function isAuthOrConnectorUrl(rawUrl) {
+    if (typeof rawUrl !== 'string') return false;
+    const trimmed = rawUrl.trim();
+    if (trimmed === '' || trimmed === 'about:blank' || trimmed.startsWith('about:')) return true;
+    try {
+      const parsed = new URL(trimmed, window.location.href);
+      const host = parsed.hostname.toLowerCase();
+      const pathname = parsed.pathname.toLowerCase();
+      const search = parsed.search.toLowerCase();
+
+      // 1. 专属纯身份认证域名
+      const dedicatedAuthHosts = [
         'accounts.google.com',
         'appleid.apple.com',
         'auth.meta.com',
         'account.meta.com',
-        'facebook.com',
-        'github.com',
-        'spotify.com',
+        'family.meta.com',
+        'login.microsoftonline.com',
+        'login.live.com',
         'accounts.spotify.com',
+      ];
+      if (dedicatedAuthHosts.some((h) => host === h || host.endsWith('.' + h))) {
+        return true;
+      }
+
+      // 2. 内部站点的连接器中转授权与登录路由
+      const isInternal = host === 'muse.ai' || host.endsWith('.muse.ai') ||
+                         host === 'meta.ai' || host.endsWith('.meta.ai') ||
+                         host === 'meta.com' || host.endsWith('.meta.com');
+      if (isInternal) {
+        if (
+          pathname.includes('/connector') ||
+          pathname.includes('/auth') ||
+          pathname.includes('/oauth') ||
+          pathname.includes('/login') ||
+          pathname.includes('/signin') ||
+          search.includes('connector') ||
+          search.includes('error=') ||
+          search.includes('code=') ||
+          search.includes('state=') ||
+          search.includes('token=')
+        ) {
+          return true;
+        }
+      }
+
+      // 3. 通用 OAuth 特征参数
+      if (
+        (search.includes('client_id=') || search.includes('response_type=')) &&
+        (search.includes('redirect_uri=') || pathname.includes('oauth') || pathname.includes('auth'))
+      ) {
+        return true;
+      }
+
+      // 4. 第三方常用开放平台的特定登录/授权路径（普通仓库、主页、文档绝不属于 Auth）
+      const thirdPartyOAuthHosts = [
+        'github.com',
+        'facebook.com',
+        'fb.com',
+        'instagram.com',
+        'spotify.com',
         'dropbox.com',
         'zoom.us',
         'canva.com',
@@ -3525,40 +3583,60 @@ function injectExportButton() {}
         'peloton.com',
         'slack.com',
         'notion.so',
-        'login.microsoftonline.com',
         'live.com',
         'linkedin.com',
+        'twitter.com',
+        'x.com',
+        'plaid.com',
       ];
-      if (authHosts.some((h) => host === h || host.endsWith('.' + h))) {
-        return true;
+      if (thirdPartyOAuthHosts.some((h) => host === h || host.endsWith('.' + h))) {
+        if (
+          pathname.includes('/oauth') ||
+          pathname.startsWith('/login') ||
+          pathname.startsWith('/signin') ||
+          pathname.includes('/authorize') ||
+          search.includes('client_id=') ||
+          search.includes('redirect_uri=')
+        ) {
+          return true;
+        }
       }
+
       return false;
     } catch {
       return false;
     }
   }
 
-  // 使用捕获阶段 (capture: true)，拦截聊天区域中的外部 a 标签点击
+  // 使用捕获阶段 (capture: true)，拦截聊天区域中的外部超链接与卡片点击
   document.addEventListener(
     'click',
     (e) => {
       try {
-        const anchor = e.target && e.target.closest ? e.target.closest('a') : null;
-        if (!anchor) return;
+        // 支持普通 a 标签、带 data-href/data-url 的卡片容器、或卡片内部任意子元素
+        const anchor = e.target && e.target.closest
+          ? (e.target.closest('a') || e.target.closest('[data-href], [data-url], [role="link"]'))
+          : null;
 
-        // 尊重用户显式打开方式 (v1.5.17, 评审 P2): 带修饰键/中键点击与显式
-        // target 的链接交回页面与主进程的窗口打开逻辑, 不在此劫持
-        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-        const targetAttr = (anchor.getAttribute('target') || '').toLowerCase();
-        if (targetAttr && targetAttr !== '_self') return;
-
-        // 关键防御：如果点击发生在模态弹窗、设置面板或对话框内部，绝不拦截！交由页面自身逻辑处理
-        if (anchor.closest('[role="dialog"], [aria-modal="true"], [class*="dialog"], [class*="modal"], [class*="settings"]')) {
-          return;
+        let rawHref = null;
+        if (anchor) {
+          rawHref = anchor.getAttribute('href') || anchor.href || anchor.getAttribute('data-href') || anchor.getAttribute('data-url');
+        } else if (e.target && e.target.querySelector) {
+          const childAnchor = e.target.querySelector('a[href], [data-href], [data-url]');
+          if (childAnchor) {
+            rawHref = childAnchor.getAttribute('href') || childAnchor.href || childAnchor.getAttribute('data-href') || childAnchor.getAttribute('data-url');
+          }
         }
 
-        const rawHref = anchor.getAttribute('href') || anchor.href;
         if (!rawHref) return;
+
+        // 仅处理常规鼠标左键点击，尊重修饰键组合（Ctrl/Meta/Shift/Alt）
+        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+
+        // 关键防御：如果点击发生在模态弹窗、设置面板或对话框内部，绝不拦截！交由页面自身逻辑处理
+        if (e.target.closest && e.target.closest('[role="dialog"], [aria-modal="true"], [class*="dialog"], [class*="modal"], [class*="settings"]')) {
+          return;
+        }
 
         // 跳过纯锚点与非网络协议
         if (rawHref.startsWith('#') || rawHref.startsWith('javascript:')) return;
@@ -3572,22 +3650,23 @@ function injectExportButton() {}
           return;
         }
 
-        // 关键防御：如果是身份验证或连接器相关 URL，绝不拦截！
+        // 关键防御：内部主站点链接，不在此拦截，交由应用主窗口内部导航
         if (isInternalUrl(fullHref)) {
           return;
         }
 
-        const externalTarget = extractTargetUrl(fullHref);
-        if (externalTarget) {
-          e.preventDefault();
-          e.stopPropagation();
-          ipcRenderer.send('open-external-url', externalTarget);
+        // 关键防御：如果是身份验证或连接器相关 URL，交由主进程 setWindowOpenHandler 弹窗处理
+        if (isAuthOrConnectorUrl(fullHref)) {
           return;
         }
 
+        // 外部链接（GitHub 仓库、文档、文章等）：调用系统默认外部浏览器打开，阻止应用内无响应或误拦截
+        const externalTarget = extractTargetUrl(fullHref);
+        const finalUrl = externalTarget || fullHref;
+
         e.preventDefault();
         e.stopPropagation();
-        ipcRenderer.send('open-external-url', fullHref);
+        ipcRenderer.send('open-external-url', finalUrl);
       } catch (err) {
         console.warn('[Preload] External link intercept error:', err);
       }

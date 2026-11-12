@@ -842,50 +842,30 @@ function isInternalSiteUrl(rawUrl) {
 }
 
 function isAuthOrConnectorUrl(rawUrl) {
-  if (!rawUrl || typeof rawUrl !== 'string') return false;
-  // 关键：允许空白弹窗占位符（现代前端异步打开 OAuth 弹窗的通用标准模式）
-  if (rawUrl === 'about:blank' || rawUrl === '' || rawUrl.startsWith('about:')) {
+  if (typeof rawUrl !== 'string') return false;
+  // 关键：允许空白弹窗占位符（现代前端异步打开 OAuth 弹窗的通用标准模式：先 window.open('') 再重定向）
+  const trimmed = rawUrl.trim();
+  if (trimmed === '' || trimmed === 'about:blank' || trimmed.startsWith('about:')) {
     return true;
   }
   try {
-    const parsed = new URL(rawUrl);
+    const parsed = new URL(trimmed);
     const host = parsed.hostname.toLowerCase();
     const pathname = parsed.pathname.toLowerCase();
     const search = parsed.search.toLowerCase();
 
-    // 1. Meta / Facebook / Instagram 家族认证域名及通用 OAuth 域名
-    const authHosts = [
-      'meta.com',
+    // 1. 专属纯身份认证域名（该域名整个域均为登录/认证中心）
+    const dedicatedAuthHosts = [
+      'accounts.google.com',
+      'appleid.apple.com',
       'auth.meta.com',
       'account.meta.com',
       'family.meta.com',
-      'work.meta.com',
-      'facebook.com',
-      'fb.com',
-      'instagram.com',
-      'accounts.google.com',
-      'appleid.apple.com',
-      'github.com',
-      'spotify.com',
-      'accounts.spotify.com',
-      'dropbox.com',
-      'zoom.us',
-      'canva.com',
-      'onepeloton.com',
-      'peloton.com',
-      'slack.com',
-      'notion.so',
       'login.microsoftonline.com',
-      'live.com',
       'login.live.com',
-      'linkedin.com',
-      'twitter.com',
-      'x.com',
-      'plaid.com',
-      'functionhealth.com',
-      'healthex.com',
+      'accounts.spotify.com',
     ];
-    if (authHosts.some((h) => host === h || host.endsWith('.' + h))) {
+    if (dedicatedAuthHosts.some((h) => host === h || host.endsWith('.' + h))) {
       return true;
     }
 
@@ -910,12 +890,48 @@ function isAuthOrConnectorUrl(rawUrl) {
       }
     }
 
-    // 3. 通用 OAuth 特征（包含 client_id 以及 redirect_uri / response_type）
+    // 3. 通用 OAuth 特征（包含 client_id 以及 redirect_uri / response_type / state / code）
     if (
       (search.includes('client_id=') || search.includes('response_type=')) &&
       (search.includes('redirect_uri=') || pathname.includes('oauth') || pathname.includes('auth'))
     ) {
       return true;
+    }
+
+    // 4. 第三方常用开放平台（GitHub, Slack, Notion, Zoom, Dropbox, Canva, Facebook 等）的特定登录/授权路径
+    const thirdPartyOAuthHosts = [
+      'github.com',
+      'facebook.com',
+      'fb.com',
+      'instagram.com',
+      'spotify.com',
+      'dropbox.com',
+      'zoom.us',
+      'canva.com',
+      'onepeloton.com',
+      'peloton.com',
+      'slack.com',
+      'notion.so',
+      'live.com',
+      'linkedin.com',
+      'twitter.com',
+      'x.com',
+      'plaid.com',
+      'functionhealth.com',
+      'healthex.com',
+    ];
+    if (thirdPartyOAuthHosts.some((h) => host === h || host.endsWith('.' + h))) {
+      // 只有明确属于 OAuth 授权或登录的路径才认定为 Auth 弹窗，普通仓库/文章/主页属于常规外部链接
+      if (
+        pathname.includes('/oauth') ||
+        pathname.startsWith('/login') ||
+        pathname.startsWith('/signin') ||
+        pathname.includes('/authorize') ||
+        search.includes('client_id=') ||
+        search.includes('redirect_uri=')
+      ) {
+        return true;
+      }
     }
 
     return false;
@@ -970,15 +986,18 @@ function setupExternalLinkHandler(win, profileId) {
 
   // 1. 拦截 window.open() 或带 target="_blank" 的链接
   win.webContents.setWindowOpenHandler((details) => {
-    const { url, disposition, features } = details;
+    const { url } = details;
 
-    // 允许身份验证、连接器弹窗以及所有显式弹窗（Popup）
+    // 内部站点链接：绝不直接在新窗口打开以防覆盖或打乱会话，交由主窗口内嵌逻辑处理
+    if (isInternalSiteUrl(url)) {
+      return { action: 'deny' };
+    }
+
+    // 允许身份验证、连接器弹窗（如 Google 登录、OAuth 授权弹窗）或空白占位弹窗在应用内完成
     const isAuth = isAuthOrConnectorUrl(url);
-    const isPopup = disposition === 'new-window' ||
-                    (typeof features === 'string' && features.length > 0) ||
-                    url === 'about:blank' || url === '';
+    const isBlank = url === 'about:blank' || url === '' || url.startsWith('about:');
 
-    if (isAuth || isPopup) {
+    if (isAuth || isBlank) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
@@ -987,9 +1006,9 @@ function setupExternalLinkHandler(win, profileId) {
       };
     }
 
-    // 检查是否为外部链接或包装的外链重定向（由外部默认浏览器打开）
+    // 所有外部链接（包括带 target="_blank" 的聊天链接、GitHub 仓库、外部文档等）：统一由系统默认浏览器打开
     const extracted = extractExternalTargetUrl(url);
-    const finalExternalUrl = extracted || (!isInternalSiteUrl(url) ? url : null);
+    const finalExternalUrl = extracted || url;
 
     if (finalExternalUrl && (finalExternalUrl.startsWith('http://') || finalExternalUrl.startsWith('https://') || finalExternalUrl.startsWith('mailto:'))) {
       shell.openExternal(finalExternalUrl).catch((err) => {
@@ -998,7 +1017,6 @@ function setupExternalLinkHandler(win, profileId) {
       return { action: 'deny' };
     }
 
-    // 内部站点链接：绝不直接在主窗口执行 win.loadURL(url) 以免冲毁当前正在聊天的会话
     return { action: 'deny' };
   });
 
