@@ -3525,6 +3525,11 @@ function injectExportButton() {}
       const pathname = parsed.pathname.toLowerCase();
       const search = parsed.search.toLowerCase();
 
+      // 0. Meta / Muse 跨域 SSO 与 AYMH ("Accounts You Might Have") 握手链
+      if (pathname.includes('/aymh') || (search.includes('origin=') && host.endsWith('muse.ai'))) {
+        return true;
+      }
+
       // 1. 专属纯身份认证域名
       const dedicatedAuthHosts = [
         'accounts.google.com',
@@ -3532,6 +3537,7 @@ function injectExportButton() {}
         'auth.meta.com',
         'account.meta.com',
         'family.meta.com',
+        'work.meta.com',
         'login.microsoftonline.com',
         'login.live.com',
         'accounts.spotify.com',
@@ -3540,7 +3546,25 @@ function injectExportButton() {}
         return true;
       }
 
-      // 2. 内部站点的连接器中转授权与登录路由
+      // 2. Meta 家族 (Facebook / Instagram / Messenger) 的认证、授权与 SSO 路径
+      const metaFamilyHosts = ['facebook.com', 'fb.com', 'instagram.com', 'messenger.com'];
+      if (metaFamilyHosts.some((h) => host === h || host.endsWith('.' + h))) {
+        if (
+          pathname.includes('/aymh') ||
+          pathname.includes('/login') ||
+          pathname.includes('/signin') ||
+          pathname.includes('/oauth') ||
+          pathname.includes('/dialog') ||
+          pathname.includes('/checkpoint') ||
+          pathname.includes('/recover') ||
+          search.includes('client_id=') ||
+          search.includes('redirect_uri=')
+        ) {
+          return true;
+        }
+      }
+
+      // 3. 内部站点的连接器中转授权与登录路由
       const isInternal = host === 'muse.ai' || host.endsWith('.muse.ai') ||
                          host === 'meta.ai' || host.endsWith('.meta.ai') ||
                          host === 'meta.com' || host.endsWith('.meta.com');
@@ -3561,7 +3585,7 @@ function injectExportButton() {}
         }
       }
 
-      // 3. 通用 OAuth 特征参数
+      // 4. 通用 OAuth 特征参数
       if (
         (search.includes('client_id=') || search.includes('response_type=')) &&
         (search.includes('redirect_uri=') || pathname.includes('oauth') || pathname.includes('auth'))
@@ -3569,12 +3593,9 @@ function injectExportButton() {}
         return true;
       }
 
-      // 4. 第三方常用开放平台的特定登录/授权路径（普通仓库、主页、文档绝不属于 Auth）
+      // 5. 第三方常用开放平台的特定登录/授权路径（普通仓库、主页、文档绝不属于 Auth）
       const thirdPartyOAuthHosts = [
         'github.com',
-        'facebook.com',
-        'fb.com',
-        'instagram.com',
         'spotify.com',
         'dropbox.com',
         'zoom.us',
@@ -3621,10 +3642,16 @@ function injectExportButton() {}
         let rawHref = null;
         if (anchor) {
           rawHref = anchor.getAttribute('href') || anchor.href || anchor.getAttribute('data-href') || anchor.getAttribute('data-url');
-        } else if (e.target && e.target.querySelector) {
-          const childAnchor = e.target.querySelector('a[href], [data-href], [data-url]');
-          if (childAnchor) {
-            rawHref = childAnchor.getAttribute('href') || childAnchor.href || childAnchor.getAttribute('data-href') || childAnchor.getAttribute('data-url');
+        } else {
+          // 若点击落在预览卡片内部其它装饰元素上，精准查找最近卡片容器内的链接
+          const cardContainer = e.target && e.target.closest
+            ? e.target.closest('[class*="card"], [class*="preview"], [class*="embed"], [class*="attachment"]')
+            : null;
+          if (cardContainer) {
+            const childAnchor = cardContainer.querySelector('a[href], [data-href], [data-url]');
+            if (childAnchor) {
+              rawHref = childAnchor.getAttribute('href') || childAnchor.href || childAnchor.getAttribute('data-href') || childAnchor.getAttribute('data-url');
+            }
           }
         }
 

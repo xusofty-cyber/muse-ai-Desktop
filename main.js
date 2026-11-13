@@ -854,6 +854,11 @@ function isAuthOrConnectorUrl(rawUrl) {
     const pathname = parsed.pathname.toLowerCase();
     const search = parsed.search.toLowerCase();
 
+    // 0. Meta / Muse 跨域 SSO 与 AYMH ("Accounts You Might Have") 握手链
+    if (pathname.includes('/aymh') || (search.includes('origin=') && host.endsWith('muse.ai'))) {
+      return true;
+    }
+
     // 1. 专属纯身份认证域名（该域名整个域均为登录/认证中心）
     const dedicatedAuthHosts = [
       'accounts.google.com',
@@ -861,6 +866,7 @@ function isAuthOrConnectorUrl(rawUrl) {
       'auth.meta.com',
       'account.meta.com',
       'family.meta.com',
+      'work.meta.com',
       'login.microsoftonline.com',
       'login.live.com',
       'accounts.spotify.com',
@@ -869,7 +875,25 @@ function isAuthOrConnectorUrl(rawUrl) {
       return true;
     }
 
-    // 2. 内部站点的连接器中转授权与登录路由（含认证错误回调、状态码与授权换码）
+    // 2. Meta 家族 (Facebook / Instagram / Messenger) 的认证、授权与 SSO 路径
+    const metaFamilyHosts = ['facebook.com', 'fb.com', 'instagram.com', 'messenger.com'];
+    if (metaFamilyHosts.some((h) => host === h || host.endsWith('.' + h))) {
+      if (
+        pathname.includes('/aymh') ||
+        pathname.includes('/login') ||
+        pathname.includes('/signin') ||
+        pathname.includes('/oauth') ||
+        pathname.includes('/dialog') ||
+        pathname.includes('/checkpoint') ||
+        pathname.includes('/recover') ||
+        search.includes('client_id=') ||
+        search.includes('redirect_uri=')
+      ) {
+        return true;
+      }
+    }
+
+    // 3. 内部站点的连接器中转授权与登录路由（含认证错误回调、状态码与授权换码）
     const isInternal = host === 'muse.ai' || host.endsWith('.muse.ai') ||
                        host === 'meta.ai' || host.endsWith('.meta.ai') ||
                        host === 'meta.com' || host.endsWith('.meta.com');
@@ -890,7 +914,7 @@ function isAuthOrConnectorUrl(rawUrl) {
       }
     }
 
-    // 3. 通用 OAuth 特征（包含 client_id 以及 redirect_uri / response_type / state / code）
+    // 4. 通用 OAuth 特征（包含 client_id 以及 redirect_uri / response_type / state / code）
     if (
       (search.includes('client_id=') || search.includes('response_type=')) &&
       (search.includes('redirect_uri=') || pathname.includes('oauth') || pathname.includes('auth'))
@@ -898,12 +922,9 @@ function isAuthOrConnectorUrl(rawUrl) {
       return true;
     }
 
-    // 4. 第三方常用开放平台（GitHub, Slack, Notion, Zoom, Dropbox, Canva, Facebook 等）的特定登录/授权路径
+    // 5. 第三方常用开放平台（GitHub, Slack, Notion, Zoom, Dropbox, Canva 等）的特定登录/授权路径
     const thirdPartyOAuthHosts = [
       'github.com',
-      'facebook.com',
-      'fb.com',
-      'instagram.com',
       'spotify.com',
       'dropbox.com',
       'zoom.us',
