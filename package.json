@@ -72,6 +72,9 @@
         "tar.gz"
       ]
     },
+    "deb": {
+      "afterInstall": "scripts/linux-after-install.sh"
+    },
     "mac": {
       "icon": "assets/icon.png",
       "category": "public.app-category.productivity",

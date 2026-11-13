@@ -3653,17 +3653,19 @@ function injectExportButton() {}
               rawHref = childAnchor.getAttribute('href') || childAnchor.href || childAnchor.getAttribute('data-href') || childAnchor.getAttribute('data-url');
             }
           }
+          // 若直接点击了文本形式的 URL（如 Markdown/React 将 URL 渲染为普通文本或 span）
+          if (!rawHref && e.target) {
+            const text = (e.target.innerText || e.target.textContent || '').trim();
+            if (/^https?:\/\/[^\s]+$/.test(text)) {
+              rawHref = text;
+            }
+          }
         }
 
         if (!rawHref) return;
 
         // 仅处理常规鼠标左键点击，尊重修饰键组合（Ctrl/Meta/Shift/Alt）
         if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-
-        // 关键防御：如果点击发生在模态弹窗、设置面板或对话框内部，绝不拦截！交由页面自身逻辑处理
-        if (e.target.closest && e.target.closest('[role="dialog"], [aria-modal="true"], [class*="dialog"], [class*="modal"], [class*="settings"]')) {
-          return;
-        }
 
         // 跳过纯锚点与非网络协议
         if (rawHref.startsWith('#') || rawHref.startsWith('javascript:')) return;

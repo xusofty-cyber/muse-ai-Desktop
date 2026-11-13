@@ -3029,8 +3029,14 @@ ipcMain.on('muse-export-request', (e) => { if (!denyUntrusted(e)) exportChat(); 
 
 // 处理页面请求用系统默认浏览器打开外部链接
 ipcMain.on('open-external-url', (e, rawUrl) => {
-  if (denyUntrusted(e)) return;
-  const target = extractExternalTargetUrl(rawUrl) || rawUrl;
+  // 安全校验：发送者必须属于本应用纳管窗口
+  const owned = [mainWindow, quickWindow, hotkeyWindow, lockWindow, ...profileWindows.values()];
+  if (!owned.some((w) => w && !w.isDestroyed() && w.webContents === e.sender)) return;
+
+  if (typeof rawUrl !== 'string') return;
+  const trimmed = rawUrl.trim();
+  const target = extractExternalTargetUrl(trimmed) || trimmed;
+  // 严格白名单协议：仅放行普通网页外链（http/https/mailto），杜绝 file: 或危险 scheme
   if (typeof target === 'string' && (target.startsWith('http://') || target.startsWith('https://') || target.startsWith('mailto:'))) {
     shell.openExternal(target).catch((err) => {
       console.warn('[ExternalLink] Failed to open external URL from IPC:', target, err);
