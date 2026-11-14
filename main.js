@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
-const { defaultFeishuConfig, detectFeishuCli, executeFeishuSync, setupFeishuAutoSync } = require('./feishu-sync');
+const { defaultFeishuConfig, detectFeishuCli, executeFeishuSync, setupFeishuAutoSync, formatDateTime } = require('./feishu-sync');
 const { MihomoManager, DEFAULT_CONTROLLER_PORT, DEFAULT_BASE_PROXY_PORT } = require('./mihomo-manager');
 
 // ---- 核心加固 1 & 2: 先定身份/UserData 再拿单例锁 + 统一 UserData 目录 -------------
@@ -579,7 +579,7 @@ function sanitizeAndMergeState(raw) {
         purpose: typeof prof.purpose === 'string' ? prof.purpose : '',
         usagePercent: typeof prof.usagePercent === 'number' ? Math.max(0, Math.min(100, Math.round(prof.usagePercent))) : 0,
         usageText: typeof prof.usageText === 'string' ? prof.usageText : '',
-        tokenResetAt: typeof prof.tokenResetAt === 'string' ? prof.tokenResetAt : '',
+        tokenResetAt: prof.tokenResetAt ? formatDateTime(prof.tokenResetAt) : '',
         status: ['normal', 'warning', 'exhausted', 'idle'].includes(prof.status) ? prof.status : 'normal',
         proxyQueue: Array.isArray(prof.proxyQueue) ? prof.proxyQueue.filter((n) => typeof n === 'string' && n.trim()) : [],
         proxyStrategy: ['fallback', 'url-test', 'load-balance', 'select'].includes(prof.proxyStrategy) ? prof.proxyStrategy : 'fallback',
@@ -1655,8 +1655,13 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
   }
 
   win.webContents.setUserAgent(CHROME_UA);
+  win._isContentLoaded = false;
+  win.webContents.on('dom-ready', () => {
+    win._isContentLoaded = true;
+  });
   win.loadURL(currentSite().url);
   win.webContents.on('did-finish-load', () => {
+    win._isContentLoaded = true;
     injectMicShim(win);
     broadcastAccountChange();
     broadcastThemeChange();
@@ -2057,6 +2062,8 @@ function showMainWindow() {
   }, 250);
 }
 
+let currentSwitchTargetId = null;
+
 function switchAccount(id) {
   if (isScreenLocked) return;
   recordUserActivity();
@@ -2069,14 +2076,13 @@ function switchAccount(id) {
     currentBounds = prevWin.getBounds();
   }
 
+  currentSwitchTargetId = id;
   state.activeProfileId = id;
   saveState();
 
   // 获取或复用目标账号的常驻窗口（零重载瞬切）
   const targetWin = getOrCreateProfileWindow(id, currentBounds);
   mainWindow = targetWin;
-
-  showWindowSafely(targetWin);
 
   // 快捷窗的 partition 在创建时绑定, 切账号后必须销毁, 否则它会继续以
   // 上一个账号的登录态响应 (评审 P0-4); 下次打开时按新账号重建
@@ -2085,21 +2091,61 @@ function switchAccount(id) {
   // 子弹窗跟随账号可见性: 目标账号此前开着的弹窗恢复显示
   setChildWindowsVisible(id, true);
 
-  // 隐藏前一个窗口并强制落盘会话 Cookie; 其子弹窗一并隐藏 (防串号感知)
-  if (prevWin && prevWin !== targetWin && !prevWin.isDestroyed()) {
-    const prevProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
-    if (prevProfile) setChildWindowsVisible(prevProfile.id, false);
-    prevWin.hide();
-    try {
-      const flushProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
-      if (flushProfile) {
-        session.fromPartition(partitionFor(flushProfile.id)).cookies.flushStore().catch(() => {});
-      }
-    } catch {}
-  }
+  const applySwitchDone = () => {
+    if (targetWin.isDestroyed()) return;
+    showWindowSafely(targetWin);
+    targetWin.focus();
 
-  buildTrayMenu();
-  broadcastAccountChange();
+    // 隐藏前一个窗口并强制落盘会话 Cookie; 其子弹窗一并隐藏 (防串号感知)
+    if (prevWin && prevWin !== targetWin && !prevWin.isDestroyed()) {
+      const prevProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
+      if (prevProfile) setChildWindowsVisible(prevProfile.id, false);
+      prevWin.hide();
+      try {
+        const flushProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
+        if (flushProfile) {
+          session.fromPartition(partitionFor(flushProfile.id)).cookies.flushStore().catch(() => {});
+        }
+      } catch {}
+    }
+
+    buildTrayMenu();
+    broadcastAccountChange();
+  };
+
+  // 核心防黑屏保护：
+  // 1. 若目标窗口内容已就绪（且没有在加载），立即完成无感瞬切
+  // 2. 若目标窗口是新建或正在加载，先保持原窗口及 Dock 交互可见，
+  //    目标窗口 DOM 准备好（dom-ready 或 did-finish-load / did-fail-load）后再平滑切入；
+  //    设置 3.5 秒保底超时防止网络阻断一直卡住。
+  const isTargetReady = targetWin._isContentLoaded && !targetWin.webContents.isLoading();
+  if (isTargetReady || !prevWin || prevWin.isDestroyed() || !prevWin.isVisible()) {
+    applySwitchDone();
+  } else {
+    // 广播正在切换至目标账号（在 Dock 上渲染脉冲/旋转指示）
+    for (const w of profileWindows.values()) {
+      if (w && !w.isDestroyed()) {
+        w.webContents.send('account:switching', { targetProfileId: id });
+      }
+    }
+
+    let finished = false;
+    const onReady = () => {
+      if (finished || currentSwitchTargetId !== id) return;
+      finished = true;
+      try {
+        targetWin.webContents.removeListener('dom-ready', onReady);
+        targetWin.webContents.removeListener('did-finish-load', onReady);
+        targetWin.webContents.removeListener('did-fail-load', onReady);
+      } catch {}
+      applySwitchDone();
+    };
+
+    targetWin.webContents.once('dom-ready', onReady);
+    targetWin.webContents.once('did-finish-load', onReady);
+    targetWin.webContents.once('did-fail-load', onReady);
+    setTimeout(onReady, 3500);
+  }
 }
 
 function switchProfile(id) {
@@ -2666,7 +2712,7 @@ ipcMain.handle('account:update-meta', (e, { id, name, group, purpose, usagePerce
     p.usagePercent = Math.max(0, Math.min(100, Math.round(usagePercent)));
   }
   if (typeof usageText === 'string') p.usageText = usageText.trim();
-  if (typeof tokenResetAt === 'string') p.tokenResetAt = tokenResetAt.trim();
+  if (typeof tokenResetAt === 'string') p.tokenResetAt = formatDateTime(tokenResetAt.trim());
   if (['normal', 'warning', 'exhausted', 'idle'].includes(status)) {
     p.status = status;
   }
@@ -3417,7 +3463,22 @@ async function handleConfigImport(parentWin) {
       state.proxy = { ...defaultProxy(), ...parsed.proxy };
     }
 
-    // 5. 校验 activeProfileId
+    // 5. 恢复飞书多维表格同步配置
+    if (parsed.feishu && typeof parsed.feishu === 'object') {
+      state.feishu = {
+        ...defaultFeishuConfig(),
+        ...parsed.feishu,
+        fieldMap: {
+          ...defaultFeishuConfig().fieldMap,
+          ...((parsed.feishu && parsed.feishu.fieldMap) || {}),
+        },
+      };
+      if (state.feishu.autoSync) {
+        setupFeishuAutoSync(state.feishu, () => state.profiles, () => saveState());
+      }
+    }
+
+    // 6. 校验 activeProfileId
     if (!state.profiles.some((p) => p && p.id === state.activeProfileId)) {
       state.activeProfileId = state.profiles[0] ? state.profiles[0].id : 'default';
     }

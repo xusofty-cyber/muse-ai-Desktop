@@ -300,6 +300,17 @@
       6. **上浮 Tooltip 与微型控制区**：账号信息卡片与指示 Tooltip 向上弹出，右侧集成添加账号、主题切换与控制中心（Popover 动态吸附至 `⚙` 按钮正上方展开）；
     - **验证记录**：语法检查通过（`node -c main.js preload-settings.js preload-chat-export.js mihomo-manager.js`，Exit Code 0）。
 
+25. **多账号切换平滑双缓冲（彻底消除黑屏且 Dock 永久在线不被遮挡）**：
+    - **现场缺陷**：由于 `MAX_RESIDENT_PROFILE_WINDOWS = 5`，在 17 个账号间切换到非驻留窗口时，窗口由于刚调用 `loadURL` 尚未接收远端响应，整个窗口呈现纯黑 `#141414`，且此前窗口立即被隐藏，导致 Dock 消失用户被困在黑屏中无法切号；
+    - **根因消除与双缓冲重构**：
+      1. **双缓冲平滑切换（Seamless Double-Buffering）**：在 `main.js` `switchAccount` 中，当目标窗口尚未就绪（`!win._isContentLoaded` 或正在加载中）时，绝不立即隐藏前一个窗口；前一个窗口保持展示并向 Dock 广播 `account:switching`，目标账号头像呈现平滑脉冲与旋转指示圈；当目标窗口触发 `dom-ready` 或 `did-finish-load`（或 3.5 秒保底超时）后再完成平滑切入并隐藏原窗口；
+      2. **Dock 挂载时机提前至 t=0ms**：移除 `preload-chat-export.js` 中原先等待 `DOMContentLoaded` 的延迟，脚本加载初始即刻将 `#acct-dock` 挂载至 `document.documentElement`，配合 `z-index: 2147483640`，保证无论任何网络握手或慢加载阶段 Dock 永远在线并可随时交互；
+      3. **非阻塞加载骨架（Loading Skeleton）**：在目标窗口初次连接且尚未完成渲染阶段，在 Dock 下层渲染带有柔和提示（`正在连接账号会话...`）的暗色占位骨架，彻底消除视觉压迫与纯黑空洞。
+
+26. **飞书多维表格 Token 重置时间规整与配置完整导入导出**：
+    - **时间格式规整**：实现智能时间规整函数 `formatDateTime(val)`，自动将飞书 Bitable 的 10 位 / 13 位毫秒时间戳（如 `1794898620000`）规范转换显示为标准日期时间 `年-月-日 时:分:秒`（`YYYY-MM-DD HH:mm:ss`），同时兼容 ISO 字符串与常规时间文本；在飞书记录同步、本地 Profile 存储、九宫格卡片、账号编辑弹窗及 Dock 悬浮气泡中全面落地；
+    - **飞书配置导出导入互通**：在配置导出/导入体系中完整支持飞书多维表格（`appId`, `appSecret`, `appToken`, `tableId`, `fieldMap`, `autoSync`）的无缝热恢复与自动定时同步引擎重新挂载。
+
 ## 五、当前断点与后续待执行事项
 
 1. **当前断点**：

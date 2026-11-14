@@ -275,6 +275,49 @@ function parseUsageValue(raw) {
   return { percent: 0, text: str };
 }
 
+// 辅助：智能解析并规整时间字段为 YYYY-MM-DD HH:mm:ss
+function formatDateTime(val) {
+  if (val === null || val === undefined) return '';
+  const s = String(val).trim();
+  if (!s) return '';
+
+  let dateObj = null;
+
+  // 1. 匹配纯数字时间戳 (如 1794898620000 毫秒 或 1794898620 秒)
+  if (/^\d{10,13}$/.test(s)) {
+    const num = Number(s);
+    const ms = num < 1e11 ? num * 1000 : num;
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) {
+      dateObj = d;
+    }
+  } else if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(s)) {
+    // 包含年月日，如 2026-11-05 00:00:00 或 2026/11/05
+    const d = new Date(s.replace(/-/g, '/'));
+    if (!isNaN(d.getTime())) {
+      dateObj = d;
+    }
+  } else {
+    const d = new Date(s);
+    if (!isNaN(d.getTime()) && d.getFullYear() >= 2000 && d.getFullYear() <= 2100) {
+      dateObj = d;
+    }
+  }
+
+  if (dateObj) {
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const hours = String(dateObj.getHours()).padStart(2, '0');
+    const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+    const seconds = String(dateObj.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  }
+
+  // 无法转换为日期的非标准文本保持原样
+  return s;
+}
+
 // 3. 执行单次同步，将飞书记录匹配更新至本地 profiles
 async function executeFeishuSync(feishuConfig, currentProfiles, saveCallback) {
   if (!feishuConfig || !feishuConfig.appToken || !feishuConfig.tableId) {
@@ -336,7 +379,7 @@ async function executeFeishuSync(feishuConfig, currentProfiles, saveCallback) {
         recordId: rec.record_id,
         purpose: String(extractFieldValue(fields[fieldMap.purpose]) || '').trim(),
         usage: extractFieldValue(fields[fieldMap.usage]),
-        tokenReset: String(extractFieldValue(fields[fieldMap.tokenReset]) || '').trim(),
+        tokenReset: formatDateTime(extractFieldValue(fields[fieldMap.tokenReset])),
       });
     }
   }
@@ -422,4 +465,5 @@ module.exports = {
   parseUsageValue,
   executeFeishuSync,
   setupFeishuAutoSync,
+  formatDateTime,
 };

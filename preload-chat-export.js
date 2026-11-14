@@ -1244,6 +1244,7 @@ function injectExportButton() {}
   let dockState = {
     profiles: [],
     activeProfileId: 'default',
+    switchingTargetId: null,
     pinned: isPinned,
     collapsed: !isPinned,
     accountGroups: ['默认群组'],
@@ -1366,6 +1367,44 @@ function injectExportButton() {}
       return trimmed.length > 2 ? trimmed.slice(0, 2) : trimmed;
     }
     return trimmed.slice(0, 2).toUpperCase();
+  }
+
+  function formatDateTime(val) {
+    if (val === null || val === undefined) return '';
+    const s = String(val).trim();
+    if (!s) return '';
+
+    let dateObj = null;
+    if (/^\d{10,13}$/.test(s)) {
+      const num = Number(s);
+      const ms = num < 1e11 ? num * 1000 : num;
+      const d = new Date(ms);
+      if (!isNaN(d.getTime())) {
+        dateObj = d;
+      }
+    } else if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(s)) {
+      const d = new Date(s.replace(/-/g, '/'));
+      if (!isNaN(d.getTime())) {
+        dateObj = d;
+      }
+    } else {
+      const d = new Date(s);
+      if (!isNaN(d.getTime()) && d.getFullYear() >= 2000 && d.getFullYear() <= 2100) {
+        dateObj = d;
+      }
+    }
+
+    if (dateObj) {
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const hours = String(dateObj.getHours()).padStart(2, '0');
+      const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+      const seconds = String(dateObj.getSeconds()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    }
+
+    return s;
   }
 
   function injectDockStyles() {
@@ -1609,6 +1648,27 @@ function injectExportButton() {}
       }
       .acct-dock-item.active .acct-dock-avatar {
         box-shadow: 0 0 0 1.5px #fff, 0 2px 8px rgba(0, 0, 0, 0.5);
+      }
+      .acct-dock-item.switching {
+        animation: acctItemPulse 0.8s ease-in-out infinite alternate !important;
+      }
+      .acct-dock-item.switching .acct-dock-avatar {
+        filter: brightness(1.25) !important;
+        box-shadow: 0 0 14px rgba(99, 102, 241, 0.9) !important;
+      }
+      .acct-dock-item.switching .acct-dock-ring-progress {
+        animation: acctRingRotate 1s linear infinite !important;
+        transform-origin: 18px 18px !important;
+        stroke: #818cf8 !important;
+        stroke-dasharray: 40, 60 !important;
+      }
+      @keyframes acctRingRotate {
+        0% { transform: rotate(-90deg); }
+        100% { transform: rotate(270deg); }
+      }
+      @keyframes acctItemPulse {
+        0% { transform: scale(1); }
+        100% { transform: scale(1.12); }
       }
       .acct-dock-item.active::after {
         content: '';
@@ -2566,7 +2626,8 @@ function injectExportButton() {}
         // 重置倒计时
         const resetRow = document.createElement('div');
         resetRow.className = 'hub-meta-row';
-        resetRow.innerHTML = `<span class="hub-meta-label">⏳ ${t.tokenResetLabel}:</span><span class="hub-meta-val">${p.tokenResetAt ? p.tokenResetAt : `<span style="color:#64748b;font-style:italic;">${t.noResetInfo}</span>`}</span>`;
+        const displayReset = p.tokenResetAt ? formatDateTime(p.tokenResetAt) : '';
+        resetRow.innerHTML = `<span class="hub-meta-label">⏳ ${t.tokenResetLabel}:</span><span class="hub-meta-val">${displayReset ? displayReset : `<span style="color:#64748b;font-style:italic;">${t.noResetInfo}</span>`}</span>`;
         metaBox.appendChild(resetRow);
 
         // 代理模式与出口队列
@@ -3039,7 +3100,7 @@ function injectExportButton() {}
     resetInput.type = 'text';
     resetInput.className = 'hub-form-input';
     resetInput.placeholder = '例如：2026-11-05 00:00:00 或 还有 12 小时';
-    resetInput.value = p.tokenResetAt || '';
+    resetInput.value = p.tokenResetAt ? formatDateTime(p.tokenResetAt) : '';
     resetRow.appendChild(resetInput);
 
     // 5. 账号独立网络代理模式选择
@@ -3354,7 +3415,7 @@ function injectExportButton() {}
         purpose: newPurpose,
         usagePercent: newUsage,
         usageText: `${newUsage}%`,
-        tokenResetAt: newReset,
+        tokenResetAt: newReset ? formatDateTime(newReset) : '',
       }).catch(() => {});
 
       await ipcRenderer.invoke('account:set-proxy-queue', {
@@ -3661,6 +3722,8 @@ function injectExportButton() {}
       parent.appendChild(dockContainer);
     } else if (!dockContainer.parentNode) {
       parent.appendChild(dockContainer);
+    } else if (document.body && dockContainer.parentNode === document.documentElement) {
+      document.body.appendChild(dockContainer);
     }
 
     if (dockState.pinned) {
@@ -3786,6 +3849,9 @@ function injectExportButton() {}
     profilesToRender.forEach((p) => {
       const item = document.createElement('div');
       item.className = 'acct-dock-item';
+      if (dockState.switchingTargetId === p.id) {
+        item.classList.add('switching');
+      }
       if (p.id === dockState.activeProfileId) {
         item.classList.add('active');
         setTimeout(() => {
@@ -3864,7 +3930,8 @@ function injectExportButton() {}
       usageRow.style.display = 'flex';
       usageRow.style.alignItems = 'center';
       usageRow.style.gap = '5px';
-      usageRow.innerHTML = `<span>用量: ${p.usageText || (pct + '%')}</span>${p.tokenResetAt ? `<span style="color:rgba(255,255,255,0.45);font-size:10px;">· 重置: ${p.tokenResetAt}</span>` : ''}`;
+      const displayReset = p.tokenResetAt ? formatDateTime(p.tokenResetAt) : '';
+      usageRow.innerHTML = `<span>用量: ${p.usageText || (pct + '%')}</span>${displayReset ? `<span style="color:rgba(255,255,255,0.45);font-size:10px;">· 重置: ${displayReset}</span>` : ''}`;
       tooltip.appendChild(usageRow);
 
       item.appendChild(tooltip);
@@ -3873,6 +3940,8 @@ function injectExportButton() {}
       item.onclick = () => {
         if (Date.now() - dragJustEndedAt < 250) return;
         if (p.id !== dockState.activeProfileId) {
+          dockState.switchingTargetId = p.id;
+          renderDock();
           ipcRenderer.invoke('account:switch', { id: p.id }).catch(() => {});
         }
       };
@@ -4060,6 +4129,7 @@ function injectExportButton() {}
 
   // 监听主进程广播的账号变化
   ipcRenderer.on('account:changed', (e, newState) => {
+    dockState.switchingTargetId = null;
     if (newState) {
       dockState.profiles = newState.profiles || [];
       dockState.activeProfileId = newState.activeProfileId || 'default';
@@ -4076,6 +4146,14 @@ function injectExportButton() {}
       if (dockState.hubOpen) {
         renderAccountHub();
       }
+    }
+  });
+
+  // 监听账号切换中状态（呈现平滑脉冲/旋转指示）
+  ipcRenderer.on('account:switching', (e, payload) => {
+    if (payload && payload.targetProfileId) {
+      dockState.switchingTargetId = payload.targetProfileId;
+      renderDock();
     }
   });
 
@@ -4147,14 +4225,59 @@ function injectExportButton() {}
     }
   } catch {}
 
+  // 页面加载阶段防黑屏占位骨架与即时加载指示
+  function showLoadingPlaceholderIfNeeded() {
+    if (document.readyState === 'complete') return;
+    if (document.getElementById('muse-loading-overlay')) return;
+    const parent = document.body || document.documentElement;
+    if (!parent) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'muse-loading-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #141414;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 2147483630;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #94a3b8;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    `;
+    overlay.innerHTML = `
+      <div style="width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.08); border-top-color: #6366f1; border-radius: 50%; animation: museSpin 0.8s linear infinite; margin-bottom: 14px;"></div>
+      <div style="font-size: 13px; font-weight: 500; color: #94a3b8; letter-spacing: 0.5px;">正在连接账号会话...</div>
+      <style>@keyframes museSpin { to { transform: rotate(360deg); } }</style>
+    `;
+    parent.appendChild(overlay);
+
+    const removeOverlay = () => {
+      const el = document.getElementById('muse-loading-overlay');
+      if (el) {
+        el.style.opacity = '0';
+        setTimeout(() => { try { el.remove(); } catch {} }, 300);
+      }
+    };
+    window.addEventListener('DOMContentLoaded', removeOverlay);
+    window.addEventListener('load', removeOverlay);
+    setTimeout(removeOverlay, 5000);
+  }
+
+  // 1. 立即挂载 Loading 骨架与 Dock（使用 document.documentElement 保障在 DOMContentLoaded 甚至网络慢握手阶段 Dock 也永久在线，绝不被黑屏阻断）
+  showLoadingPlaceholderIfNeeded();
+  startDock();
+
+  // 2. 并在 DOM 各阶段持续保底挂载与更新
   if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', startDock);
-  } else {
-    startDock();
   }
-  // 延时再次检查保底附加
-  setTimeout(startDock, 500);
-  setTimeout(startDock, 2000);
+  window.addEventListener('load', startDock);
+  setTimeout(startDock, 300);
+  setTimeout(startDock, 1000);
+  setTimeout(startDock, 3000);
 })();
 
 // ---- Global External Link Handling (Open In Default Browser) ---------------
