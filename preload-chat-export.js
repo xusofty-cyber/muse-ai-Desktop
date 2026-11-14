@@ -1221,9 +1221,12 @@ function injectExportButton() {}
 
 // ---- Multi-Account Quick Dock -----------------------------------------------
 (function initAccountDock() {
-  let isPinned = false;
+  let isPinned = true;
   try {
-    isPinned = localStorage.getItem('acct_dock_pinned') === '1';
+    const saved = localStorage.getItem('acct_dock_pinned');
+    if (saved !== null) {
+      isPinned = saved === '1';
+    }
   } catch {}
 
   let dockState = {
@@ -1391,8 +1394,8 @@ function injectExportButton() {}
         pointer-events: auto;
       }
       #acct-dock.collapsed {
-        transform: translateX(-50%) translateY(calc(100% - 6px));
-        opacity: 0.45;
+        transform: translateX(-50%) translateY(calc(100% - 14px));
+        opacity: 0.85;
       }
       #acct-dock.collapsed:hover {
         transform: translateX(-50%) translateY(0);
@@ -3311,11 +3314,6 @@ function injectExportButton() {}
     activeModal = overlay;
   }
 
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-    activeModal = overlay;
-  }
-
   // 飞书多维表格同步配置模态框
   async function openFeishuSettingsModal() {
     closeModal();
@@ -4030,7 +4028,11 @@ function injectExportButton() {}
 
   function startDock() {
     try {
-      if (localStorage.getItem('acct_dock_pinned') === '1') {
+      const saved = localStorage.getItem('acct_dock_pinned');
+      if (saved !== null) {
+        dockState.pinned = saved === '1';
+        dockState.collapsed = !dockState.pinned;
+      } else {
         dockState.pinned = true;
         dockState.collapsed = false;
       }

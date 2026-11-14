@@ -452,7 +452,7 @@ function defaultState() {
     locale: detectDefaultLocale(), // 'zh-CN' | 'en'
     ui: {
       autoHideButtons: true, // 自动隐藏右上角与右下角按钮
-      dockPinned: false, // 账号栏是否固定常态展开 (默认 false: 鼠标移开后自动收起)
+      dockPinned: true, // 账号栏是否固定常态展开 (默认 true: 常驻展示，方便多账号切换)
     },
     lock: defaultLock(),
   };
