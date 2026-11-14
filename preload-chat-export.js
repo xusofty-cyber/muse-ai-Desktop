@@ -1408,6 +1408,8 @@ function injectExportButton() {}
   }
 
   function injectDockStyles() {
+    const target = document.head || document.body;
+    if (!target) return;
     if (document.getElementById('acct-dock-styles')) return;
     const style = document.createElement('style');
     style.id = 'acct-dock-styles';
@@ -2262,7 +2264,7 @@ function injectExportButton() {}
         min-height: 54px;
       }
     `;
-    (document.head || document.documentElement).appendChild(style);
+    target.appendChild(style);
   }
 
   function showPromptModal(title, initialValue, onConfirm) {
@@ -3699,7 +3701,7 @@ function injectExportButton() {}
   }
 
   function renderDock() {
-    const parent = document.body || document.documentElement;
+    const parent = document.body;
     if (!parent) return;
     const t = getT();
 
@@ -3720,10 +3722,8 @@ function injectExportButton() {}
         }
       });
       parent.appendChild(dockContainer);
-    } else if (!dockContainer.parentNode) {
+    } else if (!dockContainer.parentNode || dockContainer.parentNode !== parent) {
       parent.appendChild(dockContainer);
-    } else if (document.body && dockContainer.parentNode === document.documentElement) {
-      document.body.appendChild(dockContainer);
     }
 
     if (dockState.pinned) {
@@ -3849,6 +3849,10 @@ function injectExportButton() {}
     profilesToRender.forEach((p) => {
       const item = document.createElement('div');
       item.className = 'acct-dock-item';
+      item.style.position = 'relative';
+      item.style.width = '36px';
+      item.style.height = '36px';
+      item.style.flexShrink = '0';
       if (dockState.switchingTargetId === p.id) {
         item.classList.add('switching');
       }
@@ -3873,6 +3877,14 @@ function injectExportButton() {}
       const ringSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       ringSvg.setAttribute('class', 'acct-dock-ring');
       ringSvg.setAttribute('viewBox', '0 0 36 36');
+      ringSvg.setAttribute('width', '36');
+      ringSvg.setAttribute('height', '36');
+      ringSvg.style.position = 'absolute';
+      ringSvg.style.top = '0';
+      ringSvg.style.left = '0';
+      ringSvg.style.width = '36px';
+      ringSvg.style.height = '36px';
+      ringSvg.style.pointerEvents = 'none';
       ringSvg.innerHTML = `
         <circle class="acct-dock-ring-bg" cx="18" cy="18" r="16" stroke-width="2.2" fill="none" />
         <circle class="acct-dock-ring-progress" cx="18" cy="18" r="16" stroke-width="2.2" stroke="${ringColor}" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${strokeOffset}" fill="none" transform="rotate(-90 18 18)" />
@@ -3882,6 +3894,9 @@ function injectExportButton() {}
       // 内层账号圆形头像 (28px 直径，居中陈列)
       const avatar = document.createElement('div');
       avatar.className = 'acct-dock-avatar';
+      avatar.style.width = '28px';
+      avatar.style.height = '28px';
+      avatar.style.borderRadius = '50%';
       avatar.style.backgroundColor = p.color || '#3b82f6';
       avatar.textContent = getInitials(p.name);
       item.appendChild(avatar);
@@ -4225,59 +4240,14 @@ function injectExportButton() {}
     }
   } catch {}
 
-  // 页面加载阶段防黑屏占位骨架与即时加载指示
-  function showLoadingPlaceholderIfNeeded() {
-    if (document.readyState === 'complete') return;
-    if (document.getElementById('muse-loading-overlay')) return;
-    const parent = document.body || document.documentElement;
-    if (!parent) return;
-    const overlay = document.createElement('div');
-    overlay.id = 'muse-loading-overlay';
-    overlay.style.cssText = `
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: #141414;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 2147483630;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      color: #94a3b8;
-      pointer-events: none;
-      transition: opacity 0.3s ease;
-    `;
-    overlay.innerHTML = `
-      <div style="width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.08); border-top-color: #6366f1; border-radius: 50%; animation: museSpin 0.8s linear infinite; margin-bottom: 14px;"></div>
-      <div style="font-size: 13px; font-weight: 500; color: #94a3b8; letter-spacing: 0.5px;">正在连接账号会话...</div>
-      <style>@keyframes museSpin { to { transform: rotate(360deg); } }</style>
-    `;
-    parent.appendChild(overlay);
-
-    const removeOverlay = () => {
-      const el = document.getElementById('muse-loading-overlay');
-      if (el) {
-        el.style.opacity = '0';
-        setTimeout(() => { try { el.remove(); } catch {} }, 300);
-      }
-    };
-    window.addEventListener('DOMContentLoaded', removeOverlay);
-    window.addEventListener('load', removeOverlay);
-    setTimeout(removeOverlay, 5000);
-  }
-
-  // 1. 立即挂载 Loading 骨架与 Dock（使用 document.documentElement 保障在 DOMContentLoaded 甚至网络慢握手阶段 Dock 也永久在线，绝不被黑屏阻断）
-  showLoadingPlaceholderIfNeeded();
-  startDock();
-
-  // 2. 并在 DOM 各阶段持续保底挂载与更新
   if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', startDock);
+  } else {
+    startDock();
   }
   window.addEventListener('load', startDock);
-  setTimeout(startDock, 300);
-  setTimeout(startDock, 1000);
-  setTimeout(startDock, 3000);
+  setTimeout(startDock, 500);
+  setTimeout(startDock, 2000);
 })();
 
 // ---- Global External Link Handling (Open In Default Browser) ---------------
