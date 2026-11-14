@@ -3586,14 +3586,19 @@ function injectExportButton() {}
   function extractTargetUrl(rawUrl) {
     if (!rawUrl || typeof rawUrl !== 'string') return null;
     try {
-      const parsed = new URL(rawUrl, window.location.href);
-      // 与主进程一致: 只解包已知跳转站的重定向参数 (v1.5.17 加固)
+      let cleanUrl = rawUrl.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
+      const parsed = new URL(cleanUrl, window.location.href);
+      const host = parsed.hostname.toLowerCase();
+      // 与主进程一致: 解包已知跳转站与内部重定向包装的参数 (含 Meta AI / Facebook / Instagram / Google 等)
       const REDIRECTOR_HOSTS = new Set([
         'www.google.com', 'google.com', 'www.bing.com', 'bing.com',
-        'duckduckgo.com', 'html.duckduckgo.com', 'l.facebook.com',
+        'duckduckgo.com', 'html.duckduckgo.com',
+        'link.meta.com', 'l.facebook.com', 'lm.facebook.com',
+        'l.instagram.com', 'l.messenger.com', 'www.facebook.com', 'facebook.com',
         'out.reddit.com', 'www.youtube.com',
+        'muse.ai', 'meta.ai', 'meta.com',
       ]);
-      if (!REDIRECTOR_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+      if (!REDIRECTOR_HOSTS.has(host) && !REDIRECTOR_HOSTS.has(host.replace(/^www\./, ''))) return null;
       const redirectKeys = ['u', 'url', 'target', 'dest', 'destination', 'link', 'href', 'q'];
       for (const key of redirectKeys) {
         const candidate = parsed.searchParams.get(key);
@@ -3743,51 +3748,98 @@ function injectExportButton() {}
     }
   }
 
+  // 解析鼠标点击目标，无论其为 a 标签、带 role="link" 的自定义组件、卡片容器还是纯文本中的 URL
+  function resolveClickedUrl(e) {
+    if (!e || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) {
+      return null;
+    }
+
+    // 1. 尝试从 a 标签、带 data-href/data-url 的元素或 role="link" 提取
+    const anchor = e.target && e.target.closest
+      ? (e.target.closest('a') || e.target.closest('[data-href], [data-url], [role="link"]'))
+      : null;
+
+    let rawHref = null;
+    if (anchor) {
+      const candidateHref = anchor.getAttribute('href') || anchor.href || anchor.getAttribute('data-href') || anchor.getAttribute('data-url');
+      if (candidateHref && !candidateHref.startsWith('#') && !candidateHref.startsWith('javascript:')) {
+        rawHref = candidateHref;
+      } else {
+        // 若 href 为 "#" 或无 href (常见于 React/Slate 等前端富文本渲染器)，从其文本内容提取 URL
+        const anchorText = (anchor.innerText || anchor.textContent || '').trim();
+        const match = anchorText.match(/https?:\/\/[^\s，。；、？！）》」"'\`<>]+/i);
+        if (match) {
+          rawHref = match[0];
+        }
+      }
+    }
+
+    // 2. 若未从 anchor 提取到，检查最近的卡片容器 (预览卡片/嵌入卡片/附件容器)
+    if (!rawHref) {
+      const cardContainer = e.target && e.target.closest
+        ? e.target.closest('[class*="card"], [class*="preview"], [class*="embed"], [class*="attachment"]')
+        : null;
+      if (cardContainer) {
+        const childAnchor = cardContainer.querySelector('a[href], [data-href], [data-url]');
+        if (childAnchor) {
+          const candidateHref = childAnchor.getAttribute('href') || childAnchor.href || childAnchor.getAttribute('data-href') || childAnchor.getAttribute('data-url');
+          if (candidateHref && !candidateHref.startsWith('#') && !candidateHref.startsWith('javascript:')) {
+            rawHref = candidateHref;
+          }
+        }
+      }
+    }
+
+    // 3. 若仍未提取到，利用 DOM caretRangeFromPoint 精确定位鼠标光标点击处的词元
+    if (!rawHref && document.caretRangeFromPoint) {
+      try {
+        const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+        if (range && range.startContainer && range.startContainer.nodeType === Node.TEXT_NODE) {
+          const fullText = range.startContainer.textContent || '';
+          const offset = range.startOffset;
+          const left = fullText.slice(0, offset);
+          const right = fullText.slice(offset);
+          const leftMatch = left.match(/[^\s，。；、？！）》」"'\`<>\n\r\t]+$/);
+          const rightMatch = right.match(/^[^\s，。；、？！）》」"'\`<>\n\r\t]+/);
+          const word = ((leftMatch ? leftMatch[0] : '') + (rightMatch ? rightMatch[0] : '')).trim();
+          const match = word.match(/https?:\/\/[^\s，。；、？！）》」"'\`<>]+/i);
+          if (match) {
+            rawHref = match[0];
+          }
+        }
+      } catch {}
+    }
+
+    // 4. 兜底策略：检查 e.target 元素的文本内容是否包含 http(s) URL
+    if (!rawHref && e.target) {
+      const targetText = (e.target.innerText || e.target.textContent || '').trim();
+      const match = targetText.match(/https?:\/\/[^\s，。；、？！）》」"'\`<>]+/i);
+      if (match) {
+        rawHref = match[0];
+      }
+    }
+
+    if (!rawHref) return null;
+    return rawHref.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
+  }
+
   // 使用捕获阶段 (capture: true)，拦截聊天区域中的外部超链接与卡片点击
   document.addEventListener(
     'click',
     (e) => {
       try {
-        // 支持普通 a 标签、带 data-href/data-url 的卡片容器、或卡片内部任意子元素
-        const anchor = e.target && e.target.closest
-          ? (e.target.closest('a') || e.target.closest('[data-href], [data-url], [role="link"]'))
-          : null;
-
-        let rawHref = null;
-        if (anchor) {
-          rawHref = anchor.getAttribute('href') || anchor.href || anchor.getAttribute('data-href') || anchor.getAttribute('data-url');
-        } else {
-          // 若点击落在预览卡片内部其它装饰元素上，精准查找最近卡片容器内的链接
-          const cardContainer = e.target && e.target.closest
-            ? e.target.closest('[class*="card"], [class*="preview"], [class*="embed"], [class*="attachment"]')
-            : null;
-          if (cardContainer) {
-            const childAnchor = cardContainer.querySelector('a[href], [data-href], [data-url]');
-            if (childAnchor) {
-              rawHref = childAnchor.getAttribute('href') || childAnchor.href || childAnchor.getAttribute('data-href') || childAnchor.getAttribute('data-url');
-            }
-          }
-          // 若直接点击了文本形式的 URL（如 Markdown/React 将 URL 渲染为普通文本或 span）
-          if (!rawHref && e.target) {
-            const text = (e.target.innerText || e.target.textContent || '').trim();
-            if (/^https?:\/\/[^\s]+$/.test(text)) {
-              rawHref = text;
-            }
-          }
-        }
-
-        if (!rawHref) return;
-
-        // 仅处理常规鼠标左键点击，尊重修饰键组合（Ctrl/Meta/Shift/Alt）
-        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+        const rawUrl = resolveClickedUrl(e);
+        if (!rawUrl) return;
 
         // 跳过纯锚点与非网络协议
-        if (rawHref.startsWith('#') || rawHref.startsWith('javascript:')) return;
+        if (rawUrl.startsWith('#') || rawUrl.startsWith('javascript:')) return;
 
-        let fullHref = rawHref;
+        let fullHref = rawUrl;
         try {
-          fullHref = new URL(rawHref, window.location.href).href;
-        } catch {}
+          fullHref = new URL(rawUrl, window.location.href).href;
+        } catch {
+          return;
+        }
 
         if (!fullHref.startsWith('http://') && !fullHref.startsWith('https://') && !fullHref.startsWith('mailto:')) {
           return;
@@ -3805,8 +3857,9 @@ function injectExportButton() {}
 
         // 外部链接（GitHub 仓库、文档、文章等）：调用系统默认外部浏览器打开，阻止应用内无响应或误拦截
         const externalTarget = extractTargetUrl(fullHref);
-        const finalUrl = externalTarget || fullHref;
+        const finalUrl = (externalTarget || fullHref).trim().replace(/[，。；、？！）》」"',;!]+$/, '');
 
+        console.log('[ExternalLink Preload] Opening external URL in default browser:', finalUrl);
         e.preventDefault();
         e.stopPropagation();
         ipcRenderer.send('open-external-url', finalUrl);

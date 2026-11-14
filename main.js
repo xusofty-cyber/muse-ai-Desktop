@@ -791,15 +791,21 @@ function attachZoomShortcuts(win) {
 function extractExternalTargetUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   try {
-    const parsed = new URL(rawUrl);
-    // 只解包已知跳转站的重定向参数 (v1.5.17 加固, 评审 P2): 此前任意 URL 的
-    // ?u=/?url= 参数都会被解包直达, 页面可借此绕过外链提示把用户带到钓鱼站
+    let cleanUrl = rawUrl.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
+    const parsed = new URL(cleanUrl);
+    const host = parsed.hostname.toLowerCase();
+
+    // 只解包已知跳转站与内部重定向包装的参数 (含 Meta AI / Facebook / Instagram / Google 等外链跳板)
     const REDIRECTOR_HOSTS = new Set([
       'www.google.com', 'google.com', 'www.bing.com', 'bing.com',
-      'duckduckgo.com', 'html.duckduckgo.com', 'l.facebook.com',
+      'duckduckgo.com', 'html.duckduckgo.com',
+      'link.meta.com', 'l.facebook.com', 'lm.facebook.com',
+      'l.instagram.com', 'l.messenger.com', 'www.facebook.com', 'facebook.com',
       'out.reddit.com', 'www.youtube.com',
+      'muse.ai', 'meta.ai', 'meta.com',
     ]);
-    if (!REDIRECTOR_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+    if (!REDIRECTOR_HOSTS.has(host) && !REDIRECTOR_HOSTS.has(host.replace(/^www\./, ''))) return null;
+
     // 识别常见重定向跳转参数
     const redirectKeys = ['u', 'url', 'target', 'dest', 'destination', 'link', 'href', 'q'];
     for (const key of redirectKeys) {
@@ -1082,9 +1088,10 @@ function setupExternalLinkHandler(win, profileId) {
 
     // 所有外部链接（包括带 target="_blank" 的聊天链接、GitHub 仓库、外部文档等）：统一由系统默认浏览器打开
     const extracted = extractExternalTargetUrl(url);
-    const finalExternalUrl = extracted || url;
+    const finalExternalUrl = (extracted || url).trim().replace(/[，。；、？！）》」"',;!]+$/, '');
 
     if (finalExternalUrl && (finalExternalUrl.startsWith('http://') || finalExternalUrl.startsWith('https://') || finalExternalUrl.startsWith('mailto:'))) {
+      console.log('[ExternalLink window.open] Opening external URL in default browser:', finalExternalUrl);
       shell.openExternal(finalExternalUrl).catch((err) => {
         console.warn('[ExternalLink] Failed to open external URL:', finalExternalUrl, err);
       });
@@ -1140,29 +1147,31 @@ function setupExternalLinkHandler(win, profileId) {
 
   // 2. 拦截在主窗口内的普通超链接跳转（如 <a href="...">）及 302 重定向，防止主聊天窗口被覆盖或因阻止导航挂起黑屏
   const handleNavigation = (event, url, isInPlace, isMainFrame) => {
-    // 关键守卫：严格忽略子框架 (iframe/subframe) 的所有导航与 302 重定向！
-    // 页面内的第三方统计埋点（Snapchat Pixel, DoubleClick, Facebook Pixel 等）均在隐藏 iframe 中工作并频繁 302 重定向，
-    // 若拦截子框架重定向会导致 Blink 拒绝 Mojo 通信，并误唤起外部系统浏览器打开广告跟踪链接。
-    if (isMainFrame === false || (event && event.isMainFrame === false)) {
-      return;
-    }
-    // 忽略第三方统计埋点与广告跟踪 URL
+    // 关键守卫：忽略第三方统计埋点与广告跟踪 URL (尤其是子 frame 里的 302 重定向，避免 Blink Mojo 报错)
     if (isTrackingOrAdUrl(url)) {
+      if (isMainFrame !== false) event.preventDefault();
       return;
     }
+    // 允许身份验证流程导航
     if (isAuthOrConnectorUrl(url)) {
       return;
     }
-    const extracted = extractExternalTargetUrl(url);
-    const finalExternalUrl = extracted || (!isInternalSiteUrl(url) ? url : null);
+    // 内部站点链接：主框架正常导航，子框架不干涉
+    if (isInternalSiteUrl(url)) {
+      return;
+    }
 
-    if (finalExternalUrl) {
-      event.preventDefault();
-      if (finalExternalUrl.startsWith('http://') || finalExternalUrl.startsWith('https://') || finalExternalUrl.startsWith('mailto:')) {
-        shell.openExternal(finalExternalUrl).catch((err) => {
-          console.warn('[ExternalLink] Failed to open external URL on nav:', finalExternalUrl, err);
-        });
-      }
+    // 真正的外部网络链接 (如 https://ulife.vip/):
+    // 无论发生在 mainFrame 还是 subframe 均由系统默认浏览器打开，绝不覆盖主聊天窗口
+    event.preventDefault();
+    const extracted = extractExternalTargetUrl(url);
+    const finalExternalUrl = (extracted || url).trim().replace(/[，。；、？！）》」"',;!]+$/, '');
+
+    if (finalExternalUrl && (finalExternalUrl.startsWith('http://') || finalExternalUrl.startsWith('https://') || finalExternalUrl.startsWith('mailto:'))) {
+      console.log(`[ExternalLink Navigation] Opening in default browser (mainFrame=${isMainFrame}):`, finalExternalUrl);
+      shell.openExternal(finalExternalUrl).catch((err) => {
+        console.warn('[ExternalLink] Failed to open external URL on nav:', finalExternalUrl, err);
+      });
     }
   };
 
@@ -3092,15 +3101,22 @@ ipcMain.on('muse-export-request', (e) => { if (!denyUntrusted(e)) exportChat(); 
 
 // 处理页面请求用系统默认浏览器打开外部链接
 ipcMain.on('open-external-url', (e, rawUrl) => {
-  // 安全校验：发送者必须属于本应用纳管窗口
-  const owned = [mainWindow, quickWindow, hotkeyWindow, lockWindow, ...profileWindows.values()];
-  if (!owned.some((w) => w && !w.isDestroyed() && w.webContents === e.sender)) return;
-
   if (typeof rawUrl !== 'string') return;
-  const trimmed = rawUrl.trim();
+  // 安全校验：发送者必须属于本应用纳管窗口
+  const senderWin = BrowserWindow.fromWebContents(e.sender);
+  const owned = [mainWindow, quickWindow, hotkeyWindow, lockWindow, ...profileWindows.values()];
+  const isOwned = (senderWin && owned.includes(senderWin)) ||
+                  owned.some((w) => w && !w.isDestroyed() && (w.webContents === e.sender || w.webContents.id === e.sender.id));
+  if (!isOwned) {
+    console.warn('[ExternalLink IPC] Rejected call from unowned webContents id:', e.sender && e.sender.id);
+    return;
+  }
+
+  let trimmed = rawUrl.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
   const target = extractExternalTargetUrl(trimmed) || trimmed;
   // 严格白名单协议：仅放行普通网页外链（http/https/mailto），杜绝 file: 或危险 scheme
   if (typeof target === 'string' && (target.startsWith('http://') || target.startsWith('https://') || target.startsWith('mailto:'))) {
+    console.log('[ExternalLink IPC] Opening external URL in default browser:', target);
     shell.openExternal(target).catch((err) => {
       console.warn('[ExternalLink] Failed to open external URL from IPC:', target, err);
     });

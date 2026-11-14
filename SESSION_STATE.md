@@ -18,7 +18,21 @@
      - **精准修复**：
        - 在 `handleNavigation` 中增加 `isMainFrame === false || (event && event.isMainFrame === false)` 强拦截，严格放行所有 iframe/subframe 内部的正常加载与重定向；
        - 新增 `isTrackingOrAdUrl` 精准识别与过滤广告、埋点追踪及像素链接（`doubleclick.net`、`snapchat.com`、`fbthirdpartypixel.com` 等），在 `setWindowOpenHandler` 与 `handleNavigation` 双层防御，彻底杜绝埋点穿透唤起系统浏览器。
+  3. **会话中点击外部链接无响应/无法调用浏览器深度根治 (`main.js` / `preload-chat-export.js`)**：
+     - **根本原因排查与深度漏洞**：
+       1. **Preload 命中 Anchor 后提前退出（核心根因）**：在 React / Slate / 富文本聊天渲染器中，链接元素常被渲染为 `<a href="#" role="link">` 或无 `href` 的标签；此前的 `if (anchor)` 分支仅尝试 `getAttribute('href')`，当为 `"#"` 或空时，由于 `anchor` 为真直接跳过了 `else` 文本检查分支，并在后续 `if (rawHref.startsWith('#')) return;` 处直接静默退出，导致会话内的链接点击被直接吞掉；
+       2. **中文或紧邻标点导致 URL 解析崩溃**：当点击紧邻标点（如 `https://blog.ulife.vip，` 或 `https://api.ulife.vip/ 就行。`）时，未剥离标点会导致 `new URL` 失败；
+       3. **光标级文字点击定位缺失**：在纯文本段落（如一句话包含多个链接）中，缺少光标命中判定；
+       4. **子框架 iframe 链接处理盲区**：在 `main.js` 中此前为了防 302 埋点直接忽略了所有 `isMainFrame === false`，若聊天消息内的链接处于子框架将无法被导航捕获；
+       5. **缺乏端到端诊断日志**：此前未在控制台输出调试日志，无法直观追踪链接捕获流转；
+       6. **本地热重载机制认知**：Electron 的主进程脚本与 Preload 脚本在运行时缓存在内存中，修改代码后必须彻底退出旧进程并执行 `npm start` 重启生效。
+     - **精准重构方案**：
+       - `preload-chat-export.js`：新增 `resolveClickedUrl(e)` 统一解析器，覆盖 `<a>`、`[role="link"]`、`[data-href]`、卡片容器、DOM `caretRangeFromPoint` 光标精确定位与文本回退提取；若 `href` 为 `#` 或空时自动回退至元素文本正则匹配；清洗末尾中文/英文标点；
+       - `main.js`：`setupExternalLinkHandler` 与 `handleNavigation` 双层兜底，仅对埋点域名过滤，对真正的外部网络外链放行并调用系统默认浏览器；
+       - 控制台清晰诊断输出：在 IPC 与导航拦截处增加 `[ExternalLink]` 明确日志；
+       - 验证：断言测试 `scratch/test-link-extract.js` 与 `scratch/test-main-urls.js` 100% 通过。
 - **真实验证证据**：
+  - 自动化断言测试：`scratch/test-link-extract.js`、`scratch/test-main-urls.js` 针对富文本各种链接形态、带有标点符号、无 href/href="#" 锚点及光标定位全部 100% 通过；
   - 静态语法检查：`node -c main.js preload-settings.js preload-chat-export.js mihomo-manager.js` 全部 Exit Code 0，无任何语法与解析错误。
 
 ---
