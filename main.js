@@ -144,6 +144,9 @@ const I18N_MAIN = {
     muteSpeaker: (hk) => `Mute / unmute app sound  (${hk})`,
     customizeHotkeys: 'Customize hotkeys & settings…',
     networkProxy: 'Network & Proxy settings…',
+    backupExport: 'Backup / Export all accounts & configs…',
+    backupImport: 'Import config backup…',
+    openDataDir: 'Open local data folder (%APPDATA%\\Muse)…',
     resetGoogleSession: 'Reset Google Sign-in & Security Cache…',
     appearance: (cur) => `Appearance: ${cur}`,
     darkMode: 'Dark mode 🌙',
@@ -208,6 +211,9 @@ const I18N_MAIN = {
     muteSpeaker: (hk) => `应用声音静音 / 开关  (${hk})`,
     customizeHotkeys: '全局快捷键与高级偏好设置…',
     networkProxy: '网络代理配置 (TUN/系统)…',
+    backupExport: '备份 / 导出当前所有账号与代理配置…',
+    backupImport: '导入配置备份 (.json)…',
+    openDataDir: '打开本地数据与配置目录 (%APPDATA%\\Muse)…',
     resetGoogleSession: '重置 Google 登录与风控缓存…',
     appearance: (cur) => `主题外观: ${cur}`,
     darkMode: '深色模式 🌙',
@@ -3300,6 +3306,186 @@ ipcMain.handle('account:set-proxy-queue', async (e, payload) => {
   return { ok: true, profile: targetProf };
 });
 
+// ==================== 配置与多账号备份/导出/导入 ====================
+async function handleConfigExport(parentWin) {
+  const targetWin = (parentWin && !parentWin.isDestroyed()) ? parentWin : (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  const saveOpts = {
+    title: '导出所有账号与代理配置备份',
+    defaultPath: `muse-backup-${dateStr}.json`,
+    filters: [
+      { name: 'JSON 配置文件 (*.json)', extensions: ['json'] },
+      { name: '所有文件 (*.*)', extensions: ['*'] },
+    ],
+  };
+  const res = targetWin
+    ? await dialog.showSaveDialog(targetWin, saveOpts)
+    : await dialog.showSaveDialog(saveOpts);
+
+  if (res.canceled || !res.filePath) {
+    return { canceled: true };
+  }
+
+  const backupData = {
+    _meta: {
+      app: 'Muse',
+      version: app.getVersion(),
+      exportedAt: now.toISOString(),
+      profileCount: (state.profiles || []).length,
+    },
+    profiles: state.profiles || [],
+    accountGroups: state.accountGroups || ['默认群组'],
+    mihomoSources: (state.mihomo && state.mihomo.sources) || [],
+    proxy: state.proxy || defaultProxy(),
+    feishu: state.feishu || defaultFeishuConfig(),
+    theme: state.theme || 'dark',
+    locale: state.locale || 'zh-CN',
+    ui: state.ui || {},
+  };
+
+  fs.writeFileSync(res.filePath, JSON.stringify(backupData, null, 2), 'utf8');
+  return {
+    ok: true,
+    canceled: false,
+    filePath: res.filePath,
+    profileCount: (state.profiles || []).length,
+    sourceCount: backupData.mihomoSources.length,
+  };
+}
+
+async function handleConfigImport(parentWin) {
+  const targetWin = (parentWin && !parentWin.isDestroyed()) ? parentWin : (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
+  const openOpts = {
+    title: '导入账号与代理配置备份',
+    filters: [
+      { name: 'JSON 配置文件 (*.json)', extensions: ['json'] },
+      { name: '所有文件 (*.*)', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  };
+  const res = targetWin
+    ? await dialog.showOpenDialog(targetWin, openOpts)
+    : await dialog.showOpenDialog(openOpts);
+
+  if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
+    return { canceled: true };
+  }
+
+  const filePath = res.filePaths[0];
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(content);
+    if (!parsed || typeof parsed !== 'object') {
+      return { ok: false, error: '无效的 JSON 配置文件' };
+    }
+
+    const importedProfiles = Array.isArray(parsed.profiles) ? parsed.profiles : [];
+    if (importedProfiles.length === 0) {
+      return { ok: false, error: '文件中未检测到有效的 profiles 账号列表' };
+    }
+
+    // 导入前为当前已有 state 文件做安全备份
+    try {
+      const curStatePath = statePath();
+      if (fs.existsSync(curStatePath)) {
+        fs.copyFileSync(curStatePath, path.join(app.getPath('userData'), `app-state.pre-import-${Date.now()}.bak`));
+      }
+    } catch (bakErr) {
+      console.warn('[Config] Failed to create pre-import backup:', bakErr);
+    }
+
+    // 1. 恢复 profiles
+    state.profiles = importedProfiles;
+
+    // 2. 恢复 accountGroups
+    if (Array.isArray(parsed.accountGroups) && parsed.accountGroups.length > 0) {
+      state.accountGroups = parsed.accountGroups;
+    }
+
+    // 3. 恢复 mihomo sources (兼容 mihomoSources 与 mihomo.sources)
+    const importedSources = Array.isArray(parsed.mihomoSources)
+      ? parsed.mihomoSources
+      : (parsed.mihomo && Array.isArray(parsed.mihomo.sources) ? parsed.mihomo.sources : null);
+
+    if (importedSources && state.mihomo) {
+      state.mihomo.sources = importedSources;
+    }
+
+    // 4. 恢复全局 proxy
+    if (parsed.proxy && typeof parsed.proxy === 'object') {
+      state.proxy = { ...defaultProxy(), ...parsed.proxy };
+    }
+
+    // 5. 校验 activeProfileId
+    if (!state.profiles.some((p) => p && p.id === state.activeProfileId)) {
+      state.activeProfileId = state.profiles[0] ? state.profiles[0].id : 'default';
+    }
+
+    state = sanitizeAndMergeState(state);
+    saveState();
+
+    // 6. 重新同步并热载 Mihomo 内核
+    const mm = getMihomoManager();
+    if (state.mihomo && state.mihomo.sources && state.mihomo.sources.length > 0 && mm) {
+      mm.syncAllSources(state.mihomo.sources).then(async (syncRes) => {
+        if (syncRes && syncRes.ok) {
+          state.mihomo.cachedProxies = syncRes.cachedProxies;
+          saveState();
+          if (mm.isRunning) {
+            await mm.reload(state.profiles, state.mihomo.cachedProxies);
+          }
+        }
+      }).catch((e) => console.warn('[Config] Error resyncing mihomo sources after import:', e));
+    }
+
+    // 7. 重新应用各账号代理
+    for (const prof of state.profiles) {
+      try {
+        const ses = session.fromPartition(partitionFor(prof.id));
+        applyProxyToSession(ses, prof.id);
+      } catch {}
+    }
+
+    buildTrayMenu();
+    broadcastAccountChange();
+
+    return {
+      ok: true,
+      canceled: false,
+      filePath,
+      profileCount: state.profiles.length,
+      sourceCount: (state.mihomo && state.mihomo.sources && state.mihomo.sources.length) || 0,
+    };
+  } catch (err) {
+    console.error('[Config] Import failed:', err);
+    return { ok: false, error: '导入失败: ' + (err.message || String(err)) };
+  }
+}
+
+ipcMain.handle('config:export', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const senderWin = BrowserWindow.fromWebContents(e.sender);
+  return await handleConfigExport(senderWin);
+});
+
+ipcMain.handle('config:import', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const senderWin = BrowserWindow.fromWebContents(e.sender);
+  return await handleConfigImport(senderWin);
+});
+
+ipcMain.handle('config:open-data-dir', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  try {
+    const dir = app.getPath('userData');
+    await shell.openPath(dir);
+    return { ok: true, path: dir };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 // 主题与外观配置 IPC handlers
 ipcMain.handle('theme-get', (e) => {
   if (denyUntrusted(e)) return undefined;
@@ -4232,6 +4418,9 @@ function buildTrayMenu() {
       submenu: [
         { label: t.customizeHotkeys, click: () => openHotkeySettings() },
         { label: t.networkProxy, click: () => openHotkeySettings('tab-proxy') },
+        { label: t.backupExport, click: () => handleConfigExport() },
+        { label: t.backupImport, click: () => handleConfigImport() },
+        { label: t.openDataDir, click: () => shell.openPath(app.getPath('userData')) },
         { label: t.resetGoogleSession, click: promptResetGoogleSession },
         { type: 'separator' },
         {

@@ -477,6 +477,20 @@
       </div>
       <div id="conn-msg" style="margin-top:8px; font-size:11.5px; min-height:16px;"></div>
     </div>
+
+    <div class="section-title" id="sec-title-backup" style="margin-top:20px;">配置与多账号备份迁移 (Config & Multi-Account Backup)</div>
+    <div class="auto-card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--text-main); margin-bottom:4px;" id="txt-backup-title">📦 一键导出 / 导入所有账号与代理配置</div>
+      <div style="font-size:11.5px; color:var(--text-dim); line-height:1.45; margin-bottom:10px;" id="txt-backup-desc">
+        完整备份当前电脑上的全部 17+ 账号配置（包含备注名称、群组分类、用途说明、专属代理出口队列、独立代理模式及所有机场订阅源），更换环境或在新电脑上一键导入即可瞬间恢复。
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="action primary" id="btn-export-config" style="flex:1; min-width:160px; font-size:12px; padding:7px 0;">📤 导出所有配置 (.json)</button>
+        <button class="action" id="btn-import-config" style="flex:1; min-width:160px; font-size:12px; padding:7px 0;">📥 导入配置备份</button>
+        <button class="action" id="btn-open-datadir" style="flex:1; min-width:160px; font-size:12px; padding:7px 0;">📁 打开数据目录 (%APPDATA%\Muse)</button>
+      </div>
+      <div id="backup-msg" style="margin-top:8px; font-size:11.5px; min-height:16px;"></div>
+    </div>
   </div>
 
   <div class="tab-content" id="tab-security">
@@ -2227,6 +2241,82 @@ if (btnResetGoogleCache) {
         cMsg.style.color = '#ff9a9a';
         cMsg.textContent = '清理失败: ' + err.message;
       }
+    }
+  };
+}
+
+const btnExportConfig = document.getElementById('btn-export-config');
+const btnImportConfig = document.getElementById('btn-import-config');
+const btnOpenDataDir = document.getElementById('btn-open-datadir');
+const backupMsg = document.getElementById('backup-msg');
+
+if (btnExportConfig) {
+  btnExportConfig.onclick = async () => {
+    if (!window.backupAPI || !window.backupAPI.exportConfig) return;
+    if (backupMsg) {
+      backupMsg.style.color = '#7aa2ff';
+      backupMsg.textContent = '正在导出配置备份...';
+    }
+    try {
+      const res = await window.backupAPI.exportConfig();
+      if (res && res.ok) {
+        if (backupMsg) {
+          backupMsg.style.color = '#7ee2a8';
+          backupMsg.textContent = `已成功导出 ${res.profileCount} 个账号与代理配置至: ${res.filePath}`;
+        }
+      } else if (res && !res.canceled) {
+        if (backupMsg) {
+          backupMsg.style.color = '#ff9a9a';
+          backupMsg.textContent = `导出失败: ${res.error || '未知错误'}`;
+        }
+      } else {
+        if (backupMsg) backupMsg.textContent = '';
+      }
+    } catch (err) {
+      if (backupMsg) {
+        backupMsg.style.color = '#ff9a9a';
+        backupMsg.textContent = `导出异常: ${err.message}`;
+      }
+    }
+  };
+}
+
+if (btnImportConfig) {
+  btnImportConfig.onclick = async () => {
+    if (!window.backupAPI || !window.backupAPI.importConfig) return;
+    if (backupMsg) {
+      backupMsg.style.color = '#7aa2ff';
+      backupMsg.textContent = '正在读取并校验备份文件...';
+    }
+    try {
+      const res = await window.backupAPI.importConfig();
+      if (res && res.ok) {
+        if (backupMsg) {
+          backupMsg.style.color = '#7ee2a8';
+          backupMsg.textContent = `成功恢复 ${res.profileCount} 个账号与代理配置！`;
+        }
+        await loadProxySettings();
+      } else if (res && !res.canceled) {
+        if (backupMsg) {
+          backupMsg.style.color = '#ff9a9a';
+          backupMsg.textContent = `导入失败: ${res.error || '未知错误'}`;
+        }
+      } else {
+        if (backupMsg) backupMsg.textContent = '';
+      }
+    } catch (err) {
+      if (backupMsg) {
+        backupMsg.style.color = '#ff9a9a';
+        backupMsg.textContent = `导入异常: ${err.message}`;
+      }
+    }
+  };
+}
+
+if (btnOpenDataDir) {
+  btnOpenDataDir.onclick = () => {
+    if (window.backupAPI && window.backupAPI.openDataDir) {
+      window.backupAPI.openDataDir();
     }
   };
 }

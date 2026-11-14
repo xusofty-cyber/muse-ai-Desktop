@@ -102,6 +102,12 @@ const I18N_RENDERER = {
     editProfileTitle: (name) => `Edit Account Details (${name})`,
     groupManagerTitle: 'Manage Account Groups',
     addGroupPrompt: 'Enter new group name:',
+    exportConfigBtn: 'Export Backup',
+    importConfigBtn: 'Import Config',
+    openDataDirBtn: 'Data Folder',
+    exportConfigTooltip: 'Export all accounts, proxy queues and settings to a .json file',
+    importConfigTooltip: 'Restore all accounts and proxy queues from a .json backup',
+    openDataDirTooltip: 'Open Muse local data directory (%APPDATA%\\Muse)',
   },
   'zh-CN': {
     expandDock: '展开多账号栏',
@@ -181,6 +187,12 @@ const I18N_RENDERER = {
     editProfileTitle: (name) => `编辑账号信息 (${name})`,
     groupManagerTitle: '管理业务群组与分类',
     addGroupPrompt: '输入新群组名称：',
+    exportConfigBtn: '导出配置',
+    importConfigBtn: '导入配置',
+    openDataDirBtn: '数据目录',
+    exportConfigTooltip: '导出当前所有账号与代理出口队列至 .json 备份文件',
+    importConfigTooltip: '从 .json 备份文件一键恢复所有账号与代理配置',
+    openDataDirTooltip: '打开本地数据与配置目录 (%APPDATA%\\Muse)',
   },
 };
 
@@ -1871,6 +1883,7 @@ function injectExportButton() {}
         display: flex;
         align-items: center;
         gap: 8px;
+        flex-wrap: wrap;
       }
       .hub-btn {
         padding: 7px 12px;
@@ -2354,6 +2367,61 @@ function injectExportButton() {}
     const actions = document.createElement('div');
     actions.className = 'hub-actions';
 
+    // 导出配置备份按钮
+    const exportConfigBtn = document.createElement('button');
+    exportConfigBtn.className = 'hub-btn hub-btn-default';
+    exportConfigBtn.type = 'button';
+    exportConfigBtn.title = t.exportConfigTooltip;
+    exportConfigBtn.innerHTML = `<span>📤</span><span>${t.exportConfigBtn}</span>`;
+    exportConfigBtn.onclick = async () => {
+      exportConfigBtn.disabled = true;
+      try {
+        const res = await ipcRenderer.invoke('config:export');
+        if (res && res.ok) {
+          showToast(`已成功导出 ${res.profileCount} 个账号与代理配置！`);
+        } else if (res && !res.canceled) {
+          showToast(`导出失败: ${res.error || '未知错误'}`);
+        }
+      } catch (err) {
+        showToast(`导出失败: ${err.message}`);
+      } finally {
+        exportConfigBtn.disabled = false;
+      }
+    };
+
+    // 导入配置备份按钮
+    const importConfigBtn = document.createElement('button');
+    importConfigBtn.className = 'hub-btn hub-btn-default';
+    importConfigBtn.type = 'button';
+    importConfigBtn.title = t.importConfigTooltip;
+    importConfigBtn.innerHTML = `<span>📥</span><span>${t.importConfigBtn}</span>`;
+    importConfigBtn.onclick = async () => {
+      importConfigBtn.disabled = true;
+      try {
+        const res = await ipcRenderer.invoke('config:import');
+        if (res && res.ok) {
+          showToast(`成功恢复 ${res.profileCount} 个账号与代理配置！`);
+          renderAccountHub();
+        } else if (res && !res.canceled) {
+          showToast(`导入失败: ${res.error || '未知错误'}`);
+        }
+      } catch (err) {
+        showToast(`导入失败: ${err.message}`);
+      } finally {
+        importConfigBtn.disabled = false;
+      }
+    };
+
+    // 打开本地数据目录按钮
+    const openDirBtn = document.createElement('button');
+    openDirBtn.className = 'hub-btn hub-btn-default';
+    openDirBtn.type = 'button';
+    openDirBtn.title = t.openDataDirTooltip;
+    openDirBtn.innerHTML = `<span>📁</span><span>${t.openDataDirBtn}</span>`;
+    openDirBtn.onclick = () => {
+      ipcRenderer.invoke('config:open-data-dir').catch(() => {});
+    };
+
     // 飞书同步按钮
     const feishuSyncBtn = document.createElement('button');
     feishuSyncBtn.className = 'hub-btn hub-btn-feishu';
@@ -2403,6 +2471,9 @@ function injectExportButton() {}
     closeBtn.innerHTML = '✕';
     closeBtn.onclick = closeAccountHub;
 
+    actions.appendChild(exportConfigBtn);
+    actions.appendChild(importConfigBtn);
+    actions.appendChild(openDirBtn);
     actions.appendChild(feishuSyncBtn);
     actions.appendChild(feishuConfigBtn);
     actions.appendChild(addBtn);

@@ -85,5 +85,12 @@ contextBridge.exposeInMainWorld('mihomoAPI', {
   setProfileQueue: (payload) => ipcRenderer.invoke('account:set-proxy-queue', payload),
 });
 
+contextBridge.exposeInMainWorld('backupAPI', {
+  exportConfig: () => ipcRenderer.invoke('config:export'),
+  importConfig: () => ipcRenderer.invoke('config:import'),
+  openDataDir: () => ipcRenderer.invoke('config:open-data-dir'),
+});
+
+
 
 
