@@ -438,6 +438,8 @@ function defaultState() {
       status: 'normal',
       proxyQueue: [],
       proxyStrategy: 'fallback',
+      proxyMode: 'inherit',
+      proxyCustom: { type: 'http', host: '127.0.0.1', port: 7897 },
     }],
     activeProfileId: 'default',
     accountGroups: ['默认群组'],
@@ -575,6 +577,12 @@ function sanitizeAndMergeState(raw) {
         status: ['normal', 'warning', 'exhausted', 'idle'].includes(prof.status) ? prof.status : 'normal',
         proxyQueue: Array.isArray(prof.proxyQueue) ? prof.proxyQueue.filter((n) => typeof n === 'string' && n.trim()) : [],
         proxyStrategy: ['fallback', 'url-test', 'load-balance', 'select'].includes(prof.proxyStrategy) ? prof.proxyStrategy : 'fallback',
+        proxyMode: ['inherit', 'system', 'mihomo', 'direct', 'custom'].includes(prof.proxyMode) ? prof.proxyMode : 'inherit',
+        proxyCustom: (prof.proxyCustom && typeof prof.proxyCustom === 'object') ? {
+          type: ['http', 'socks5'].includes(prof.proxyCustom.type) ? prof.proxyCustom.type : 'http',
+          host: typeof prof.proxyCustom.host === 'string' && prof.proxyCustom.host.trim() ? prof.proxyCustom.host.trim() : '127.0.0.1',
+          port: parseInt(prof.proxyCustom.port, 10) || 7897,
+        } : { type: 'http', host: '127.0.0.1', port: 7897 },
       }));
   }
   if (!Array.isArray(merged.profiles) || merged.profiles.length === 0) {
@@ -590,6 +598,8 @@ function sanitizeAndMergeState(raw) {
       status: 'normal',
       proxyQueue: [],
       proxyStrategy: 'fallback',
+      proxyMode: 'inherit',
+      proxyCustom: { type: 'http', host: '127.0.0.1', port: 7897 },
     }];
   }
   // windowByProfile 只保留现存账号的条目, 防已删账号的几何记录无限堆积
@@ -1233,8 +1243,45 @@ function getMihomoManager() {
 async function applyProxyToSession(targetSession, profileId = null) {
   if (!targetSession) return;
 
-  // 1. 若开启了内置 Mihomo 多账号独立代理分流模式
-  if (state.mihomo && state.mihomo.enabled) {
+  const prof = profileId ? state.profiles.find((p) => p.id === profileId) : null;
+  const acctMode = (prof && prof.proxyMode && prof.proxyMode !== 'inherit') ? prof.proxyMode : null;
+
+  // 1. 若账号单独指定了代理模式（system / direct / custom）
+  if (acctMode === 'system') {
+    try {
+      await targetSession.setProxy({ mode: 'system' });
+      console.log(`[Proxy] Applied individual system/TUN mode to session for profile: ${profileId}`);
+      return;
+    } catch (err) {
+      console.error(`[Proxy] Failed to apply system mode to profile ${profileId}:`, err);
+    }
+  } else if (acctMode === 'direct') {
+    try {
+      await targetSession.setProxy({ mode: 'direct' });
+      console.log(`[Proxy] Applied individual direct mode to session for profile: ${profileId}`);
+      return;
+    } catch (err) {
+      console.error(`[Proxy] Failed to apply direct mode to profile ${profileId}:`, err);
+    }
+  } else if (acctMode === 'custom') {
+    const c = (prof && prof.proxyCustom) || { type: 'http', host: '127.0.0.1', port: 7897 };
+    const type = (c.type || 'http').toLowerCase();
+    const host = (c.host || '127.0.0.1').trim();
+    const port = parseInt(c.port, 10) || 7897;
+    const proxyRules = `${type}://${host}:${port}`;
+    const proxyBypassRules = '<local>;localhost;127.0.0.1';
+    try {
+      await targetSession.setProxy({ proxyRules, proxyBypassRules });
+      console.log(`[Proxy] Applied individual custom proxy (${proxyRules}) to session for profile: ${profileId}`);
+      return;
+    } catch (err) {
+      console.error(`[Proxy] Failed to apply custom proxy to profile ${profileId}:`, err);
+    }
+  }
+
+  // 2. 账号选了 mihomo 或跟随全局 (inherit):
+  // 若开启了内置 Mihomo 智能分流（或账号显式选了 mihomo）
+  if (acctMode === 'mihomo' || (state.mihomo && state.mihomo.enabled)) {
     const mm = getMihomoManager();
     if (mm && mm.isRunning) {
       // 优先从 portMap 中找该 profileId 对应的独立端口
@@ -1263,7 +1310,7 @@ async function applyProxyToSession(targetSession, profileId = null) {
     }
   }
 
-  // 2. 传统通用代理策略 (Custom / Direct / System 自适应)
+  // 3. 传统全局通用代理策略 (Custom / Direct / System 自适应)
   const p = state.proxy || defaultProxy();
   try {
     if (p.mode === 'custom' && p.enabled !== false) {
@@ -2086,6 +2133,8 @@ function addProfile(customName, customGroup, customPurpose) {
     status: 'normal',
     proxyQueue: [],
     proxyStrategy: 'fallback',
+    proxyMode: 'inherit',
+    proxyCustom: { type: 'http', host: '127.0.0.1', port: 7897 },
     updatedAt: Date.now(),
   };
   state.profiles.push(profile);
@@ -3216,7 +3265,7 @@ ipcMain.handle('mihomo:test-delay', async (e, proxyName) => {
 
 ipcMain.handle('account:set-proxy-queue', async (e, payload) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
-  const { profileId, proxyQueue, proxyStrategy } = payload || {};
+  const { profileId, proxyQueue, proxyStrategy, proxyMode, proxyCustom } = payload || {};
   if (!profileId || typeof profileId !== 'string') return { ok: false, error: 'Invalid profileId' };
 
   const targetProf = state.profiles.find((p) => p.id === profileId);
@@ -3226,15 +3275,26 @@ ipcMain.handle('account:set-proxy-queue', async (e, payload) => {
   if (['fallback', 'url-test', 'load-balance', 'select'].includes(proxyStrategy)) {
     targetProf.proxyStrategy = proxyStrategy;
   }
+  if (['inherit', 'system', 'mihomo', 'direct', 'custom'].includes(proxyMode)) {
+    targetProf.proxyMode = proxyMode;
+  }
+  if (proxyCustom && typeof proxyCustom === 'object') {
+    targetProf.proxyCustom = {
+      type: ['http', 'socks5'].includes(proxyCustom.type) ? proxyCustom.type : 'http',
+      host: typeof proxyCustom.host === 'string' && proxyCustom.host.trim() ? proxyCustom.host.trim() : '127.0.0.1',
+      port: parseInt(proxyCustom.port, 10) || 7897,
+    };
+  }
   saveState();
 
   const mm = getMihomoManager();
-  if (state.mihomo && state.mihomo.enabled && mm.isRunning) {
+  if (state.mihomo && state.mihomo.enabled && mm && mm.isRunning) {
     await mm.reload(state.profiles, state.mihomo.cachedProxies);
-    // 重新应用该账号的分区代理
-    const s = session.fromPartition(partitionFor(profileId));
-    await applyProxyToSession(s, profileId);
   }
+
+  // 重新应用该账号的分区代理
+  const s = session.fromPartition(partitionFor(profileId));
+  await applyProxyToSession(s, profileId);
 
   broadcastAccountChange();
   return { ok: true, profile: targetProf };

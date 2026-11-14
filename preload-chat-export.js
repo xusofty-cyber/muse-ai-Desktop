@@ -2495,28 +2495,52 @@ function injectExportButton() {}
         resetRow.innerHTML = `<span class="hub-meta-label">⏳ ${t.tokenResetLabel}:</span><span class="hub-meta-val">${p.tokenResetAt ? p.tokenResetAt : `<span style="color:#64748b;font-style:italic;">${t.noResetInfo}</span>`}</span>`;
         metaBox.appendChild(resetRow);
 
-        // 代理出口队列
+        // 代理模式与出口队列
         const proxyRow = document.createElement('div');
         proxyRow.className = 'hub-meta-row';
-        const queue = Array.isArray(p.proxyQueue) && p.proxyQueue.length > 0 ? p.proxyQueue : null;
-        const queueText = queue 
-          ? (queue.length === 1 ? queue[0] : `${queue[0]} (备用+${queue.length - 1})`)
-          : '自适应系统/TUN';
-        
+
         const proxyLabel = document.createElement('span');
         proxyLabel.className = 'hub-meta-label';
-        proxyLabel.textContent = '🛡️ 代理出口:';
+        proxyLabel.textContent = '🛡️ 代理模式:';
 
         const proxyVal = document.createElement('span');
         proxyVal.className = 'hub-meta-val';
-        proxyVal.title = queue ? queue.join(' ➔ ') : '自适应系统/TUN';
 
-        const proxyInner = document.createElement('span');
-        if (queue) {
-          proxyInner.style.cssText = 'color:#818cf8;font-weight:600;';
+        const acctMode = p.proxyMode || 'inherit';
+        let queueText = '';
+        let queueTitle = '';
+        let queueColor = '#818cf8';
+
+        if (acctMode === 'system') {
+          queueText = '🖥️ 走系统代理 / TUN';
+          queueTitle = '强制独立使用 Windows 系统网络代理与 TUN 虚拟网卡';
+          queueColor = '#38bdf8';
+        } else if (acctMode === 'direct') {
+          queueText = '⚡ 直接连接 (Direct)';
+          queueTitle = '绕过任何代理，直连互联网';
+          queueColor = '#fbbf24';
+        } else if (acctMode === 'custom') {
+          const cPort = (p.proxyCustom && p.proxyCustom.port) || 7897;
+          queueText = `⚙️ 自定义代理 (: ${cPort})`;
+          queueTitle = `独立自定义代理: ${(p.proxyCustom && p.proxyCustom.type) || 'HTTP'}://${(p.proxyCustom && p.proxyCustom.host) || '127.0.0.1'}:${cPort}`;
+          queueColor = '#c084fc';
         } else {
-          proxyInner.style.cssText = 'color:#64748b;font-style:italic;';
+          // inherit or mihomo
+          const queue = Array.isArray(p.proxyQueue) && p.proxyQueue.length > 0 ? p.proxyQueue : null;
+          if (queue) {
+            queueText = queue.length === 1 ? `🛡️ ${queue[0]}` : `🛡️ ${queue[0]} (备用+${queue.length - 1})`;
+            queueTitle = queue.join(' ➔ ');
+            queueColor = '#818cf8';
+          } else {
+            queueText = acctMode === 'mihomo' ? '🛡️ 全部可用节点' : '🌐 跟随全局设置';
+            queueTitle = '跟随客户端全局网络与代理设置';
+            queueColor = '#64748b';
+          }
         }
+
+        proxyVal.title = queueTitle;
+        const proxyInner = document.createElement('span');
+        proxyInner.style.cssText = `color:${queueColor}; font-weight:600;`;
         proxyInner.textContent = queueText;
 
         proxyVal.appendChild(proxyInner);
@@ -2608,6 +2632,286 @@ function injectExportButton() {}
   }
 
   // 编辑账号元数据模态框
+  // 批量多选代理节点模态框 (嵌套浮层)
+  function openBatchNodeSelectModal({ allNodes, currentQueue, onAddBatch }) {
+    const batchOverlay = document.createElement('div');
+    batchOverlay.className = 'acct-modal-overlay';
+    batchOverlay.style.zIndex = '2147483647';
+
+    const bCard = document.createElement('div');
+    bCard.className = 'acct-modal-card';
+    bCard.style.cssText = 'width:500px; max-height:86vh; display:flex; flex-direction:column; padding:16px; background:#1b1e25; border:1px solid #333948; border-radius:8px; box-shadow:0 12px 36px rgba(0,0,0,0.6);';
+
+    // 头部标题
+    const bHeader = document.createElement('div');
+    bHeader.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;';
+    bHeader.innerHTML = `
+      <div style="font-size:14px; font-weight:600; color:#e8eaf0; display:flex; align-items:center; gap:8px;">
+        <span>📦 批量选择代理节点</span>
+        <span style="font-size:11.5px; color:#818cf8; font-weight:normal;">(共 ${allNodes.length} 个可用)</span>
+      </div>
+    `;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'acct-modal-btn';
+    closeBtn.style.cssText = 'padding:2px 8px; font-size:12px; height:24px; color:#94a3b8;';
+    closeBtn.textContent = '✕';
+    closeBtn.onclick = () => batchOverlay.remove();
+    bHeader.appendChild(closeBtn);
+    bCard.appendChild(bHeader);
+
+    // 实时搜索框
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.placeholder = '🔍 输入关键词实时搜索 (如: us, 香港, 0.1, 专线, 节点名)...';
+    searchInput.style.cssText = 'width:100%; box-sizing:border-box; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:6px 10px; border-radius:6px; font-size:12px; margin-bottom:8px;';
+    bCard.appendChild(searchInput);
+
+    // 快捷地区筛选标签
+    const filterChipsWrap = document.createElement('div');
+    filterChipsWrap.style.cssText = 'display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px;';
+    const filterOptions = [
+      { id: 'all', label: '全部' },
+      { id: 'us', label: '美国 (US)' },
+      { id: 'hk', label: '香港 (HK)' },
+      { id: 'jp', label: '日本 (JP)' },
+      { id: 'sg', label: '新加坡 (SG)' },
+      { id: 'unadded', label: '未在队列' },
+    ];
+    let activeFilter = 'all';
+
+    const selectedSet = new Set();
+
+    const matchesFilter = (node, filterId, query) => {
+      if (!node || !node.name) return false;
+      const name = String(node.name).toLowerCase();
+      if (filterId === 'us') {
+        const isUS = /us|美国|united states|america|洛杉矶|圣何塞|西雅图|硅谷|纽约|芝加哥|凤凰城/.test(name);
+        if (!isUS) return false;
+      } else if (filterId === 'hk') {
+        const isHK = /hk|香港|hong kong/.test(name);
+        if (!isHK) return false;
+      } else if (filterId === 'jp') {
+        const isJP = /jp|日本|japan|东京|大阪/.test(name);
+        if (!isJP) return false;
+      } else if (filterId === 'sg') {
+        const isSG = /sg|新加坡|singapore/.test(name);
+        if (!isSG) return false;
+      } else if (filterId === 'unadded') {
+        if (currentQueue.includes(node.name)) return false;
+      }
+      if (query) {
+        const q = query.trim().toLowerCase();
+        const srcName = String(node._sourceName || '').toLowerCase();
+        if (!name.includes(q) && !srcName.includes(q) && !(node.type || '').toLowerCase().includes(q)) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    // 操作工具条 (全选当前筛选, 反选, 清空勾选)
+    const actionRow = document.createElement('div');
+    actionRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:11px;';
+    
+    const actionLeft = document.createElement('div');
+    actionLeft.style.cssText = 'display:flex; gap:6px;';
+
+    const btnSelectAllFiltered = document.createElement('button');
+    btnSelectAllFiltered.type = 'button';
+    btnSelectAllFiltered.className = 'acct-modal-btn';
+    btnSelectAllFiltered.style.cssText = 'padding:2px 8px; font-size:11px; height:24px;';
+    btnSelectAllFiltered.textContent = '全选筛选';
+
+    const btnInvertFiltered = document.createElement('button');
+    btnInvertFiltered.type = 'button';
+    btnInvertFiltered.className = 'acct-modal-btn';
+    btnInvertFiltered.style.cssText = 'padding:2px 8px; font-size:11px; height:24px;';
+    btnInvertFiltered.textContent = '反选';
+
+    const btnClearSelected = document.createElement('button');
+    btnClearSelected.type = 'button';
+    btnClearSelected.className = 'acct-modal-btn';
+    btnClearSelected.style.cssText = 'padding:2px 8px; font-size:11px; height:24px; color:#94a3b8;';
+    btnClearSelected.textContent = '清空选择';
+
+    actionLeft.appendChild(btnSelectAllFiltered);
+    actionLeft.appendChild(btnInvertFiltered);
+    actionLeft.appendChild(btnClearSelected);
+
+    const selectionSummary = document.createElement('span');
+    selectionSummary.style.cssText = 'color:#a5b4fc; font-weight:600; font-size:11px;';
+    selectionSummary.textContent = '已勾选 0 个节点';
+
+    actionRow.appendChild(actionLeft);
+    actionRow.appendChild(selectionSummary);
+    bCard.appendChild(actionRow);
+
+    // 节点列表可滚动区域
+    const listWrap = document.createElement('div');
+    listWrap.style.cssText = 'flex:1; max-height:260px; overflow-y:auto; background:#16181d; border:1px solid #2d323e; border-radius:6px; padding:4px 6px; margin-bottom:12px;';
+    bCard.appendChild(listWrap);
+
+    let currentFilteredList = [];
+
+    const updateSummary = () => {
+      selectionSummary.textContent = `已勾选 ${selectedSet.size} 个节点`;
+      confirmBatchBtn.textContent = `确认加入队列 (+ 添加 ${selectedSet.size} 个)`;
+      confirmBatchBtn.disabled = selectedSet.size === 0;
+    };
+
+    const renderList = () => {
+      listWrap.innerHTML = '';
+      const q = searchInput.value;
+      currentFilteredList = allNodes.filter(n => matchesFilter(n, activeFilter, q));
+
+      if (currentFilteredList.length === 0) {
+        listWrap.innerHTML = '<div style="color:#64748b; font-size:11.5px; text-align:center; padding:20px;">没有匹配的代理节点</div>';
+        return;
+      }
+
+      currentFilteredList.forEach((node) => {
+        const item = document.createElement('label');
+        item.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:5px 8px; border-bottom:1px solid #23262e; cursor:pointer; user-select:none; font-size:11.5px;';
+        
+        const leftBox = document.createElement('div');
+        leftBox.style.cssText = 'display:flex; align-items:center; gap:8px; min-width:0; flex:1;';
+
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.style.cssText = 'accent-color:#6366f1; cursor:pointer; flex-shrink:0;';
+        chk.checked = selectedSet.has(node.name);
+        chk.onchange = () => {
+          if (chk.checked) selectedSet.add(node.name);
+          else selectedSet.delete(node.name);
+          updateSummary();
+        };
+
+        const typeBadge = document.createElement('span');
+        typeBadge.style.cssText = 'font-size:10px; color:#818cf8; font-weight:600; flex-shrink:0;';
+        typeBadge.textContent = `[${String(node.type || '').toUpperCase()}]`;
+
+        const nameSpan = document.createElement('span');
+        nameSpan.style.cssText = 'color:#cfd3dc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        nameSpan.textContent = node.name;
+        nameSpan.title = node.name;
+
+        leftBox.appendChild(chk);
+        leftBox.appendChild(typeBadge);
+        leftBox.appendChild(nameSpan);
+
+        const rightBox = document.createElement('div');
+        rightBox.style.cssText = 'display:flex; align-items:center; gap:6px; flex-shrink:0;';
+
+        if (node._sourceName) {
+          const srcBadge = document.createElement('span');
+          srcBadge.style.cssText = 'font-size:10px; color:#64748b; background:#1e2128; padding:1px 4px; border-radius:3px;';
+          srcBadge.textContent = node._sourceName;
+          rightBox.appendChild(srcBadge);
+        }
+
+        if (currentQueue.includes(node.name)) {
+          const inQueueBadge = document.createElement('span');
+          inQueueBadge.style.cssText = 'font-size:10px; color:#818cf8; background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.3); padding:1px 5px; border-radius:3px;';
+          inQueueBadge.textContent = '已在队列';
+          rightBox.appendChild(inQueueBadge);
+        }
+
+        item.appendChild(leftBox);
+        item.appendChild(rightBox);
+        listWrap.appendChild(item);
+      });
+    };
+
+    filterOptions.forEach(opt => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'acct-modal-btn';
+      chip.style.cssText = 'padding:2px 8px; font-size:11px; height:22px; border-radius:11px;';
+      chip.textContent = opt.label;
+      const updateChipStyle = () => {
+        if (activeFilter === opt.id) {
+          chip.style.background = '#4f46e5';
+          chip.style.color = '#fff';
+          chip.style.borderColor = '#6366f1';
+        } else {
+          chip.style.background = '#23262e';
+          chip.style.color = '#94a3b8';
+          chip.style.borderColor = '#3a3f4b';
+        }
+      };
+      updateChipStyle();
+      chip.onclick = () => {
+        activeFilter = opt.id;
+        Array.from(filterChipsWrap.children).forEach((c, idx) => {
+          c.style.background = (filterOptions[idx].id === activeFilter) ? '#4f46e5' : '#23262e';
+          c.style.color = (filterOptions[idx].id === activeFilter) ? '#fff' : '#94a3b8';
+          c.style.borderColor = (filterOptions[idx].id === activeFilter) ? '#6366f1' : '#3a3f4b';
+        });
+        renderList();
+      };
+      filterChipsWrap.appendChild(chip);
+    });
+    bCard.insertBefore(filterChipsWrap, actionRow);
+
+    btnSelectAllFiltered.onclick = () => {
+      currentFilteredList.forEach(n => selectedSet.add(n.name));
+      renderList();
+      updateSummary();
+    };
+
+    btnInvertFiltered.onclick = () => {
+      currentFilteredList.forEach(n => {
+        if (selectedSet.has(n.name)) selectedSet.delete(n.name);
+        else selectedSet.add(n.name);
+      });
+      renderList();
+      updateSummary();
+    };
+
+    btnClearSelected.onclick = () => {
+      selectedSet.clear();
+      renderList();
+      updateSummary();
+    };
+
+    searchInput.oninput = () => renderList();
+
+    // 底部操作按钮
+    const bFooter = document.createElement('div');
+    bFooter.style.cssText = 'display:flex; justify-content:flex-end; gap:8px;';
+
+    const cancelBatchBtn = document.createElement('button');
+    cancelBatchBtn.type = 'button';
+    cancelBatchBtn.className = 'acct-modal-btn cancel';
+    cancelBatchBtn.textContent = '取消';
+    cancelBatchBtn.onclick = () => batchOverlay.remove();
+
+    const confirmBatchBtn = document.createElement('button');
+    confirmBatchBtn.type = 'button';
+    confirmBatchBtn.className = 'acct-modal-btn confirm';
+    confirmBatchBtn.textContent = '确认加入队列 (+ 添加 0 个)';
+    confirmBatchBtn.disabled = true;
+    confirmBatchBtn.onclick = () => {
+      const addedList = Array.from(selectedSet);
+      batchOverlay.remove();
+      if (typeof onAddBatch === 'function') {
+        onAddBatch(addedList);
+      }
+    };
+
+    bFooter.appendChild(cancelBatchBtn);
+    bFooter.appendChild(confirmBatchBtn);
+    bCard.appendChild(bFooter);
+
+    batchOverlay.appendChild(bCard);
+    document.body.appendChild(batchOverlay);
+
+    renderList();
+    updateSummary();
+  }
+
+  // 编辑账号信息模态框
   function openEditProfileModal(p) {
     closeModal();
     const t = getT();
@@ -2616,7 +2920,7 @@ function injectExportButton() {}
 
     const card = document.createElement('div');
     card.className = 'acct-modal-card';
-    card.style.width = '420px';
+    card.style.cssText = 'width:460px; max-height:92vh; overflow-y:auto;';
 
     const titleEl = document.createElement('div');
     titleEl.className = 'acct-modal-title';
@@ -2664,7 +2968,49 @@ function injectExportButton() {}
     resetInput.value = p.tokenResetAt || '';
     resetRow.appendChild(resetInput);
 
-    // 5. 专属代理出口队列 (Mihomo)
+    // 5. 账号独立网络代理模式选择
+    let currentProxyMode = p.proxyMode || 'inherit';
+    let currentCustom = (p.proxyCustom && typeof p.proxyCustom === 'object') ? { ...p.proxyCustom } : { type: 'http', host: '127.0.0.1', port: 7897 };
+
+    const proxyModeRow = document.createElement('div');
+    proxyModeRow.className = 'hub-form-row';
+    proxyModeRow.style.marginTop = '10px';
+    proxyModeRow.innerHTML = `<label class="hub-form-label">🌐 账号独立代理模式 (Connection Mode)</label>`;
+
+    const modeSelect = document.createElement('select');
+    modeSelect.className = 'hub-form-input';
+    modeSelect.style.cssText = 'padding:5px 8px; font-size:12px;';
+    modeSelect.innerHTML = `
+      <option value="inherit">🌐 跟随全局网络设置 (默认)</option>
+      <option value="system">🖥️ 强制走系统代理 / TUN 虚拟网卡 (System)</option>
+      <option value="mihomo">🛡️ 内置 Mihomo 专属出口队列 (多账号隔离)</option>
+      <option value="direct">⚡ 直接连接 (Direct - 禁用代理)</option>
+      <option value="custom">⚙️ 独立自定义代理 (手动指定 IP/端口)</option>
+    `;
+    modeSelect.value = currentProxyMode;
+    proxyModeRow.appendChild(modeSelect);
+
+    const modeTipEl = document.createElement('div');
+    modeTipEl.style.cssText = 'font-size:10.5px; color:#8a909d; margin-top:4px; line-height:1.4;';
+    proxyModeRow.appendChild(modeTipEl);
+
+    // 自定义代理配置行 (仅在选 custom 时显示)
+    const customConfigWrap = document.createElement('div');
+    customConfigWrap.style.cssText = 'display:none; background:#1b1e25; border:1px solid #3a3f4b; border-radius:6px; padding:8px; margin-top:6px; font-size:11.5px;';
+    customConfigWrap.innerHTML = `
+      <div style="font-size:11px; color:#a5b4fc; margin-bottom:4px; font-weight:600;">独立代理服务器地址:</div>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <select id="acct-custom-type" style="background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 6px; border-radius:4px; font-size:11px;">
+          <option value="http"${(currentCustom.type === 'http') ? ' selected' : ''}>HTTP</option>
+          <option value="socks5"${(currentCustom.type === 'socks5') ? ' selected' : ''}>SOCKS5</option>
+        </select>
+        <input type="text" id="acct-custom-host" value="${currentCustom.host || '127.0.0.1'}" placeholder="127.0.0.1" style="flex:1; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 6px; border-radius:4px; font-size:11px;">
+        <input type="number" id="acct-custom-port" value="${currentCustom.port || 7897}" placeholder="7897" style="width:70px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 6px; border-radius:4px; font-size:11px;">
+      </div>
+    `;
+    proxyModeRow.appendChild(customConfigWrap);
+
+    // 6. 专属代理出口队列 (Mihomo)
     const proxyRow = document.createElement('div');
     proxyRow.className = 'hub-form-row';
     proxyRow.style.marginTop = '10px';
@@ -2673,21 +3019,31 @@ function injectExportButton() {}
     const queueWrap = document.createElement('div');
     queueWrap.style.cssText = 'background:#1e2128; border:1px solid #2d323e; border-radius:6px; padding:8px; font-size:11.5px;';
 
+    const queueNotice = document.createElement('div');
+    queueNotice.style.cssText = 'font-size:11px; padding:4px 8px; background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.25); border-radius:4px; margin-bottom:8px; display:none;';
+    queueWrap.appendChild(queueNotice);
+
+    const queueSummaryEl = document.createElement('div');
+    queueSummaryEl.style.cssText = 'font-size:10.5px; color:#8a909d; margin-bottom:6px;';
+    queueWrap.appendChild(queueSummaryEl);
+
     let currentQueue = Array.isArray(p.proxyQueue) ? [...p.proxyQueue] : [];
     let currentStrategy = p.proxyStrategy || 'fallback';
+    let allAvailableNodes = [];
 
     const tagsBox = document.createElement('div');
-    tagsBox.style.cssText = 'min-height:28px; display:flex; flex-wrap:wrap; align-items:center; margin-bottom:8px;';
+    tagsBox.style.cssText = 'max-height:120px; overflow-y:auto; min-height:28px; display:flex; flex-wrap:wrap; align-items:center; margin-bottom:8px; gap:4px;';
 
     const renderQueueTags = () => {
       tagsBox.innerHTML = '';
+      queueSummaryEl.textContent = `已配置 ${currentQueue.length} 个出口节点 (首节点为主出口，失败自动故障转移)`;
       if (currentQueue.length === 0) {
-        tagsBox.innerHTML = '<span style="color:#64748b;font-style:italic;">未分配专属队列 (将跟随系统代理/直连)</span>';
+        tagsBox.innerHTML = '<span style="color:#64748b;font-style:italic;">未分配专属队列 (将跟随系统/全部可用节点)</span>';
         return;
       }
       currentQueue.forEach((nodeName, idx) => {
         const tag = document.createElement('span');
-        tag.style.cssText = 'display:inline-flex; align-items:center; background:rgba(99,102,241,0.18); color:#a5b4fc; border:1px solid rgba(99,102,241,0.35); border-radius:4px; padding:2px 6px; margin:2px 4px 2px 0; font-size:11px;';
+        tag.style.cssText = 'display:inline-flex; align-items:center; background:rgba(99,102,241,0.18); color:#a5b4fc; border:1px solid rgba(99,102,241,0.35); border-radius:4px; padding:2px 6px; font-size:11px;';
         
         const titleSpan = document.createElement('span');
         titleSpan.textContent = `${idx === 0 ? '👑 ' : `${idx + 1}. `}${nodeName}`;
@@ -2708,21 +3064,22 @@ function injectExportButton() {}
     renderQueueTags();
     queueWrap.appendChild(tagsBox);
 
-    // 下拉选择添加节点
+    // 节点选择工具栏 (单选下拉 + 批量选择模态框 + 清空)
     const addWrap = document.createElement('div');
-    addWrap.style.cssText = 'display:flex; gap:6px; align-items:center;';
+    addWrap.style.cssText = 'display:flex; gap:6px; align-items:center; flex-wrap:wrap;';
 
     const nodeSelect = document.createElement('select');
     nodeSelect.className = 'hub-form-input';
-    nodeSelect.style.cssText = 'flex:1; padding:4px 8px; font-size:11.5px; height:28px;';
+    nodeSelect.style.cssText = 'flex:1; min-width:160px; padding:4px 8px; font-size:11.5px; height:28px;';
     nodeSelect.innerHTML = '<option value="">-- 选择要加入队列的节点 --</option>';
 
     ipcRenderer.invoke('mihomo:get-nodes').then((nodes) => {
-      if (Array.isArray(nodes) && nodes.length > 0) {
-        nodes.forEach((n) => {
+      allAvailableNodes = Array.isArray(nodes) ? nodes : [];
+      if (allAvailableNodes.length > 0) {
+        allAvailableNodes.forEach((n) => {
           const opt = document.createElement('option');
           opt.value = n.name;
-          opt.textContent = `[${n.type.toUpperCase()}] ${n.name}`;
+          opt.textContent = `[${String(n.type || '').toUpperCase()}] ${n.name}`;
           nodeSelect.appendChild(opt);
         });
       } else {
@@ -2733,7 +3090,7 @@ function injectExportButton() {}
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'acct-modal-btn';
-    addBtn.style.cssText = 'padding:4px 10px; font-size:11px; height:28px; flex-shrink:0;';
+    addBtn.style.cssText = 'padding:4px 8px; font-size:11px; height:28px; flex-shrink:0;';
     addBtn.textContent = '+ 添加';
     addBtn.onclick = () => {
       const val = nodeSelect.value;
@@ -2741,6 +3098,31 @@ function injectExportButton() {}
         currentQueue.push(val);
         renderQueueTags();
       }
+    };
+
+    const btnBatchSelectModal = document.createElement('button');
+    btnBatchSelectModal.type = 'button';
+    btnBatchSelectModal.className = 'acct-modal-btn';
+    btnBatchSelectModal.style.cssText = 'padding:4px 10px; font-size:11px; height:28px; flex-shrink:0; background:#4f46e5; color:#fff; border-color:#6366f1;';
+    btnBatchSelectModal.textContent = '📦 批量选择节点...';
+    btnBatchSelectModal.onclick = () => {
+      openBatchNodeSelectModal({
+        allNodes: allAvailableNodes,
+        currentQueue,
+        onAddBatch: (addedList) => {
+          let newlyAdded = 0;
+          addedList.forEach(name => {
+            if (!currentQueue.includes(name)) {
+              currentQueue.push(name);
+              newlyAdded++;
+            }
+          });
+          renderQueueTags();
+          if (newlyAdded > 0) {
+            queueSummaryEl.textContent = `已成功批量加入 ${newlyAdded} 个节点！当前共 ${currentQueue.length} 个`;
+          }
+        }
+      });
     };
 
     const clearBtn = document.createElement('button');
@@ -2755,8 +3137,115 @@ function injectExportButton() {}
 
     addWrap.appendChild(nodeSelect);
     addWrap.appendChild(addBtn);
+    addWrap.appendChild(btnBatchSelectModal);
     addWrap.appendChild(clearBtn);
     queueWrap.appendChild(addWrap);
+
+    // 快捷批量添加快捷标签栏
+    const quickWrap = document.createElement('div');
+    quickWrap.style.cssText = 'display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-top:8px; padding-top:6px; border-top:1px dashed #2d323e;';
+    
+    const quickLabel = document.createElement('span');
+    quickLabel.style.cssText = 'font-size:10.5px; color:#8a909d; flex-shrink:0;';
+    quickLabel.textContent = '快捷批量:';
+    quickWrap.appendChild(quickLabel);
+
+    const makeQuickBtn = (label, filterFn) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.style.cssText = 'background:#1a1d24; border:1px solid #333948; color:#a5b4fc; border-radius:4px; padding:2px 6px; font-size:10.5px; cursor:pointer;';
+      btn.textContent = label;
+      btn.onmouseenter = () => btn.style.borderColor = '#6366f1';
+      btn.onmouseleave = () => btn.style.borderColor = '#333948';
+      btn.onclick = () => {
+        if (!allAvailableNodes || allAvailableNodes.length === 0) return;
+        const matching = allAvailableNodes.filter(filterFn).map(n => n.name);
+        let addedCount = 0;
+        matching.forEach(name => {
+          if (!currentQueue.includes(name)) {
+            currentQueue.push(name);
+            addedCount++;
+          }
+        });
+        renderQueueTags();
+        if (addedCount > 0) {
+          queueSummaryEl.textContent = `已快捷添加 ${addedCount} 个新节点！当前共 ${currentQueue.length} 个`;
+        }
+      };
+      return btn;
+    };
+
+    quickWrap.appendChild(makeQuickBtn('+ 全部可用', () => true));
+    quickWrap.appendChild(makeQuickBtn('+ 全部美国', n => /us|美国|united states|america|洛杉矶|圣何塞|西雅图|硅谷|纽约|芝加哥|凤凰城/i.test(n.name)));
+    quickWrap.appendChild(makeQuickBtn('+ 全部香港', n => /hk|香港|hong kong/i.test(n.name)));
+    quickWrap.appendChild(makeQuickBtn('+ 全部日本', n => /jp|日本|japan|东京|大阪/i.test(n.name)));
+    quickWrap.appendChild(makeQuickBtn('+ 全部新加坡', n => /sg|新加坡|singapore/i.test(n.name)));
+
+    const customMatchBtn = document.createElement('button');
+    customMatchBtn.type = 'button';
+    customMatchBtn.style.cssText = 'background:#1a1d24; border:1px dashed #4b5563; color:#94a3b8; border-radius:4px; padding:2px 6px; font-size:10.5px; cursor:pointer;';
+    customMatchBtn.textContent = '+ 按关键字...';
+    customMatchBtn.onclick = () => {
+      const kw = prompt('请输入要批量匹配并添加的关键字 (如: 0.1、专线、洛杉矶、IEPL):');
+      if (!kw || !kw.trim()) return;
+      const cleanKw = kw.trim().toLowerCase();
+      let addedCount = 0;
+      allAvailableNodes.forEach(n => {
+        if (n && n.name && n.name.toLowerCase().includes(cleanKw)) {
+          if (!currentQueue.includes(n.name)) {
+            currentQueue.push(n.name);
+            addedCount++;
+          }
+        }
+      });
+      renderQueueTags();
+      if (addedCount > 0) {
+        queueSummaryEl.textContent = `已根据关键词 [${cleanKw}] 批量加入 ${addedCount} 个节点！当前共 ${currentQueue.length} 个`;
+      } else {
+        alert(`未找到包含 "${cleanKw}" 的新节点`);
+      }
+    };
+    quickWrap.appendChild(customMatchBtn);
+    queueWrap.appendChild(quickWrap);
+
+    // 模式切换联动
+    const updateModeView = (mode) => {
+      currentProxyMode = mode;
+      if (mode === 'system') {
+        modeTipEl.textContent = '此账号将独立走系统网络代理与 TUN 虚拟网卡（绕过内置 Mihomo 内核）。';
+        modeTipEl.style.color = '#38bdf8';
+        customConfigWrap.style.display = 'none';
+        queueNotice.style.display = 'block';
+        queueNotice.textContent = '💡 提示：当前账号已设为独立走系统代理/TUN，实际连接直接使用系统网络，下方队列在切换至 Mihomo 时生效。';
+      } else if (mode === 'direct') {
+        modeTipEl.textContent = '此账号绕过任何系统代理、VPN 或 Mihomo 内核，直接发起原生网络连接。';
+        modeTipEl.style.color = '#fbbf24';
+        customConfigWrap.style.display = 'none';
+        queueNotice.style.display = 'block';
+        queueNotice.textContent = '💡 提示：当前账号已设为直接连接，流量将直连互联网。';
+      } else if (mode === 'custom') {
+        modeTipEl.textContent = '此账号流量将强制转发至下方指定的本地/局域网代理服务器。';
+        modeTipEl.style.color = '#c084fc';
+        customConfigWrap.style.display = 'block';
+        queueNotice.style.display = 'block';
+        queueNotice.textContent = '💡 提示：当前账号已设为独立自定义代理，下方队列在切换至 Mihomo 时生效。';
+      } else if (mode === 'mihomo') {
+        modeTipEl.textContent = '此账号强制由内置 Mihomo 托管并分配独立本地出口端口与专属故障转移队列。';
+        modeTipEl.style.color = '#818cf8';
+        customConfigWrap.style.display = 'none';
+        queueNotice.style.display = 'none';
+      } else {
+        // inherit
+        modeTipEl.textContent = '跟随设置中心全局网络策略（若全局开启 Mihomo 则走专属出口队列，否则走全局自适应/覆盖）。';
+        modeTipEl.style.color = '#8a909d';
+        customConfigWrap.style.display = 'none';
+        queueNotice.style.display = 'none';
+      }
+    };
+
+    modeSelect.onchange = () => updateModeView(modeSelect.value);
+    updateModeView(currentProxyMode);
+
     proxyRow.appendChild(queueWrap);
 
     // 底部操作
@@ -2778,6 +3267,12 @@ function injectExportButton() {}
       const newUsage = parseFloat(usageInput.value) || 0;
       const newReset = resetInput.value.trim();
 
+      const finalCustom = {
+        type: document.getElementById('acct-custom-type')?.value || 'http',
+        host: document.getElementById('acct-custom-host')?.value?.trim() || '127.0.0.1',
+        port: parseInt(document.getElementById('acct-custom-port')?.value, 10) || 7897,
+      };
+
       closeModal();
       await ipcRenderer.invoke('account:update-meta', {
         id: p.id,
@@ -2792,6 +3287,8 @@ function injectExportButton() {}
         profileId: p.id,
         proxyQueue: currentQueue,
         proxyStrategy: currentStrategy,
+        proxyMode: currentProxyMode,
+        proxyCustom: finalCustom,
       }).catch(() => {});
 
       if (dockState.hubOpen) renderAccountHub();
@@ -2805,8 +3302,14 @@ function injectExportButton() {}
     card.appendChild(purposeRow);
     card.appendChild(usageRow);
     card.appendChild(resetRow);
+    card.appendChild(proxyModeRow);
     card.appendChild(proxyRow);
     card.appendChild(actions);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    activeModal = overlay;
+  }
 
     overlay.appendChild(card);
     document.body.appendChild(overlay);
