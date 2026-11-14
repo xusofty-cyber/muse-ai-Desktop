@@ -8,7 +8,13 @@
 
 - **关联需求 / 分支**：独立特性分支 `feature/embedded-mihomo-proxy`
 - **核心问题与最新进展**：
-  1. **内置 Mihomo 智能分流支持多订阅与本地 YAML 节点同时开启与合并管理 (`hotkeys.html` / `main.js` / `mihomo-manager.js` / `preload-settings.js`)**：
+  1. **冷启动代理竞态与内核指纹兼容性修复 (Commit `0483b2e`)**：
+     - **冷启动时序前置**：在 `app.whenReady()` 中将 Mihomo 内核启动置于 `createMainWindow()` 之前，并在建窗前显式为活动账号 `Session` 与 `defaultSession` 预配置代理端口，彻底解决关闭外部代理后首屏直连触发 `-100 ERR_CONNECTION_CLOSED` 的问题；
+     - **节点指纹属性清洗**：`mihomo-manager.js` 新增 `_sanitizeProxyNode`，自动将订阅中不规范的 `fingerprint: chrome/safari...` 转换为 Mihomo 标准的 `client-fingerprint`，消除 `fingerprint is used for TLS certificate pinning` 报错；
+     - **代理组防雪崩二级兜底**：在账号专属 fallback 队列后追加全局可用节点作为备用，当特定 VPS（如大阪）故障时自动优雅降级，防止直接重置连接；
+     - **静默容错与防扰**：彻底移除 `did-fail-load` 自动强弹设置窗口的逻辑，遇到瞬态连接波动自动延迟 1200ms 重试 1 次；
+     - **内置 DoH 独立解析**：在 `generateConfig` 中为内核内置独立 DNS 与 DoH 上游，杜绝系统 Fake-IP 冲突与 DNS 污染。
+  2. **内置 Mihomo 智能分流支持多订阅与本地 YAML 节点同时开启与合并管理 (`hotkeys.html` / `main.js` / `mihomo-manager.js` / `preload-settings.js`)**：
      - **业务痛点**：此前仅支持单个机场订阅 URL，无法配置多个订阅，且无法加载本地 Clash/Mihomo 的 `.yaml`/`.yml` 配置文件，且无法多源同时开启合并为一个节点池；
      - **完整功能闭环实现**：
        1. **底层核心引擎 (`mihomo-manager.js`)**：
