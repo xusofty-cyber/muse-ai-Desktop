@@ -961,6 +961,54 @@ function isAuthOrConnectorUrl(rawUrl) {
   }
 }
 
+// 识别第三方广告、追踪分析与数据上报埋点链接 (防止 iframe 内部重定向或打点唤起外部默认浏览器)
+function isTrackingOrAdUrl(rawUrl) {
+  if (typeof rawUrl !== 'string') return false;
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.toLowerCase();
+    const search = parsed.search.toLowerCase();
+
+    // 常见广告 / 埋点统计 / 转化追踪域名
+    const trackingHosts = [
+      'doubleclick.net',
+      'google-analytics.com',
+      'googletagmanager.com',
+      'fbthirdpartypixel.com',
+      'analytics.twitter.com',
+      'clarity.ms',
+      'hotjar.com',
+      'segment.io',
+      'mixpanel.com',
+      'scorecardresearch.com',
+      'criteo.com',
+      'adroll.com',
+    ];
+
+    if (trackingHosts.some((h) => host === h || host.endsWith('.' + h))) {
+      return true;
+    }
+
+    if (host === 'tr.snapchat.com' || (host.endsWith('snapchat.com') && pathname.startsWith('/cm/'))) {
+      return true;
+    }
+
+    if (
+      pathname.includes('/activityi') ||
+      pathname.includes('/pixel') ||
+      search.includes('dc_pre=') ||
+      search.includes('fbthirdpartypixel')
+    ) {
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // ---- 子弹窗 (OAuth/连接器) 追踪 (v1.5.15, 评审 P1-6) -------------------------
 // 此前 did-create-window 的子窗口无人登记: 切账号不跟随、登出/删号关不掉,
 // 开着的授权弹窗能在存储清除后回写 Cookie 让已登出会话复活。现在按父窗口
@@ -1011,6 +1059,11 @@ function setupExternalLinkHandler(win, profileId) {
 
     // 内部站点链接：绝不直接在新窗口打开以防覆盖或打乱会话，交由主窗口内嵌逻辑处理
     if (isInternalSiteUrl(url)) {
+      return { action: 'deny' };
+    }
+
+    // 严禁向外部默认浏览器打开第三方统计、埋点与广告追踪链接
+    if (isTrackingOrAdUrl(url)) {
       return { action: 'deny' };
     }
 
@@ -1086,7 +1139,17 @@ function setupExternalLinkHandler(win, profileId) {
   });
 
   // 2. 拦截在主窗口内的普通超链接跳转（如 <a href="...">）及 302 重定向，防止主聊天窗口被覆盖或因阻止导航挂起黑屏
-  const handleNavigation = (event, url) => {
+  const handleNavigation = (event, url, isInPlace, isMainFrame) => {
+    // 关键守卫：严格忽略子框架 (iframe/subframe) 的所有导航与 302 重定向！
+    // 页面内的第三方统计埋点（Snapchat Pixel, DoubleClick, Facebook Pixel 等）均在隐藏 iframe 中工作并频繁 302 重定向，
+    // 若拦截子框架重定向会导致 Blink 拒绝 Mojo 通信，并误唤起外部系统浏览器打开广告跟踪链接。
+    if (isMainFrame === false || (event && event.isMainFrame === false)) {
+      return;
+    }
+    // 忽略第三方统计埋点与广告跟踪 URL
+    if (isTrackingOrAdUrl(url)) {
+      return;
+    }
     if (isAuthOrConnectorUrl(url)) {
       return;
     }

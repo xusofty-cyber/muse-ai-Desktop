@@ -398,13 +398,13 @@ function injectThemeStyles() {
       background: rgba(37, 99, 235, 0.14) !important;
     }
     [data-ui-theme="light"] .acct-dock-list {
-      scrollbar-color: rgba(0, 0, 0, 0.22) transparent !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
     }
-    [data-ui-theme="light"] .acct-dock-list::-webkit-scrollbar-thumb {
-      background: rgba(0, 0, 0, 0.18) !important;
-    }
-    [data-ui-theme="light"] .acct-dock-list::-webkit-scrollbar-thumb:hover {
-      background: rgba(0, 0, 0, 0.35) !important;
+    [data-ui-theme="light"] .acct-dock-list::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
     }
     [data-ui-theme="light"] .acct-dock-hub-btn {
       background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.12)) !important;
@@ -910,6 +910,15 @@ ipcRenderer.on('muse-export:scrape', async () => {
       pop.style.display = 'none';
     } else {
       renderSettingsPopoverContent();
+      const settingsBtn = document.getElementById('acct-dock-settings-btn');
+      if (settingsBtn) {
+        const rect = settingsBtn.getBoundingClientRect();
+        const popWidth = 295;
+        const left = Math.max(12, Math.min(window.innerWidth - popWidth - 12, rect.right - popWidth));
+        const bottom = Math.max(12, window.innerHeight - rect.top + 8);
+        pop.style.left = `${left}px`;
+        pop.style.bottom = `${bottom}px`;
+      }
       pop.style.display = 'flex';
     }
   }
@@ -1256,13 +1265,57 @@ function injectExportButton() {}
     }
   }
 
+  function updateComposerOffset(pinned) {
+    try {
+      const inputEl = document.querySelector('textarea, [contenteditable="true"], div[role="textbox"]');
+      if (!inputEl) return;
+
+      let curr = inputEl;
+      let fixedBottomParent = null;
+      while (curr && curr !== document.body && curr !== document.documentElement) {
+        const style = window.getComputedStyle(curr);
+        if ((style.position === 'fixed' || style.position === 'sticky' || style.position === 'absolute') &&
+            style.bottom && style.bottom !== 'auto') {
+          fixedBottomParent = curr;
+          break;
+        }
+        curr = curr.parentElement;
+      }
+
+      if (fixedBottomParent) {
+        if (pinned) {
+          fixedBottomParent.style.transform = 'translateY(-62px)';
+          fixedBottomParent.style.transition = 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)';
+        } else {
+          fixedBottomParent.style.transform = '';
+        }
+      }
+    } catch {}
+  }
+
+  function applyDockPinnedOffset(pinned) {
+    try {
+      const root = document.documentElement;
+      const body = document.body;
+      if (root) {
+        if (pinned) root.classList.add('muse-dock-pinned');
+        else root.classList.remove('muse-dock-pinned');
+      }
+      if (body) {
+        if (pinned) body.classList.add('muse-dock-pinned');
+        else body.classList.remove('muse-dock-pinned');
+      }
+      updateComposerOffset(pinned);
+    } catch {}
+  }
+
   function updateHeaderButtons() {
     if (!dockContainer) return;
     const t = getT();
     const collapseBtn = dockContainer.querySelector('.acct-dock-collapse-btn');
     if (collapseBtn) {
       collapseBtn.title = dockState.collapsed ? t.expandDock : t.collapseDock;
-      collapseBtn.innerHTML = dockState.collapsed ? '▶' : '◀';
+      collapseBtn.innerHTML = dockState.collapsed ? '▲' : '▼';
     }
     const pinBtn = dockContainer.querySelector('.acct-dock-pin-btn');
     if (pinBtn) {
@@ -1307,46 +1360,70 @@ function injectExportButton() {}
     style.textContent = `
       #acct-dock {
         position: fixed;
-        left: 10px;
-        bottom: 14px;
-        max-height: calc(100vh - 28px);
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%) translateY(0);
+        max-width: calc(100vw - 32px);
         box-sizing: border-box;
         overflow: visible;
         z-index: 2147483640;
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         align-items: center;
-        background: rgba(18, 18, 22, 0.88);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 24px;
-        padding: 8px 6px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+        background: rgba(18, 18, 22, 0.92);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 28px;
+        padding: 4px 12px;
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
         user-select: none;
         transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
+      #acct-dock::before {
+        content: '';
+        position: absolute;
+        top: -8px;
+        left: 0;
+        right: 0;
+        height: 12px;
+        pointer-events: auto;
+      }
       #acct-dock.collapsed {
-        transform: translateX(-38px);
-        opacity: 0.55;
+        transform: translateX(-50%) translateY(calc(100% - 6px));
+        opacity: 0.45;
       }
       #acct-dock.collapsed:hover {
-        transform: translateX(0);
+        transform: translateX(-50%) translateY(0);
         opacity: 1;
       }
-      .acct-dock-header {
+      #acct-dock.pinned {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+      }
+      /* 当底部多账号栏固定 (Pinned) 时，主界面向上避让 62px，确保输入框与交互区完全不被遮挡 */
+      html.muse-dock-pinned,
+      html.muse-dock-pinned body {
+        height: calc(100vh - 62px) !important;
+        max-height: calc(100vh - 62px) !important;
+        transition: height 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      html.muse-dock-pinned #root,
+      html.muse-dock-pinned [data-reactroot],
+      html.muse-dock-pinned body > div:first-of-type {
+        height: 100% !important;
+        max-height: 100% !important;
+      }
+      .acct-dock-section {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        width: 100%;
-        padding: 0 2px;
-        margin-bottom: 6px;
+        gap: 4px;
         flex-shrink: 0;
       }
       .acct-dock-collapse-btn {
-        width: 17px;
-        height: 17px;
+        width: 20px;
+        height: 20px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1354,7 +1431,7 @@ function injectExportButton() {}
         color: rgba(255, 255, 255, 0.45);
         border-radius: 4px;
         transition: color 0.15s, background 0.15s;
-        font-size: 10px;
+        font-size: 11px;
         flex-shrink: 0;
       }
       .acct-dock-collapse-btn:hover {
@@ -1362,8 +1439,8 @@ function injectExportButton() {}
         background: rgba(255, 255, 255, 0.12);
       }
       .acct-dock-pin-btn {
-        width: 17px;
-        height: 17px;
+        width: 20px;
+        height: 20px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1384,8 +1461,8 @@ function injectExportButton() {}
       }
       .acct-dock-hub-btn {
         position: relative;
-        width: 32px;
-        height: 32px;
+        width: 30px;
+        height: 30px;
         border-radius: 8px;
         background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(168, 85, 247, 0.35));
         border: 1px solid rgba(168, 85, 247, 0.5);
@@ -1393,9 +1470,8 @@ function injectExportButton() {}
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 16px;
+        font-size: 15px;
         cursor: pointer;
-        margin-bottom: 2px;
         transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
         flex-shrink: 0;
         box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
@@ -1408,43 +1484,35 @@ function injectExportButton() {}
         box-shadow: 0 4px 14px rgba(168, 85, 247, 0.45);
       }
       .acct-dock-divider {
-        width: 22px;
-        height: 1px;
+        width: 1px;
+        height: 20px;
         background: rgba(255, 255, 255, 0.15);
-        margin: 2px 0 6px 0;
+        margin: 0 6px;
         flex-shrink: 0;
       }
       .acct-dock-list {
         display: flex;
-        flex-direction: column;
-        gap: 6px;
-        max-height: min(520px, calc(100vh - 210px));
-        overflow-y: auto;
-        overflow-x: hidden;
-        padding: 2px 3px;
-        scrollbar-width: thin;
-        scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
-        flex: 1 1 auto;
-        min-height: 0;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        max-width: calc(100vw - 180px);
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 4px 2px;
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+        flex: 0 1 auto;
+        min-width: 0;
       }
       .acct-dock-list::-webkit-scrollbar {
-        width: 4px;
-        display: block;
-      }
-      .acct-dock-list::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .acct-dock-list::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.22);
-        border-radius: 4px;
-      }
-      .acct-dock-list::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.45);
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
       }
       .acct-dock-item {
         position: relative;
-        width: 38px;
-        height: 38px;
+        width: 36px;
+        height: 36px;
         border-radius: 50%;
         display: flex;
         align-items: center;
@@ -1460,8 +1528,8 @@ function injectExportButton() {}
         position: absolute;
         top: 0;
         left: 0;
-        width: 38px;
-        height: 38px;
+        width: 36px;
+        height: 36px;
         pointer-events: none;
         z-index: 1;
       }
@@ -1476,14 +1544,14 @@ function injectExportButton() {}
       }
       .acct-dock-avatar {
         position: relative;
-        width: 30px;
-        height: 30px;
+        width: 28px;
+        height: 28px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         color: #fff;
-        font-size: 12px;
+        font-size: 11.5px;
         font-weight: 600;
         z-index: 2;
         transition: box-shadow 0.2s ease;
@@ -1499,9 +1567,9 @@ function injectExportButton() {}
       }
       .acct-dock-drop-indicator {
         position: absolute;
-        left: -3px;
-        right: -3px;
-        height: 3px;
+        top: 0;
+        bottom: 0;
+        width: 3px;
         background: #3b82f6;
         border-radius: 2px;
         box-shadow: 0 0 8px rgba(59, 130, 246, 0.9);
@@ -1509,20 +1577,20 @@ function injectExportButton() {}
         pointer-events: none;
         z-index: 2147483646;
       }
-      .acct-dock-drop-indicator.top {
-        top: -5px;
+      .acct-dock-drop-indicator.left {
+        left: -4px;
       }
-      .acct-dock-drop-indicator.bottom {
-        bottom: -5px;
+      .acct-dock-drop-indicator.right {
+        right: -4px;
       }
-      .acct-dock-item.drop-target-before > .acct-dock-drop-indicator.top {
+      .acct-dock-item.drop-target-before > .acct-dock-drop-indicator.left {
         display: block;
       }
-      .acct-dock-item.drop-target-after > .acct-dock-drop-indicator.bottom {
+      .acct-dock-item.drop-target-after > .acct-dock-drop-indicator.right {
         display: block;
       }
       .acct-dock-item:hover {
-        transform: scale(1.1);
+        transform: scale(1.15) translateY(-2px);
       }
       .acct-dock-item.active .acct-dock-avatar {
         box-shadow: 0 0 0 1.5px #fff, 0 2px 8px rgba(0, 0, 0, 0.5);
@@ -1541,9 +1609,9 @@ function injectExportButton() {}
       }
       .acct-dock-tooltip {
         position: absolute;
-        left: calc(100% + 10px);
-        top: 50%;
-        transform: translateY(-50%) translateX(-4px);
+        bottom: calc(100% + 10px);
+        left: 50%;
+        transform: translateX(-50%) translateY(4px);
         background: rgba(24, 24, 28, 0.95);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
@@ -1567,7 +1635,7 @@ function injectExportButton() {}
       .acct-dock-hub-btn:hover .acct-dock-tooltip {
         opacity: 1;
         visibility: visible;
-        transform: translateY(-50%) translateX(0);
+        transform: translateX(-50%) translateY(0);
       }
       .acct-dock-tooltip-badge {
         font-size: 10px;
@@ -1582,8 +1650,8 @@ function injectExportButton() {}
         color: rgba(255, 255, 255, 0.4);
       }
       .acct-dock-add-btn {
-        width: 32px;
-        height: 32px;
+        width: 28px;
+        height: 28px;
         border-radius: 50%;
         border: 1px dashed rgba(255, 255, 255, 0.28);
         background: rgba(255, 255, 255, 0.05);
@@ -1591,14 +1659,17 @@ function injectExportButton() {}
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 18px;
+        font-size: 15px;
         cursor: pointer;
-        margin-top: 6px;
         transition: all 0.2s;
         flex-shrink: 0;
       }
       .acct-dock-add-btn:hover {
         background: rgba(255, 255, 255, 0.15);
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.5);
+        transform: scale(1.08);
+      }
         color: #fff;
         border-color: rgba(255, 255, 255, 0.5);
         transform: scale(1.08);
@@ -2984,8 +3055,12 @@ function injectExportButton() {}
     };
     menu.appendChild(proxyItem);
 
-    menu.style.left = `${Math.min(e.clientX + 5, window.innerWidth - 160)}px`;
-    menu.style.top = `${Math.min(e.clientY - 20, window.innerHeight - 150)}px`;
+    const menuHeight = 160;
+    const top = (e.clientY + menuHeight > window.innerHeight)
+      ? Math.max(10, e.clientY - menuHeight)
+      : e.clientY + 5;
+    menu.style.top = `${top}px`;
+    menu.style.left = `${Math.min(e.clientX + 5, window.innerWidth - 170)}px`;
     document.body.appendChild(menu);
     activeContextMenu = menu;
   }
@@ -3030,14 +3105,14 @@ function injectExportButton() {}
 
     dockContainer.innerHTML = '';
 
-    // 顶部操作区 (折叠与固定)
-    const header = document.createElement('div');
-    header.className = 'acct-dock-header';
+    // 左侧区域 (折叠按钮、固定图钉、九宫格总览看板)
+    const leftSection = document.createElement('div');
+    leftSection.className = 'acct-dock-section';
 
     const collapseBtn = document.createElement('div');
     collapseBtn.className = 'acct-dock-collapse-btn';
     collapseBtn.title = dockState.collapsed ? t.expandDock : t.collapseDock;
-    collapseBtn.innerHTML = dockState.collapsed ? '▶' : '◀';
+    collapseBtn.innerHTML = dockState.collapsed ? '▲' : '▼';
     collapseBtn.onclick = (e) => {
       e.stopPropagation();
       if (dockState.collapsed) {
@@ -3050,11 +3125,12 @@ function injectExportButton() {}
           dockState.pinned = false;
           try { localStorage.setItem('acct_dock_pinned', '0'); } catch {}
           ipcRenderer.invoke('dock:set-pinned', { pinned: false }).catch(() => {});
+          applyDockPinnedOffset(false);
         }
       }
       updateHeaderButtons();
     };
-    header.appendChild(collapseBtn);
+    leftSection.appendChild(collapseBtn);
 
     const pinBtn = document.createElement('div');
     pinBtn.className = 'acct-dock-pin-btn' + (dockState.pinned ? ' pinned' : '');
@@ -3074,12 +3150,11 @@ function injectExportButton() {}
         dockContainer.classList.remove('pinned');
         scheduleAutoCollapse(350);
       }
+      applyDockPinnedOffset(dockState.pinned);
       renderDock();
     };
-    header.appendChild(pinBtn);
-    dockContainer.appendChild(header);
+    leftSection.appendChild(pinBtn);
 
-    // 九宫格总览看板醒目独立入口 (32px x 32px 方圆按钮，位于账号列表正上方)
     const hubBtn = document.createElement('div');
     hubBtn.className = 'acct-dock-hub-btn';
     hubBtn.innerHTML = '⊞';
@@ -3102,15 +3177,26 @@ function injectExportButton() {}
       e.stopPropagation();
       openAccountHub();
     };
-    dockContainer.appendChild(hubBtn);
+    leftSection.appendChild(hubBtn);
 
-    const divider = document.createElement('div');
-    divider.className = 'acct-dock-divider';
-    dockContainer.appendChild(divider);
+    dockContainer.appendChild(leftSection);
 
-    // 账号列表
+    // 左侧垂直分割线
+    const dividerLeft = document.createElement('div');
+    dividerLeft.className = 'acct-dock-divider';
+    dockContainer.appendChild(dividerLeft);
+
+    // 中间账号列表
     const list = document.createElement('div');
     list.className = 'acct-dock-list';
+
+    // 鼠标滚轮平滑横向滚动支持
+    list.addEventListener('wheel', (e) => {
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        list.scrollLeft += e.deltaY;
+      }
+    }, { passive: false });
 
     // 保底至少渲染一个当前账号徽章
     const profilesToRender = (dockState.profiles && dockState.profiles.length > 0)
@@ -3131,11 +3217,11 @@ function injectExportButton() {}
       if (p.id === dockState.activeProfileId) {
         item.classList.add('active');
         setTimeout(() => {
-          try { item.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
+          try { item.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); } catch {}
         }, 50);
       }
 
-      // 用量外环计算 (SVG 环形进度条，半径 17，周长 106.81)
+      // 用量外环计算 (SVG 环形进度条，半径 16，周长 100.53)
       const pct = Math.max(0, Math.min(100, typeof p.usagePercent === 'number' ? p.usagePercent : 0));
       let ringColor = '#10b981'; // 默认健康翠绿 (<70%)
       if (pct >= 90) {
@@ -3143,35 +3229,35 @@ function injectExportButton() {}
       } else if (pct >= 70) {
         ringColor = '#f59e0b'; // 适中偏高告警 (70%~89%)
       }
-      const circumference = 106.81; // 2 * PI * 17
+      const circumference = 100.53; // 2 * PI * 16
       const strokeOffset = +(circumference * (1 - pct / 100)).toFixed(2);
 
       const ringSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       ringSvg.setAttribute('class', 'acct-dock-ring');
-      ringSvg.setAttribute('viewBox', '0 0 38 38');
+      ringSvg.setAttribute('viewBox', '0 0 36 36');
       ringSvg.innerHTML = `
-        <circle class="acct-dock-ring-bg" cx="19" cy="19" r="17" stroke-width="2.5" fill="none" />
-        <circle class="acct-dock-ring-progress" cx="19" cy="19" r="17" stroke-width="2.5" stroke="${ringColor}" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${strokeOffset}" fill="none" transform="rotate(-90 19 19)" />
+        <circle class="acct-dock-ring-bg" cx="18" cy="18" r="16" stroke-width="2.2" fill="none" />
+        <circle class="acct-dock-ring-progress" cx="18" cy="18" r="16" stroke-width="2.2" stroke="${ringColor}" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${strokeOffset}" fill="none" transform="rotate(-90 18 18)" />
       `;
       item.appendChild(ringSvg);
 
-      // 内层账号圆形头像 (30px 直径，居中陈列)
+      // 内层账号圆形头像 (28px 直径，居中陈列)
       const avatar = document.createElement('div');
       avatar.className = 'acct-dock-avatar';
       avatar.style.backgroundColor = p.color || '#3b82f6';
       avatar.textContent = getInitials(p.name);
       item.appendChild(avatar);
 
-      // 上下拖拽高亮指示线
-      const indTop = document.createElement('div');
-      indTop.className = 'acct-dock-drop-indicator top';
-      item.appendChild(indTop);
+      // 左右拖拽高亮指示线
+      const indLeft = document.createElement('div');
+      indLeft.className = 'acct-dock-drop-indicator left';
+      item.appendChild(indLeft);
 
-      const indBottom = document.createElement('div');
-      indBottom.className = 'acct-dock-drop-indicator bottom';
-      item.appendChild(indBottom);
+      const indRight = document.createElement('div');
+      indRight.className = 'acct-dock-drop-indicator right';
+      item.appendChild(indRight);
 
-      // Tooltip 增强，展示名称、激活状态与当前用量明细
+      // Tooltip 增强 (向上弹出)
       const tooltip = document.createElement('div');
       tooltip.className = 'acct-dock-tooltip';
       tooltip.style.flexDirection = 'column';
@@ -3240,8 +3326,8 @@ function injectExportButton() {}
           if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
 
           const rect = item.getBoundingClientRect();
-          const midY = rect.top + rect.height / 2;
-          if (e.clientY < midY) {
+          const midX = rect.left + rect.width / 2;
+          if (e.clientX < midX) {
             if (!item.classList.contains('drop-target-before')) {
               item.classList.add('drop-target-before');
               item.classList.remove('drop-target-after');
@@ -3316,11 +3402,19 @@ function injectExportButton() {}
 
     dockContainer.appendChild(list);
 
+    // 右侧垂直分割线
+    const dividerRight = document.createElement('div');
+    dividerRight.className = 'acct-dock-divider';
+    dockContainer.appendChild(dividerRight);
+
+    // 右侧功能区 (添加账号、主题切换、控制中心)
+    const rightSection = document.createElement('div');
+    rightSection.className = 'acct-dock-section';
+
     // 新增账号按钮
     const addBtn = document.createElement('button');
     addBtn.className = 'acct-dock-add-btn';
     addBtn.type = 'button';
-    addBtn.style.flexShrink = '0';
     addBtn.title = t.addAccountTooltip;
     addBtn.textContent = '+';
     addBtn.onclick = () => {
@@ -3328,15 +3422,13 @@ function injectExportButton() {}
         ipcRenderer.invoke('account:add', { name }).catch(() => {});
       });
     };
-    dockContainer.appendChild(addBtn);
+    rightSection.appendChild(addBtn);
 
     // 主题切换快捷按钮 (Dark / Light)
     const themeBtn = document.createElement('button');
     themeBtn.id = 'acct-dock-theme-toggle';
     themeBtn.className = 'acct-dock-add-btn';
     themeBtn.type = 'button';
-    themeBtn.style.flexShrink = '0';
-    themeBtn.style.marginTop = '4px';
     themeBtn.style.fontSize = '12px';
     themeBtn.innerHTML = currentTheme === 'light' ? '☀️' : '🌙';
     themeBtn.title = currentTheme === 'light' ? t.themeLightTooltip : t.themeDarkTooltip;
@@ -3344,17 +3436,15 @@ function injectExportButton() {}
       const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
       ipcRenderer.invoke('theme-set', nextTheme).catch(() => {});
     };
-    dockContainer.appendChild(themeBtn);
+    rightSection.appendChild(themeBtn);
 
     // ⚙ 配置与自动化控制中心按钮 (Settings & Auto-Allow Center)
     const settingsBtn = document.createElement('button');
     settingsBtn.id = 'acct-dock-settings-btn';
     settingsBtn.className = 'acct-dock-add-btn';
     settingsBtn.type = 'button';
-    settingsBtn.style.flexShrink = '0';
-    settingsBtn.style.marginTop = '4px';
     settingsBtn.style.position = 'relative';
-    settingsBtn.style.fontSize = '14px';
+    settingsBtn.style.fontSize = '13px';
     settingsBtn.innerHTML = '⚙';
     settingsBtn.title = t.settingsCenterTooltip;
 
@@ -3381,7 +3471,9 @@ function injectExportButton() {}
         window.__museToggleSettingsPopover();
       }
     };
-    dockContainer.appendChild(settingsBtn);
+    rightSection.appendChild(settingsBtn);
+
+    dockContainer.appendChild(rightSection);
   }
 
   window.__museRenderDock = renderDock;
@@ -3406,6 +3498,7 @@ function injectExportButton() {}
         if (dockState.pinned) {
           dockState.collapsed = false;
         }
+        applyDockPinnedOffset(dockState.pinned);
       }
       renderDock();
       if (dockState.hubOpen) {
@@ -3433,8 +3526,15 @@ function injectExportButton() {}
   });
 
   function startDock() {
+    try {
+      if (localStorage.getItem('acct_dock_pinned') === '1') {
+        dockState.pinned = true;
+        dockState.collapsed = false;
+      }
+    } catch {}
     injectDockStyles();
     renderDock(); // 先用初始数据渲染，确保绝不空白
+    applyDockPinnedOffset(dockState.pinned);
     ipcRenderer.invoke('account:get-state').then((res) => {
       if (res) {
         dockState.profiles = res.profiles || [];
@@ -3448,14 +3548,28 @@ function injectExportButton() {}
           }
         }
       }
+      applyDockPinnedOffset(dockState.pinned);
       renderDock();
       if (dockState.hubOpen) {
         renderAccountHub();
       }
     }).catch(() => {
+      applyDockPinnedOffset(dockState.pinned);
       renderDock();
     });
   }
+
+  // 动态监听 DOM 变化以确保 SPA 路由切换时输入框避让生效
+  try {
+    const _dockDomObserver = new MutationObserver(() => {
+      if (dockState.pinned) {
+        updateComposerOffset(true);
+      }
+    });
+    if (document.body || document.documentElement) {
+      _dockDomObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    }
+  } catch {}
 
   if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', startDock);

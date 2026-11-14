@@ -6,39 +6,20 @@
 
 ## 一、当前任务概览
 
-- **关联需求 / 分支**：独立特性分支 `feature/embedded-mihomo-proxy`（基于 `feature/account-hub-and-feishu-sync`，已成功推送到远端 `origin/feature/embedded-mihomo-proxy`）
-- **远程分支追踪与 PR 链接**：`https://github.com/xusofty-cyber/muse-ai-Desktop/pull/new/feature/embedded-mihomo-proxy`
-- **核心成果**：
-  1. **内置 Mihomo 智能分流与订阅解析引擎 (`mihomo-manager.js`)**：
-     - 支持填入机场 Clash 订阅 URL，自动带 User-Agent 请求并追踪重定向，解析并持久化提取 `proxies` 节点列表；
-     - 动态 `config.yaml` 模版合成器：为每个 Muse 账号分配独立 Inbound 端口（如 18001、18002...）并绑定专属 `fallback` 故障转移策略组；
-     - 子进程生命周期守护、端口防冲突检测及 `127.0.0.1:19090` External Controller REST API 通信（热重载与单/全节点延迟测速）；
-  2. **主进程 Session 动态端口分流路由 (`main.js`)**：
-     - `applyProxyToSession(session, profileId)`：当启用 Mihomo 模式时，各账号的分区 Session 自动绑定至专属本地端口，实现不同账号物理级出口 IP 隔离；
-     - 应用启动自动初始化内核、退出时优雅释放子进程防孤儿进程；
-     - 注册 `mihomo:get-config`, `mihomo:set-config`, `mihomo:sync-subscription`, `mihomo:get-nodes`, `mihomo:test-delay`, `account:set-proxy-queue` 完整 IPC 通道；
-  3. **网络与代理设置 UI 升级 (`hotkeys.html` / `preload-settings.js`)**：
-     - 在 `tab-proxy` 增加【内置 Mihomo 智能分流】卡片，支持一键填入订阅链接、实时同步节点数量、全节点延迟测速展示与端口映射状态查看；
-  4. **账号中心节点队列分配与看板展示 (`preload-chat-export.js`)**：
-     - 宫格看板卡片新增“🛡️ 代理出口”标识（显示主用节点名称与备用数量）；
-     - 编辑账号弹窗新增专属代理队列多选与优先级排序器，支持自由添加/删除/清空节点。
-  5. **架构设计与操作指引文档归档 (`docs/`)**：
-     - 系统架构：`docs/architecture/ARCH-002-embedded-mihomo-proxy.md`（模块拓扑、动态 Inbound/Fallback 策略组、进程生命周期与 ADR 决策）；
-     - 操作手册：`docs/guides/GUIDE-002-embedded-mihomo-proxy.md`（机场订阅填入、一键测速、出口队列分配与排障 FAQ）。
-  6. **聊天外部超链接与 GitHub 卡片点击无响应修复 (`main.js` / `preload-chat-export.js`)**：
-     - 精确收窄 `isAuthOrConnectorUrl`：仅针对纯认证专属域与明确包含 `/oauth`、`/login`、`client_id=` 的授权请求放行应用内子窗口；将 GitHub/Slack/Notion 仓库与文档链接解绑；
-     - 重构主进程 `setWindowOpenHandler`：外部链接（无论是否带 `target="_blank"`）一律调用 `shell.openExternal` 唤起系统默认浏览器；
-     - 强化 Preload 捕获层事件监听：兼容常规超链接、卡片容器及卡片内嵌链接，取消针对 `target="_blank"` 的跳过，彻底恢复系统浏览器一键打开。
-  7. **冷启动黑屏与浏览器弹出 muse.ai 严重缺陷修复 (`main.js` / `preload-chat-export.js`)**：
-     - **根因定位**：冷启动时 Muse (muse.ai) 自动发起跨域 SSO 握手链（AYMH "Accounts You Might Have"：`https://auth.muse.ai/aymh/` -> `https://www.facebook.com/aymh/redirect-cycle/...` -> `https://www.instagram.com/aymh/...` -> `https://auth.meta.com/...` -> `https://muse.ai/?aymh_complete=1`）；因上一版收窄判定时将 `facebook.com` 与 `instagram.com` 的普通路径剔除，导致主进程 `will-redirect` 事件将 AYMH 重定向误判为外部链接，调用 `preventDefault()` 强行中断了桌面端内部握手（致使窗口空白黑屏），并将重定向 URL 派发至系统默认浏览器 Chrome，在 Chrome 中完成握手后落地显示为 `https://muse.ai/`；
-     - **精准修复**：在 `isAuthOrConnectorUrl` 中新增对 Meta / Muse 跨域 SSO 握手链（包含 `/aymh` 路径或 `origin=` 关联）以及 Meta 家族域名（`facebook.com`, `fb.com`, `instagram.com`, `messenger.com`）登录、检查点与 SSO 路径的放行；同时优化 Preload 层的卡片点击容器作用域（`closest` 限定卡片与嵌入容器），杜绝外链误判；
-     - **构建交付**：Linux `.deb` 安装包重新构建完成并更新至 `dist/muse-desktop_1.5.24_amd64.deb`。
+- **关联需求 / 分支**：独立特性分支 `feature/embedded-mihomo-proxy`
+- **核心问题与最新进展**：
+  1. **多账号底部栏（形态A）布局重构与优化 (`preload-chat-export.js`)**：
+     - 重构为底部居中 macOS 风格浮动 Dock 栏；
+     - 宽度动态拉伸：取消固定宽度，扩展为 `max-width: calc(100vw - 180px)`，向左右空白区域充分延展，容纳 20+ 账号；
+     - 彻底消除滚动条：配置 CSS 无滚动条样式（`scrollbar-width: none` / `::-webkit-scrollbar: none`），同时支持鼠标滚轮横向平滑滚动；
+     - 输入会话交互区智能避让：固定（Pin）模式下缩小视口高度 `calc(100vh - 62px)`，并通过 DOM 遍历与 MutationObserver 向上平移聊天输入区 62px，彻底杜绝遮挡交互。
+  2. **切换账号时弹出系统默认浏览器打开 Snapchat / DoubleClick 等外链缺陷修复 (`main.js`)**：
+     - **根本原因**：`muse.ai` 页面初始化时在隐藏 `iframe` 内加载营销打点与转化像素（Snapchat Pixel、Google DoubleClick 等），这些 iframe 会进行 HTTP 302 跨域重定向同步 Cookie；Electron 主进程的 `setupExternalLinkHandler` 在监听 `will-redirect` 时此前未校验 `isMainFrame`，误将子框架 iframe 的 302 重定向当成顶层主窗口跳转，调用 `preventDefault()` 导致 Blink 拒绝 Mojo 通信（报错 `Message 0 rejected by interface blink.mojom.WidgetHost`），随后执行 `shell.openExternal()` 唤起了用户的系统默认浏览器；
+     - **精准修复**：
+       - 在 `handleNavigation` 中增加 `isMainFrame === false || (event && event.isMainFrame === false)` 强拦截，严格放行所有 iframe/subframe 内部的正常加载与重定向；
+       - 新增 `isTrackingOrAdUrl` 精准识别与过滤广告、埋点追踪及像素链接（`doubleclick.net`、`snapchat.com`、`fbthirdpartypixel.com` 等），在 `setWindowOpenHandler` 与 `handleNavigation` 双层防御，彻底杜绝埋点穿透唤起系统浏览器。
 - **真实验证证据**：
-  - 冷启动 AYMH 重定向链端到端验证：真实 Electron 实例加载 `https://muse.ai`，成功通过 `auth.muse.ai` -> `facebook.com/aymh` -> `instagram.com/aymh` -> `auth.meta.com` -> `muse.ai/?aymh_complete=1` 完整 6 级重定向，窗口内正常触发 `did-finish-load`，不再误弹外部浏览器且无黑屏阻断；
-  - 外链与卡片跳转拦截自动化测试：`node scratch/test-external-links.js`（全部断言 100% 通过，验证了 GitHub 仓库与文档链接被正确识别为外部链接、在 `setWindowOpenHandler` 中派发 `shell.openExternal`，以及在 Preload 捕获层拦截 `target="_blank"` 与卡片容器）；
-  - 代码审查与全量缺陷修复：已攻克 P0 语法错误（`hotkeys.html` 残留 catch 剔除）、P1 安全 XSS 消除（`preload-chat-export.js` / `hotkeys.html` 节点名安全绑定）、P1 冷启动自愈与账号增删重排同步重载（`main.js`）、P1 `mihomo:set-config` 失败状态回滚与可见窗口热刷新、P1 Listener 显式绑定 `listen: '127.0.0.1'` 防局域网端口暴露及 `path.resolve(dataDir)` 绝对路径热重载保障、P2 二进制通配扫描（兼容 `mihomo-windows-amd64-v3.exe` 与 `app.asar.unpacked`）、测速自动按需启动内核与【▶ 启动内核】快捷按钮、测速目标换用 gstatic 204、Gzip 订阅解压、并发测速池（6 并发）与 `asarUnpack` 配置；
-  - 真机二进制与集成单元测试：`node scratch/test-embedded-mihomo.js`（全部 6 项测试 100% 通过，实际拉起 `bin/mihomo/mihomo-windows-amd64-v3.exe` v1.19.34 验证 `/version` 响应、空节点兼容、动态新增账号热重载监听 18804 端口及 `mihomo.log` 实时落盘）；
-  - 核心脚本语法与编译校验：`node -c main.js preload-settings.js preload-chat-export.js mihomo-manager.js` 与 `hotkeys.html` 内联脚本均 Exit Code 0，无语法错误。
+  - 静态语法检查：`node -c main.js preload-settings.js preload-chat-export.js mihomo-manager.js` 全部 Exit Code 0，无任何语法与解析错误。
 
 ---
 
@@ -253,7 +234,6 @@
       - Linux: `Muse-1.5.20.AppImage`, `muse-desktop_1.5.20_amd64.deb`, `muse-desktop-1.5.20.tar.gz`, `latest-linux.yml`
       - macOS: `Muse-1.5.20-arm64-mac.zip.blockmap` 及 DMG/ZIP 安装包
 
-## 五、当前断点与后续待执行事项
 
 21. **GitHub Actions 发布流彻底重构（杜绝多端并发 Draft 竞态与资产分裂）**：
     - **根因消除**：彻底废除 3 端并行 Runner 调用 `electron-builder --publish always` 直接上传 GitHub Releases 的做法（消除了 Draft 竞态与多端孤立 Release）；
@@ -277,6 +257,18 @@
       2. 简介段落高频覆盖 `Muse Desktop`、`muse-desktop`、`Muse AI Desktop` 等核心短语；
       3. 补充 Electron 框架标识、v1.5.20~v1.5.22 主密码锁屏与 12+ 账号高密度防挤压 Dock 等最新特性说明与快捷键清单；
     - **合并流转**：已通过临时分支 `docs/seo-readme-optimization` 合入 `main` 主分支并推送到 `origin/main`。
+
+
+24. **多账号切换栏重构为底部居中水平 macOS 风格 Dock（彻底解决遮挡与 20+ 账号伸缩）**：
+    - **背景痛点**：原 `#acct-dock` 固定在左下角垂直堆叠，10 个账号高度已达 440px+ 出现纵向滚动条，严重遮挡底层网页左下角操作区与侧边栏折叠按钮，且无法承载 20+ 账号。
+    - **改造设计（形态 A）**：
+      1. **底部居中横向排布**：`bottom: 12px; left: 50%; transform: translateX(-50%)`，完全释放左侧垂直空间与原生网页操作区；
+      2. **左右自适应充分延展，彻底消除滚动条**：列表解除 860px 限制并开放至 `calc(100vw - 180px)`，配合 `scrollbar-width: none` 与 `::-webkit-scrollbar { display: none }`，自然向左右大空间延展容纳 20~40+ 账号，彻底消除了头像下方的白色滚动条横条；
+      3. **固定下方控制栏时主窗口智能避让交互区**：当用户点击 `📌` 图钉固定底部 Dock 时，页面根容器与主体自动将视口高度收缩 `calc(100vh - 62px)`，配合对固定定位 Chat 输入框的 `translateY(-62px)` 提升与 MutationObserver 动态监听，确保聊天输入框、发送按钮及整个交互区永远端正处于 Dock 上方，绝不产生遮挡；
+      4. **智能呼吸与平滑贴底收缩**：未固定时移开鼠标 350ms 平滑下沉贴底（仅留 6px 药丸状细条指示器），鼠标悬停（触碰底部感应区）即刻平滑滑出；点击 `📌` 图钉常驻展开；
+      5. **横向滚轮与左右拖拽支持**：中间账号列表支持普通垂直滚轮直接平滑横向滚动（`wheel deltaY -> scrollLeft`）；拖拽排序指示线由上下改为左右高亮（`midX` 判定）；
+      6. **上浮 Tooltip 与微型控制区**：账号信息卡片与指示 Tooltip 向上弹出，右侧集成添加账号、主题切换与控制中心（Popover 动态吸附至 `⚙` 按钮正上方展开）；
+    - **验证记录**：语法检查通过（`node -c main.js preload-settings.js preload-chat-export.js mihomo-manager.js`，Exit Code 0）。
 
 ## 五、当前断点与后续待执行事项
 
