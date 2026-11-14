@@ -354,13 +354,37 @@ class MihomoManager {
   }
 
   /**
+   * 规范化代理节点属性，规避内核兼容性缺陷
+   * @param {Object} p 节点对象
+   * @returns {Object} 规范化后的节点
+   */
+  _sanitizeProxyNode(p) {
+    if (!p || typeof p !== 'object') return p;
+    const clean = { ...p };
+    // 规范化 uTLS 浏览器指纹：Mihomo 中 fingerprint 专用于 TLS 证书固定 (hex sha256)
+    // 模拟浏览器 TLS ClientHello 必须配置为 client-fingerprint。旧版 Clash 订阅常见 fingerprint: chrome/safari
+    const browserFingerprints = ['chrome', 'firefox', 'safari', 'ios', 'edge', 'random', 'randomized', '360', 'qq', 'android'];
+    if (clean.fingerprint && typeof clean.fingerprint === 'string') {
+      const fpLower = clean.fingerprint.trim().toLowerCase();
+      if (browserFingerprints.includes(fpLower)) {
+        if (!clean['client-fingerprint']) {
+          clean['client-fingerprint'] = fpLower;
+        }
+        delete clean.fingerprint;
+      }
+    }
+    return clean;
+  }
+
+  /**
    * 生成 Mihomo 专属合成配置
    * @param {Array<Object>} accounts 账号列表 [{ id, name, proxyQueue, proxyStrategy }]
    * @param {Array<Object>} [proxies] 节点列表 (留空则用 cachedProxies)
    * @returns {{ configYaml: string, configObj: Object, portMap: Object }}
    */
   generateConfig(accounts = [], proxies = null) {
-    const proxyList = Array.isArray(proxies) && proxies.length > 0 ? proxies : this.cachedProxies;
+    const rawList = Array.isArray(proxies) && proxies.length > 0 ? proxies : this.cachedProxies;
+    const proxyList = rawList.map(p => this._sanitizeProxyNode(p));
     const availableNames = new Set(proxyList.map(p => p.name));
 
     const listeners = [];
@@ -389,15 +413,27 @@ class MihomoManager {
       const validNodes = rawQueue.filter(n => availableNames.has(n));
 
       // 若未指定或节点失效，兜底使用全量节点中的前若干个，或使用 DIRECT
-      const finalNodes = validNodes.length > 0 
-        ? validNodes 
-        : (proxyList.length > 0 ? [proxyList[0].name] : ['DIRECT']);
+      let finalNodes = [];
+      if (validNodes.length > 0) {
+        finalNodes = [...validNodes];
+        // 关键兜底防雪崩：如果账号配置的专属队列（如大阪节点服务器临时宕机/超时），
+        // 在 fallback 队列尾部自动追加全局其他可用节点作为二级兜底，防止全部节点宕机导致直接连接重置 (-100)
+        const backupNodes = proxyList.map(p => p.name).filter(n => !validNodes.includes(n));
+        if (backupNodes.length > 0) {
+          finalNodes.push(...backupNodes.slice(0, 5));
+        }
+      } else {
+        finalNodes = proxyList.length > 0 ? proxyList.slice(0, 10).map(p => p.name) : ['DIRECT'];
+      }
 
       proxyGroups.push({
         name: groupName,
         type: acct.proxyStrategy || 'fallback',
-        url: DEFAULT_TEST_URL,
-        interval: 300,
+        url: 'https://www.google.com/generate_204',
+        interval: 60,
+        lazy: false,
+        timeout: 2500,
+        'max-failed-times': 1,
         proxies: finalNodes
       });
     }
@@ -418,6 +454,22 @@ class MihomoManager {
       'log-level': 'info',
       'external-controller': `127.0.0.1:${this.controllerPort}`,
       secret: this.secret,
+      dns: {
+        enable: true,
+        listen: '127.0.0.1:0',
+        ipv6: false,
+        'enhanced-mode': 'redir-host',
+        nameserver: [
+          '223.5.5.5',
+          '119.29.29.29',
+          'https://doh.pub/dns-query'
+        ],
+        fallback: [
+          'https://1.1.1.1/dns-query',
+          'https://dns.google/dns-query',
+          '8.8.8.8'
+        ]
+      },
       listeners,
       'proxy-groups': proxyGroups,
       proxies: proxyList,
@@ -447,9 +499,17 @@ class MihomoManager {
     }
 
     // 启动前探针: 检测 Controller 端口是否已被旧残留进程霸占
-    const ctrlBusy = await this._isPortInUse(this.controllerPort);
+    let ctrlBusy = await this._isPortInUse(this.controllerPort);
     if (ctrlBusy) {
-      console.warn(`[MihomoCore] Controller port ${this.controllerPort} is already in use.`);
+      console.warn(`[MihomoCore] Controller port ${this.controllerPort} is already in use, clearing orphaned process...`);
+      try {
+        if (process.platform === 'win32') {
+          const exeName = path.basename(exe);
+          execSync(`taskkill /F /IM "${exeName}"`, { stdio: 'ignore' });
+        }
+        await new Promise((r) => setTimeout(r, 400));
+        ctrlBusy = await this._isPortInUse(this.controllerPort);
+      } catch (_) {}
     }
 
     const { configYaml, portMap } = this.generateConfig(accounts, proxies);
@@ -520,10 +580,16 @@ class MihomoManager {
    */
   stop() {
     if (this.process) {
+      const pid = this.process.pid;
       try {
         this.process.kill('SIGTERM');
       } catch (_) {
         try { this.process.kill('SIGKILL'); } catch (__) {}
+      }
+      if (process.platform === 'win32' && pid) {
+        try {
+          execSync(`taskkill /F /PID ${pid} /T`, { stdio: 'ignore' });
+        } catch (_) {}
       }
       this.process = null;
     }

@@ -1289,31 +1289,23 @@ async function applyProxyToSession(targetSession, profileId = null) {
   // 若开启了内置 Mihomo 智能分流（或账号显式选了 mihomo）
   if (acctMode === 'mihomo' || (state.mihomo && state.mihomo.enabled)) {
     const mm = getMihomoManager();
-    if (mm && mm.isRunning) {
-      // 优先从 portMap 中找该 profileId 对应的独立端口
-      const dedicatedPort = profileId ? mm.portMap[profileId] : null;
-      if (dedicatedPort) {
-        try {
-          const proxyRules = `http://127.0.0.1:${dedicatedPort}`;
-          const proxyBypassRules = '<local>;localhost;127.0.0.1';
-          await targetSession.setProxy({ proxyRules, proxyBypassRules });
-          console.log(`[Proxy] Applied Mihomo dedicated port ${dedicatedPort} to session for profile: ${profileId}`);
-          return;
-        } catch (err) {
-          console.error(`[Proxy] Failed to apply Mihomo port ${dedicatedPort} to profile ${profileId}:`, err);
-        }
-      } else if (!profileId) {
-        // defaultSession 无特定账号时走首个端口
-        try {
-          const fallbackPort = mm.basePort || DEFAULT_BASE_PROXY_PORT;
-          await targetSession.setProxy({
-            proxyRules: `http://127.0.0.1:${fallbackPort}`,
-            proxyBypassRules: '<local>;localhost;127.0.0.1'
-          });
-          return;
-        } catch (_) {}
-      }
+    // 优先从 portMap 中找该 profileId 对应的独立端口，没有则按账号索引确定推算
+    let dedicatedPort = profileId && mm && mm.portMap ? mm.portMap[profileId] : null;
+    if (!dedicatedPort) {
+      const basePort = (state.mihomo && state.mihomo.basePort) || DEFAULT_BASE_PROXY_PORT;
+      const acctIdx = state.profiles ? state.profiles.findIndex((p) => p.id === profileId) : -1;
+      dedicatedPort = acctIdx >= 0 ? (basePort + acctIdx) : basePort;
     }
+    try {
+      const proxyRules = `http=127.0.0.1:${dedicatedPort};https=127.0.0.1:${dedicatedPort}`;
+      const proxyBypassRules = '<local>;localhost;127.0.0.1';
+      await targetSession.setProxy({ proxyRules, proxyBypassRules });
+      console.log(`[Proxy] Applied Mihomo dedicated port ${dedicatedPort} to session for profile: ${profileId || 'default'}`);
+      return;
+    } catch (err) {
+      console.error(`[Proxy] Failed to apply Mihomo port ${dedicatedPort} to profile ${profileId}:`, err);
+    }
+    return;
   }
 
   // 3. 传统全局通用代理策略 (Custom / Direct / System 自适应)
@@ -1661,6 +1653,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
   });
   win.loadURL(currentSite().url);
   win.webContents.on('did-finish-load', () => {
+    win._failLoadRetries = 0;
     win._isContentLoaded = true;
     injectMicShim(win);
     broadcastAccountChange();
@@ -1669,7 +1662,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     broadcastLocaleChange();
   });
 
-  // 网络错误处理：加载离线诊断页并自动弹出网络配置界面
+  // 网络错误处理：主框架加载失败时进行轻量重试并在必要时进入离线页（绝不静默弹窗扰民）
   win.webContents.on('did-fail-load', async (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     // 仅在主框架（Main Frame）加载失败时触发诊断自愈，子框架/iframe/资源/第三方埋点失败绝不冲毁主界面
     if (isMainFrame === false) return;
@@ -1680,15 +1673,21 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     console.warn(`[Network] Main frame failed to load ${validatedURL}: [${errorCode}] ${errorDescription}`);
     if (validatedURL && validatedURL.includes('offline.html')) return;
 
-    // 若发生连接失败且为严重网络阻断（代理故障/连接被拒/超时），主动唤出网络配置界面引导修复
-    const isConnFailure = errorCode === -130 || errorCode === -100 || errorCode === -102 || errorCode === -7 || errorCode === -105;
-    if (isConnFailure) {
-      console.log(`[Network] Connection failed with [${errorCode}] ${errorDescription}, popping up proxy settings...`);
-      openHotkeySettings('tab-proxy');
-    }
-
     // 目标地址兜底：必须为内部合法站点（如 muse.ai / meta.ai），防止第三方外链或重定向劫持导致离线重试跳出客户端
     const safeTargetUrl = (validatedURL && isInternalSiteUrl(validatedURL)) ? validatedURL : currentSite().url;
+
+    // 轻量瞬态容错重试：代理节点故障转移/网络抖动时会有毫秒级连接重置 (-100/-102/-7)
+    // 自动重试 1 次 (延迟 1200ms 等待代理内核故障转移完成)，避免轻微波动直接将用户打入离线页
+    win._failLoadRetries = (win._failLoadRetries || 0) + 1;
+    if (win._failLoadRetries <= 1 && (errorCode === -100 || errorCode === -102 || errorCode === -7)) {
+      console.log(`[Network] Transient connection drop [${errorCode}], retrying in 1200ms (${win._failLoadRetries}/1)...`);
+      setTimeout(() => {
+        if (win && !win.isDestroyed()) {
+          win.loadURL(safeTargetUrl).catch(() => {});
+        }
+      }, 1200);
+      return;
+    }
 
     win.loadFile(path.join(__dirname, 'offline.html'), {
       query: {
@@ -4549,10 +4548,41 @@ function createTray() {
 app.on('second-instance', showMainWindow);
 
 app.whenReady().then(async () => {
-  // 首屏优先 (v1.5.15, 评审 P1-8): 此前 await applyProxySettings 排在建窗之前,
-  // 任一分区 setProxy 卡住即表现为进程在、无窗无托盘, 与窗口事故表型相同。
-  // 现在先建窗/托盘, 代理异步补应用并加 5s 超时降级 (新窗口创建时各自还会
-  // 按当前配置 applyProxyToSession, 不依赖这条全量应用完成)。
+  // 1. 若开启内置 Mihomo 智能分流，启动前优先就绪内核进程与端口映射，彻底消除冷启动无代理直连导致的握手失败 (-100)
+  if (state.mihomo && state.mihomo.enabled) {
+    const mm = getMihomoManager();
+    const merged = mm.loadCachedSubscription(state.mihomo.sources);
+    if (Array.isArray(merged) && merged.length > 0) {
+      state.mihomo.cachedProxies = merged;
+    }
+    try {
+      mm.generateConfig(state.profiles, state.mihomo.cachedProxies);
+    } catch (_) {}
+    try {
+      console.log('[Mihomo] Boot: starting Mihomo kernel before window creation...');
+      const res = await Promise.race([
+        mm.start(state.profiles, state.mihomo.cachedProxies),
+        new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'startup timeout' }), 2500))
+      ]);
+      if (res && res.ok) {
+        console.log('[Mihomo] Kernel ready on boot.');
+      } else {
+        console.warn('[Mihomo] Boot start warning:', res && res.error);
+      }
+    } catch (err) {
+      console.error('[Mihomo] Boot start error:', err);
+    }
+  }
+
+  // 2. 预先应用当前活动账号与 defaultSession 代理，保证首屏 loadURL 必定走专属代理端口
+  try {
+    const initialSes = session.fromPartition(partitionFor(state.activeProfileId));
+    await applyProxyToSession(initialSes, state.activeProfileId);
+    await applyProxyToSession(session.defaultSession);
+  } catch (err) {
+    console.warn('[Proxy] Initial active session proxy error:', err);
+  }
+
   createMainWindow();
   createTray();
   registerHotkeys();
@@ -4569,36 +4599,6 @@ app.whenReady().then(async () => {
       buildTrayMenu();
       broadcastAccountChange();
     });
-  }
-  // 启动内置 Mihomo 多账号代理内核 (若已启用)
-  if (state.mihomo && state.mihomo.enabled) {
-    const mm = getMihomoManager();
-    const merged = mm.loadCachedSubscription(state.mihomo.sources);
-    if (Array.isArray(merged) && merged.length > 0) {
-      state.mihomo.cachedProxies = merged;
-    }
-    mm.start(state.profiles, state.mihomo.cachedProxies)
-      .then(async (res) => {
-        if (res.ok) {
-          console.log('[Mihomo] Kernel started on boot, re-applying proxies...');
-          await applyProxySettings();
-          // 自愈冷启动掉入 offline.html 或在代理就绪前已发起连接的活动窗口
-          for (const [profId, win] of profileWindows.entries()) {
-            if (win && !win.isDestroyed() && win.isVisible()) {
-              const currentUrl = win.webContents.getURL() || '';
-              if (currentUrl.includes('offline.html') || currentUrl === 'about:blank' || !currentUrl) {
-                console.log(`[Mihomo] Self-healing window from offline page for profile: ${profId}`);
-                win.loadURL(currentSite().url);
-              } else {
-                win.webContents.reload();
-              }
-            }
-          }
-        } else {
-          console.warn('[Mihomo] Failed to start on boot:', res.error);
-        }
-      })
-      .catch((err) => console.error('[Mihomo] Boot start error:', err));
   }
   app.on('browser-window-focus', () => recordUserActivity());
   if (state.lock && state.lock.enabled && state.lock.hash) {
