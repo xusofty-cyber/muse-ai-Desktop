@@ -3748,95 +3748,54 @@ function injectExportButton() {}
     }
   }
 
-  // 解析鼠标点击目标，无论其为 a 标签、带 role="link" 的自定义组件、卡片容器还是纯文本中的 URL
-  function resolveClickedUrl(e) {
-    if (!e || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) {
-      return null;
-    }
-
-    // 1. 尝试从 a 标签、带 data-href/data-url 的元素或 role="link" 提取
-    const anchor = e.target && e.target.closest
-      ? (e.target.closest('a') || e.target.closest('[data-href], [data-url], [role="link"]'))
-      : null;
-
-    let rawHref = null;
-    if (anchor) {
-      const candidateHref = anchor.getAttribute('href') || anchor.href || anchor.getAttribute('data-href') || anchor.getAttribute('data-url');
-      if (candidateHref && !candidateHref.startsWith('#') && !candidateHref.startsWith('javascript:')) {
-        rawHref = candidateHref;
-      } else {
-        // 若 href 为 "#" 或无 href (常见于 React/Slate 等前端富文本渲染器)，从其文本内容提取 URL
-        const anchorText = (anchor.innerText || anchor.textContent || '').trim();
-        const match = anchorText.match(/https?:\/\/[^\s，。；、？！）》」"'\`<>]+/i);
-        if (match) {
-          rawHref = match[0];
-        }
-      }
-    }
-
-    // 2. 若未从 anchor 提取到，检查最近的卡片容器 (预览卡片/嵌入卡片/附件容器)
-    if (!rawHref) {
-      const cardContainer = e.target && e.target.closest
-        ? e.target.closest('[class*="card"], [class*="preview"], [class*="embed"], [class*="attachment"]')
-        : null;
-      if (cardContainer) {
-        const childAnchor = cardContainer.querySelector('a[href], [data-href], [data-url]');
-        if (childAnchor) {
-          const candidateHref = childAnchor.getAttribute('href') || childAnchor.href || childAnchor.getAttribute('data-href') || childAnchor.getAttribute('data-url');
-          if (candidateHref && !candidateHref.startsWith('#') && !candidateHref.startsWith('javascript:')) {
-            rawHref = candidateHref;
-          }
-        }
-      }
-    }
-
-    // 3. 若仍未提取到，利用 DOM caretRangeFromPoint 精确定位鼠标光标点击处的词元
-    if (!rawHref && document.caretRangeFromPoint) {
-      try {
-        const range = document.caretRangeFromPoint(e.clientX, e.clientY);
-        if (range && range.startContainer && range.startContainer.nodeType === Node.TEXT_NODE) {
-          const fullText = range.startContainer.textContent || '';
-          const offset = range.startOffset;
-          const left = fullText.slice(0, offset);
-          const right = fullText.slice(offset);
-          const leftMatch = left.match(/[^\s，。；、？！）》」"'\`<>\n\r\t]+$/);
-          const rightMatch = right.match(/^[^\s，。；、？！）》」"'\`<>\n\r\t]+/);
-          const word = ((leftMatch ? leftMatch[0] : '') + (rightMatch ? rightMatch[0] : '')).trim();
-          const match = word.match(/https?:\/\/[^\s，。；、？！）》」"'\`<>]+/i);
-          if (match) {
-            rawHref = match[0];
-          }
-        }
-      } catch {}
-    }
-
-    // 4. 兜底策略：检查 e.target 元素的文本内容是否包含 http(s) URL
-    if (!rawHref && e.target) {
-      const targetText = (e.target.innerText || e.target.textContent || '').trim();
-      const match = targetText.match(/https?:\/\/[^\s，。；、？！）》」"'\`<>]+/i);
-      if (match) {
-        rawHref = match[0];
-      }
-    }
-
-    if (!rawHref) return null;
-    return rawHref.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
-  }
-
-  // 使用捕获阶段 (capture: true)，拦截聊天区域中的外部超链接与卡片点击
+  // 使用捕获阶段 (capture: true)，仅拦截用户对真正超链接元素 (a 标签 / role="link" / data-href) 的显式点击
   document.addEventListener(
     'click',
     (e) => {
       try {
-        const rawUrl = resolveClickedUrl(e);
-        if (!rawUrl) return;
+        // 仅处理常规鼠标左键单点，带修饰键（Ctrl/Alt/Shift）或用户正在选中文本时绝不拦截
+        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+        if (window.getSelection && window.getSelection().toString().trim().length > 0) return;
 
-        // 跳过纯锚点与非网络协议
-        if (rawUrl.startsWith('#') || rawUrl.startsWith('javascript:')) return;
+        // 严禁在输入框、文本编辑区、自身 Dock 控制栏或弹出对话框中触发外链跳转
+        if (e.target && e.target.closest) {
+          if (e.target.closest('#acct-dock, #muse-export-btn, input, textarea, select, [contenteditable="true"]')) {
+            return;
+          }
+          if (e.target.closest('[role="dialog"], [aria-modal="true"], [class*="dialog"], [class*="modal"], [class*="settings"]')) {
+            return;
+          }
+        }
 
-        let fullHref = rawUrl;
+        // 核心守卫：必须确切命中 a 标签、带 data-href/data-url 的元素或 role="link"
+        const anchor = e.target && e.target.closest
+          ? (e.target.closest('a') || e.target.closest('[data-href], [data-url], [role="link"]'))
+          : null;
+
+        // 如果用户点击的不是超链接元素（如普通文本、气泡背景、邮箱、Key 等普通文字），坚决不拦截！
+        if (!anchor) return;
+
+        let rawHref = anchor.getAttribute('href') || anchor.href || anchor.getAttribute('data-href') || anchor.getAttribute('data-url');
+
+        // 若 href 为 "#"、"javascript:..." 或为空（常见于 React/Slate 等前端组件）：
+        // 仅当该 anchor 自身纯文本内容是以 http:// 或 https:// 开头的 URL 时才提取
+        if (!rawHref || rawHref === '#' || rawHref.startsWith('#') || rawHref.startsWith('javascript:')) {
+          const anchorText = (anchor.innerText || anchor.textContent || '').trim();
+          if (/^https?:\/\//i.test(anchorText)) {
+            const match = anchorText.match(/^https?:\/\/[^\s，。；、？！）》」"'\`<>]+/i);
+            if (match) {
+              rawHref = match[0];
+            } else {
+              return;
+            }
+          } else {
+            return;
+          }
+        }
+
+        let fullHref = rawHref.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
         try {
-          fullHref = new URL(rawUrl, window.location.href).href;
+          fullHref = new URL(fullHref, window.location.href).href;
         } catch {
           return;
         }

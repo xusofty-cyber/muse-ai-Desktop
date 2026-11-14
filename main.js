@@ -1147,28 +1147,33 @@ function setupExternalLinkHandler(win, profileId) {
 
   // 2. 拦截在主窗口内的普通超链接跳转（如 <a href="...">）及 302 重定向，防止主聊天窗口被覆盖或因阻止导航挂起黑屏
   const handleNavigation = (event, url, isInPlace, isMainFrame) => {
-    // 关键守卫：忽略第三方统计埋点与广告跟踪 URL (尤其是子 frame 里的 302 重定向，避免 Blink Mojo 报错)
+    // 关键守卫：严格忽略子框架 (iframe/subframe) 的所有导航与 302 重定向！
+    // 页面内的第三方统计埋点（Snapchat Pixel, DoubleClick, Facebook Pixel 等）及后台嵌入 iframe 频繁重定向，
+    // 若拦截子框架会导致 Blink Mojo 报错并误唤起外部系统浏览器打开后台资源。
+    if (isMainFrame === false || (event && event.isMainFrame === false)) {
+      return;
+    }
+    // 忽略第三方统计埋点与广告跟踪 URL
     if (isTrackingOrAdUrl(url)) {
-      if (isMainFrame !== false) event.preventDefault();
       return;
     }
     // 允许身份验证流程导航
     if (isAuthOrConnectorUrl(url)) {
       return;
     }
-    // 内部站点链接：主框架正常导航，子框架不干涉
+    // 内部站点链接：主框架正常导航
     if (isInternalSiteUrl(url)) {
       return;
     }
 
-    // 真正的外部网络链接 (如 https://ulife.vip/):
-    // 无论发生在 mainFrame 还是 subframe 均由系统默认浏览器打开，绝不覆盖主聊天窗口
+    // 主框架点击的真正外部网络链接 (如 https://ulife.vip/):
+    // 阻止应用内导航并由系统默认浏览器打开，绝不覆盖主聊天窗口
     event.preventDefault();
     const extracted = extractExternalTargetUrl(url);
     const finalExternalUrl = (extracted || url).trim().replace(/[，。；、？！）》」"',;!]+$/, '');
 
     if (finalExternalUrl && (finalExternalUrl.startsWith('http://') || finalExternalUrl.startsWith('https://') || finalExternalUrl.startsWith('mailto:'))) {
-      console.log(`[ExternalLink Navigation] Opening in default browser (mainFrame=${isMainFrame}):`, finalExternalUrl);
+      console.log('[ExternalLink Navigation] Opening in default browser:', finalExternalUrl);
       shell.openExternal(finalExternalUrl).catch((err) => {
         console.warn('[ExternalLink] Failed to open external URL on nav:', finalExternalUrl, err);
       });
