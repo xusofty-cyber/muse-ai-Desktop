@@ -8,28 +8,32 @@
 
 - **关联需求 / 分支**：独立特性分支 `feature/embedded-mihomo-proxy`
 - **核心问题与最新进展**：
-  1. **多账号底部栏（形态A）布局重构与优化 (`preload-chat-export.js`)**：
-     - 重构为底部居中 macOS 风格浮动 Dock 栏；
-     - 宽度动态拉伸：取消固定宽度，扩展为 `max-width: calc(100vw - 180px)`，向左右空白区域充分延展，容纳 20+ 账号；
-     - 彻底消除滚动条：配置 CSS 无滚动条样式（`scrollbar-width: none` / `::-webkit-scrollbar: none`），同时支持鼠标滚轮横向平滑滚动；
-     - 输入会话交互区智能避让：固定（Pin）模式下缩小视口高度 `calc(100vh - 62px)`，并通过 DOM 遍历与 MutationObserver 向上平移聊天输入区 62px，彻底杜绝遮挡交互。
-  2. **切换账号时弹出系统默认浏览器打开 Snapchat / DoubleClick 等外链缺陷修复 (`main.js`)**：
-     - **根本原因**：`muse.ai` 页面初始化时在隐藏 `iframe` 内加载营销打点与转化像素（Snapchat Pixel、Google DoubleClick 等），这些 iframe 会进行 HTTP 302 跨域重定向同步 Cookie；Electron 主进程的 `setupExternalLinkHandler` 在监听 `will-redirect` 时此前未校验 `isMainFrame`，误将子框架 iframe 的 302 重定向当成顶层主窗口跳转，调用 `preventDefault()` 导致 Blink 拒绝 Mojo 通信（报错 `Message 0 rejected by interface blink.mojom.WidgetHost`），随后执行 `shell.openExternal()` 唤起了用户的系统默认浏览器；
-     - **精准修复**：
-       - 在 `handleNavigation` 中增加 `isMainFrame === false || (event && event.isMainFrame === false)` 强拦截，严格放行所有 iframe/subframe 内部的正常加载与重定向；
-       - 新增 `isTrackingOrAdUrl` 精准识别与过滤广告、埋点追踪及像素链接（`doubleclick.net`、`snapchat.com`、`fbthirdpartypixel.com` 等），在 `setWindowOpenHandler` 与 `handleNavigation` 双层防御，彻底杜绝埋点穿透唤起系统浏览器。
-  3. **会话中点击外部链接无响应/误触全局弹窗深度根治与严密收口 (`main.js` / `preload-chat-export.js`)**：
-     - **两轮核心根因复盘**：
-       1. **初轮问题（打不开）**：Preload 命中 Slate/React 的 `<a href="#" role="link">` 后，因 `href="#"` 跳过了文本提取分支并直接 `return`，导致会话内的链接被吞；且此前客户端代码修改后未彻底重启 Electron 导致旧代码常驻；
-       2. **次轮问题（误触弹窗）**：初次修复时增加了 `e.target.innerText` 全文正则兜底与 subframe 导航放行，导致当用户点击包含调用示例（含 URL）的长消息气泡（如 API Key 列表、代码块、空白处）任意位置时，`e.target.innerText` 匹配到消息末尾的 URL 并误判为用户要跳转该链接，频繁唤起浏览器；且 subframe 放行导致后台 iframe 也可能唤起浏览器；
-     - **精准极简重构方案（消除一切泛化误判）**：
-       - **硬核拦截边界**：彻底移除 `e.target.innerText` 与光标范围模糊提取，恢复严格的 `if (!anchor) return;` 规则——用户必须**确切点击了超链接标签（`<a>`、`[role="link"]` 或 `[data-href]`）**，点击消息气泡空白、邮箱、API Key、代码块等普通文本一律零干扰直接放行；
-       - **空锚点精准自愈**：当且仅当点击了 `<a>` / `role="link"` 标签且其 `href` 为 `#` 时，仅检测该 anchor 自身的纯文本是否是以 `http://` 或 `https://` 开头的 URL，是则正常跳转，否则静默忽略；
-       - **子框架绝对隔离**：`main.js` 的 `handleNavigation` 恢复 `if (isMainFrame === false || (event && event.isMainFrame === false)) return;`，严格禁止后台 iframe / subframe 触碰系统浏览器；
-       - **安全守护**：正在拖拽选中文本、输入框、自身 Dock、模态弹窗内点击绝不拦截。
+  1. **内置 Mihomo 智能分流支持多订阅与本地 YAML 节点同时开启与合并管理 (`hotkeys.html` / `main.js` / `mihomo-manager.js` / `preload-settings.js`)**：
+     - **业务痛点**：此前仅支持单个机场订阅 URL，无法配置多个订阅，且无法加载本地 Clash/Mihomo 的 `.yaml`/`.yml` 配置文件，且无法多源同时开启合并为一个节点池；
+     - **完整功能闭环实现**：
+       1. **底层核心引擎 (`mihomo-manager.js`)**：
+          - 支持本地 YAML/YML 配置文件解析（`parseLocalYaml`），兼容各类格式的 `proxies` 节点定义；
+          - 实现多源节点智能冲突规避合并引擎（`mergeSourceProxies`）：遍历所有处于 `enabled: true` 的源，对跨机场重名节点自动注入 `[源名称] 原节点名` 前缀，杜绝 Mihomo 节点名重复报错；
+          - 自动建立各配置源独立存储目录（`.mihomo-runtime/sources/`），支持独立缓存与热重载；
+          - 兼容单源与多源配置平滑迁移（`loadCachedSubscription`）。
+       2. **主进程 IPC 调度与状态治理 (`main.js`)**：
+          - 配置模式向下兼容迁移：若检测到旧版 `subscriptionUrl` 自动透明迁移为首个 `sources` 项；
+          - 实现 `mihomo:choose-local-yaml`：原生文件对话框过滤并选择 `.yaml`/`.yml` 文件；
+          - 实现配置源增删改查与同步 IPC：`mihomo:add-source`、`mihomo:update-source`、`mihomo:remove-source`、`mihomo:sync-source`、`mihomo:sync-all-sources`；
+          - 变更状态实时触发 `refreshMihomoMergedProxiesAndReload`，动态更新节点池并热重载 Mihomo 内核与多账号出口队列。
+       3. **Preload 桥接层 (`preload-settings.js`)**：
+          - 暴露 `chooseLocalYaml`、`addSource`、`updateSource`、`removeSource`、`syncSource`、`syncAllSources` 接口供设置前端调用。
+       4. **前端交互与设置面板重构 (`hotkeys.html`)**：
+          - 重新设计 Mihomo 配置面板：展示源汇总统计（`已启用 X/Y 个源 · 合并有效节点 Z 个`）；
+          - 顶部工具栏提供快捷操作：`[+ 添加订阅]`、`[📂 导入本地 YAML]`、`[🔄 全部同步]`；
+          - 内联优雅抽屉添加订阅表单（支持命名与 URL 校验）；
+          - 动态源列表卡片：每个源具备独立启用/禁用复选框开关、类型徽章（本地 YAML / 远程订阅）、节点数、目标路径、独立更新同步与删除操作；
+          - 保留多账号端口映射卡片、一键全节点并发测速与已合并生效节点列表展示。
+  2. **会话中点击外部链接无响应/误触全局弹窗深度根治与严密收口 (`main.js` / `preload-chat-export.js`)**：
+     - 用户必须确切点击超链接标签（`<a>`、`[role="link"]` 或 `[data-href]`），点击消息气泡空白、普通文本、代码块直接放行，杜绝误唤起浏览器；空锚点 `href="#"` 精准自愈并仅放行以 http/https 开头的链接。
 - **真实验证证据**：
-  - 自动化断言测试：`scratch/test-strict-anchor.js` 校验点击非链接元素、点击文本段落、点击无 URL 锚点全部安全返回 `null`，真实外链及 `href="#"` 纯 URL 锚点 100% 正确解析；
-  - 静态语法检查：`node -c main.js preload-settings.js preload-chat-export.js mihomo-manager.js` 全部 Exit Code 0，无任何语法与解析错误。
+  - 自动化全流程集成测试：`scratch/test-full-sources-flow.js` 覆盖目录初始化、本地 YAML 节点提取、多源合并与防冲突重命名、未启用源安全过滤、多账号 listeners 生成与端口映射、遗留配置自动迁移，**5 项自动化断言 100% PASS**；
+  - 页面脚本与主进程编译检查：`node scratch/check-html-syntax.js` 与 `node -c main.js preload-settings.js mihomo-manager.js` 全部 Exit Code 0。
 
 ---
 

@@ -411,6 +411,7 @@ function defaultMihomoConfig() {
   return {
     enabled: false,
     subscriptionUrl: '',
+    sources: [], // Array<{ id, type: 'url'|'file', name, target, enabled, nodeCount, updatedAt, cachedProxies, subscriptionUserinfo }>
     autoUpdateInterval: 24,
     lastUpdated: '',
     basePort: DEFAULT_BASE_PROXY_PORT,
@@ -516,10 +517,40 @@ function sanitizeAndMergeState(raw) {
     },
   };
 
+  const rawMihomo = (raw && raw.mihomo) || {};
+  let rawSources = Array.isArray(rawMihomo.sources) ? rawMihomo.sources : [];
+  // 兼容旧版单一 subscriptionUrl 自动平滑迁移至多源架构
+  if (rawSources.length === 0 && typeof rawMihomo.subscriptionUrl === 'string' && rawMihomo.subscriptionUrl.trim()) {
+    rawSources = [{
+      id: 'src_default',
+      type: 'url',
+      name: '默认订阅',
+      target: rawMihomo.subscriptionUrl.trim(),
+      enabled: true,
+      nodeCount: Array.isArray(rawMihomo.cachedProxies) ? rawMihomo.cachedProxies.length : 0,
+      updatedAt: rawMihomo.lastUpdated || '',
+      cachedProxies: Array.isArray(rawMihomo.cachedProxies) ? rawMihomo.cachedProxies : [],
+      subscriptionUserinfo: '',
+    }];
+  }
+
   merged.mihomo = {
     ...defaultMihomoConfig(),
-    ...(raw.mihomo || {}),
-    cachedProxies: Array.isArray(raw.mihomo && raw.mihomo.cachedProxies) ? raw.mihomo.cachedProxies : [],
+    ...rawMihomo,
+    sources: rawSources.map((s) => ({
+      id: (s && s.id) || ('src_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
+      type: s && s.type === 'file' ? 'file' : 'url',
+      name: (s && typeof s.name === 'string' && s.name.trim())
+        ? s.name.trim()
+        : (s && s.type === 'file' ? '本地 YAML 节点' : '机场订阅'),
+      target: (s && typeof s.target === 'string') ? s.target.trim() : '',
+      enabled: typeof (s && s.enabled) === 'boolean' ? s.enabled : true,
+      nodeCount: typeof (s && s.nodeCount) === 'number' ? s.nodeCount : (Array.isArray(s && s.cachedProxies) ? s.cachedProxies.length : 0),
+      updatedAt: (s && typeof s.updatedAt === 'string') ? s.updatedAt : '',
+      cachedProxies: Array.isArray(s && s.cachedProxies) ? s.cachedProxies : [],
+      subscriptionUserinfo: (s && s.subscriptionUserinfo) || '',
+    })),
+    cachedProxies: Array.isArray(rawMihomo.cachedProxies) ? rawMihomo.cachedProxies : [],
   };
 
   // profiles 合法性校验 (v1.5.16, 评审 P2): 此前只补颜色, 不查 id。空/重复/
@@ -2818,6 +2849,25 @@ ipcMain.handle('proxy-set', async (e, config) => {
   return { ok: true };
 });
 
+// 内置 Mihomo 智能代理分流：重新聚合所有启用源并热重载内核
+async function refreshMihomoMergedProxiesAndReload(shouldReloadKernel = true) {
+  const mm = getMihomoManager();
+  const merged = mm.mergeSourceProxies(state.mihomo.sources);
+  state.mihomo.cachedProxies = merged;
+  state.mihomo.lastUpdated = new Date().toISOString();
+  saveState();
+
+  if (state.mihomo.enabled && shouldReloadKernel) {
+    if (mm.isRunning) {
+      await mm.reload(state.profiles, merged);
+    } else {
+      await mm.start(state.profiles, merged);
+    }
+    await applyProxySettings();
+  }
+  return merged;
+}
+
 // 内置 Mihomo 智能代理分流 IPC handlers
 ipcMain.handle('mihomo:get-config', (e) => {
   if (denyUntrusted(e)) return undefined;
@@ -2828,6 +2878,231 @@ ipcMain.handle('mihomo:get-config', (e) => {
     portMap: mm ? mm.portMap : {},
     executablePath: mm ? mm.findExecutable() : null,
     nodeCount: (state.mihomo && Array.isArray(state.mihomo.cachedProxies)) ? state.mihomo.cachedProxies.length : 0,
+  };
+});
+
+ipcMain.handle('mihomo:choose-local-yaml', async (e) => {
+  if (denyUntrusted(e)) return { canceled: true };
+  const senderWin = BrowserWindow.fromWebContents(e.sender);
+  const res = await dialog.showOpenDialog(senderWin || hotkeyWindow || mainWindow, {
+    title: '选择 Clash / Mihomo 本地 YAML 节点文件',
+    filters: [
+      { name: 'Clash YAML 配置文件 (*.yaml;*.yml)', extensions: ['yaml', 'yml'] },
+      { name: '所有文件 (*.*)', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  });
+  if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
+    return { canceled: true };
+  }
+  const filePath = res.filePaths[0];
+  const defaultName = path.basename(filePath, path.extname(filePath));
+  return { canceled: false, filePath, defaultName };
+});
+
+ipcMain.handle('mihomo:add-source', async (e, payload) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const { type, name, target } = payload || {};
+  if (!target || typeof target !== 'string' || !target.trim()) {
+    return { ok: false, error: '目标链接或文件路径不能为空' };
+  }
+  const cleanTarget = target.trim();
+  const cleanType = type === 'file' ? 'file' : 'url';
+  const cleanName = (typeof name === 'string' && name.trim())
+    ? name.trim()
+    : (cleanType === 'file' ? path.basename(cleanTarget, path.extname(cleanTarget)) : '新订阅');
+
+  const mm = getMihomoManager();
+  const sourceId = 'src_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  let initialProxies = [];
+  let nodeCount = 0;
+  let subInfo = null;
+
+  if (cleanType === 'file') {
+    const parsed = mm.parseLocalYaml(cleanTarget);
+    if (!parsed.ok) {
+      return { ok: false, error: parsed.error };
+    }
+    initialProxies = parsed.proxies || [];
+    nodeCount = parsed.nodeCount || 0;
+  } else {
+    const subRes = await mm.fetchSubscription(cleanTarget, sourceId);
+    if (!subRes.ok) {
+      return { ok: false, error: subRes.error };
+    }
+    initialProxies = subRes.proxies || [];
+    nodeCount = subRes.nodeCount || 0;
+    subInfo = subRes.subInfo;
+  }
+
+  const newSource = {
+    id: sourceId,
+    type: cleanType,
+    name: cleanName,
+    target: cleanTarget,
+    enabled: true,
+    nodeCount,
+    updatedAt: new Date().toISOString(),
+    cachedProxies: initialProxies,
+    subscriptionUserinfo: (subInfo && subInfo.subscriptionUserinfo) || '',
+  };
+
+  if (!Array.isArray(state.mihomo.sources)) {
+    state.mihomo.sources = [];
+  }
+  state.mihomo.sources.push(newSource);
+  const merged = await refreshMihomoMergedProxiesAndReload(true);
+
+  return {
+    ok: true,
+    source: newSource,
+    totalNodes: merged.length,
+    portMap: mm.portMap,
+  };
+});
+
+ipcMain.handle('mihomo:update-source', async (e, payload) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const { sourceId, updates } = payload || {};
+  if (!sourceId || !Array.isArray(state.mihomo.sources)) {
+    return { ok: false, error: '未找到指定源' };
+  }
+  const idx = state.mihomo.sources.findIndex(s => s && s.id === sourceId);
+  if (idx === -1) return { ok: false, error: '指定源不存在' };
+
+  const src = state.mihomo.sources[idx];
+  if (updates) {
+    if (typeof updates.name === 'string' && updates.name.trim()) {
+      src.name = updates.name.trim();
+    }
+    if (typeof updates.enabled === 'boolean') {
+      src.enabled = updates.enabled;
+    }
+    if (typeof updates.target === 'string' && updates.target.trim() && updates.target.trim() !== src.target) {
+      src.target = updates.target.trim();
+      const mm = getMihomoManager();
+      if (src.type === 'file') {
+        const parsed = mm.parseLocalYaml(src.target);
+        if (parsed.ok) {
+          src.cachedProxies = parsed.proxies || [];
+          src.nodeCount = parsed.nodeCount || 0;
+          src.updatedAt = new Date().toISOString();
+        }
+      } else {
+        const subRes = await mm.fetchSubscription(src.target, src.id);
+        if (subRes.ok) {
+          src.cachedProxies = subRes.proxies || [];
+          src.nodeCount = subRes.nodeCount || 0;
+          src.updatedAt = new Date().toISOString();
+        }
+      }
+    }
+  }
+
+  const merged = await refreshMihomoMergedProxiesAndReload(true);
+  const mm = getMihomoManager();
+  return { ok: true, source: src, totalNodes: merged.length, portMap: mm.portMap };
+});
+
+ipcMain.handle('mihomo:remove-source', async (e, sourceId) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!sourceId || !Array.isArray(state.mihomo.sources)) {
+    return { ok: false, error: '未找到指定源' };
+  }
+  const idx = state.mihomo.sources.findIndex(s => s && s.id === sourceId);
+  if (idx === -1) return { ok: false, error: '指定源不存在' };
+
+  state.mihomo.sources.splice(idx, 1);
+  const merged = await refreshMihomoMergedProxiesAndReload(true);
+  const mm = getMihomoManager();
+  return { ok: true, totalNodes: merged.length, portMap: mm.portMap };
+});
+
+ipcMain.handle('mihomo:sync-source', async (e, sourceId) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!sourceId || !Array.isArray(state.mihomo.sources)) {
+    return { ok: false, error: '未找到指定源' };
+  }
+  const src = state.mihomo.sources.find(s => s && s.id === sourceId);
+  if (!src) return { ok: false, error: '指定源不存在' };
+
+  const mm = getMihomoManager();
+  if (src.type === 'file') {
+    const parsed = mm.parseLocalYaml(src.target);
+    if (!parsed.ok) {
+      return { ok: false, error: parsed.error };
+    }
+    src.cachedProxies = parsed.proxies || [];
+    src.nodeCount = parsed.nodeCount || 0;
+    src.updatedAt = new Date().toISOString();
+  } else {
+    const subRes = await mm.fetchSubscription(src.target, src.id);
+    if (!subRes.ok) {
+      return { ok: false, error: subRes.error };
+    }
+    src.cachedProxies = subRes.proxies || [];
+    src.nodeCount = subRes.nodeCount || 0;
+    src.updatedAt = new Date().toISOString();
+    if (subRes.subInfo && subRes.subInfo.subscriptionUserinfo) {
+      src.subscriptionUserinfo = subRes.subInfo.subscriptionUserinfo;
+    }
+  }
+
+  const merged = await refreshMihomoMergedProxiesAndReload(true);
+  const mm2 = getMihomoManager();
+  return { ok: true, source: src, totalNodes: merged.length, portMap: mm2.portMap };
+});
+
+ipcMain.handle('mihomo:sync-all-sources', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!Array.isArray(state.mihomo.sources) || state.mihomo.sources.length === 0) {
+    return { ok: false, error: '尚未添加任何订阅或本地 YAML 源' };
+  }
+
+  const mm = getMihomoManager();
+  const errors = [];
+  let updatedCount = 0;
+
+  for (const src of state.mihomo.sources) {
+    if (!src || src.enabled === false) continue;
+    try {
+      if (src.type === 'file') {
+        const parsed = mm.parseLocalYaml(src.target);
+        if (parsed.ok) {
+          src.cachedProxies = parsed.proxies || [];
+          src.nodeCount = parsed.nodeCount || 0;
+          src.updatedAt = new Date().toISOString();
+          updatedCount++;
+        } else {
+          errors.push(`[${src.name}]: ${parsed.error}`);
+        }
+      } else {
+        const subRes = await mm.fetchSubscription(src.target, src.id);
+        if (subRes.ok) {
+          src.cachedProxies = subRes.proxies || [];
+          src.nodeCount = subRes.nodeCount || 0;
+          src.updatedAt = new Date().toISOString();
+          if (subRes.subInfo && subRes.subInfo.subscriptionUserinfo) {
+            src.subscriptionUserinfo = subRes.subInfo.subscriptionUserinfo;
+          }
+          updatedCount++;
+        } else {
+          errors.push(`[${src.name}]: ${subRes.error}`);
+        }
+      }
+    } catch (err) {
+      errors.push(`[${src.name}]: ${err.message}`);
+    }
+  }
+
+  const merged = await refreshMihomoMergedProxiesAndReload(true);
+  return {
+    ok: errors.length === 0 || updatedCount > 0,
+    updatedCount,
+    totalNodes: merged.length,
+    errors: errors.length > 0 ? errors : null,
+    sources: state.mihomo.sources,
+    portMap: mm.portMap,
   };
 });
 
@@ -2845,6 +3120,11 @@ ipcMain.handle('mihomo:set-config', async (e, cfg) => {
 
   const mm = getMihomoManager();
   if (state.mihomo.enabled) {
+    // 确保使用最新合并的源节点
+    const merged = mm.mergeSourceProxies(state.mihomo.sources);
+    if (merged && merged.length > 0) {
+      state.mihomo.cachedProxies = merged;
+    }
     let coreRes = null;
     if (!mm.isRunning) {
       coreRes = await mm.start(state.profiles, state.mihomo.cachedProxies);
@@ -3983,7 +4263,10 @@ app.whenReady().then(async () => {
   // 启动内置 Mihomo 多账号代理内核 (若已启用)
   if (state.mihomo && state.mihomo.enabled) {
     const mm = getMihomoManager();
-    mm.loadCachedSubscription();
+    const merged = mm.loadCachedSubscription(state.mihomo.sources);
+    if (Array.isArray(merged) && merged.length > 0) {
+      state.mihomo.cachedProxies = merged;
+    }
     mm.start(state.profiles, state.mihomo.cachedProxies)
       .then(async (res) => {
         if (res.ok) {

@@ -73,6 +73,12 @@ contextBridge.exposeInMainWorld('lockAPI', {
 contextBridge.exposeInMainWorld('mihomoAPI', {
   getConfig: () => ipcRenderer.invoke('mihomo:get-config'),
   setConfig: (config) => ipcRenderer.invoke('mihomo:set-config', config),
+  chooseLocalYaml: () => ipcRenderer.invoke('mihomo:choose-local-yaml'),
+  addSource: (payload) => ipcRenderer.invoke('mihomo:add-source', payload),
+  updateSource: (payload) => ipcRenderer.invoke('mihomo:update-source', payload),
+  removeSource: (sourceId) => ipcRenderer.invoke('mihomo:remove-source', sourceId),
+  syncSource: (sourceId) => ipcRenderer.invoke('mihomo:sync-source', sourceId),
+  syncAllSources: () => ipcRenderer.invoke('mihomo:sync-all-sources'),
   syncSubscription: (subUrl) => ipcRenderer.invoke('mihomo:sync-subscription', subUrl),
   getNodes: () => ipcRenderer.invoke('mihomo:get-nodes'),
   testDelay: (proxyName) => ipcRenderer.invoke('mihomo:test-delay', proxyName),

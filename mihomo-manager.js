@@ -36,11 +36,12 @@ class MihomoManager {
    * @param {string} [options.secret] Controller Secret (留空自动生成)
    */
   constructor(options = {}) {
-    this.dataDir = path.resolve(options.dataDir || path.join(process.cwd(), '.mihomo-runtime'));
-    this.binPath = options.binPath || '';
-    this.basePort = options.basePort || DEFAULT_BASE_PROXY_PORT;
-    this.controllerPort = options.controllerPort || DEFAULT_CONTROLLER_PORT;
-    this.secret = options.secret || crypto.randomBytes(16).toString('hex');
+    const opts = typeof options === 'string' ? { dataDir: options } : (options || {});
+    this.dataDir = path.resolve(opts.dataDir || path.join(process.cwd(), '.mihomo-runtime'));
+    this.binPath = opts.binPath || '';
+    this.basePort = opts.basePort || DEFAULT_BASE_PROXY_PORT;
+    this.controllerPort = opts.controllerPort || DEFAULT_CONTROLLER_PORT;
+    this.secret = opts.secret || crypto.randomBytes(16).toString('hex');
 
     this.process = null;
     this.logStream = null;
@@ -51,6 +52,10 @@ class MihomoManager {
 
     if (!fs.existsSync(this.dataDir)) {
       fs.mkdirSync(this.dataDir, { recursive: true });
+    }
+    const sourcesDir = path.join(this.dataDir, 'sources');
+    if (!fs.existsSync(sourcesDir)) {
+      fs.mkdirSync(sourcesDir, { recursive: true });
     }
   }
 
@@ -154,11 +159,51 @@ class MihomoManager {
   }
 
   /**
+   * 解析本地 Clash / Mihomo YAML 文件并提取 proxies 节点
+   * @param {string} filePath 本地 YAML 文件绝对路径
+   * @returns {{ ok: boolean, proxies?: Array, nodeCount?: number, rawYaml?: string, error?: string }}
+   */
+  parseLocalYaml(filePath) {
+    if (!filePath || typeof filePath !== 'string') {
+      return { ok: false, error: '未提供有效的本地文件路径' };
+    }
+    const cleanPath = path.resolve(filePath.trim());
+    if (!fs.existsSync(cleanPath)) {
+      return { ok: false, error: `本地 YAML 文件不存在: ${cleanPath}` };
+    }
+
+    try {
+      const rawYaml = fs.readFileSync(cleanPath, 'utf8');
+      let parsed = null;
+      try {
+        parsed = yaml.load(rawYaml);
+      } catch (e) {
+        return { ok: false, error: `YAML 解析语法错误: ${e.message}` };
+      }
+
+      if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.proxies)) {
+        return { ok: false, error: '本地 YAML 文件中未找到合法的 proxies 节点数组' };
+      }
+
+      const proxies = parsed.proxies.filter(p => p && typeof p === 'object' && p.name && p.type);
+      return {
+        ok: true,
+        proxies,
+        nodeCount: proxies.length,
+        rawYaml
+      };
+    } catch (err) {
+      return { ok: false, error: `读取本地 YAML 失败: ${err.message}` };
+    }
+  }
+
+  /**
    * 拉取机场订阅并解析其中的代理节点
    * @param {string} subUrl 订阅 URL
+   * @param {string} [sourceId] 订阅源唯一标识 (用于独立落盘缓存)
    * @returns {Promise<{ ok: boolean, proxies?: Array, rawYaml?: string, error?: string, subInfo?: Object }>}
    */
-  async fetchSubscription(subUrl) {
+  async fetchSubscription(subUrl, sourceId = null) {
     if (!subUrl || typeof subUrl !== 'string' || !/^https?:\/\//i.test(subUrl.trim())) {
       return { ok: false, error: '无效的订阅链接，必须为 http:// 或 https:// 开头' };
     }
@@ -193,9 +238,14 @@ class MihomoManager {
       const proxies = parsed.proxies.filter(p => p && typeof p === 'object' && p.name && p.type);
       this.cachedProxies = proxies;
 
-      // 持久化缓存订阅
+      // 持久化缓存订阅 (包含旧兼容路径和独立 sourceId 路径)
       const cachePath = path.join(this.dataDir, 'subscription.yaml');
       fs.writeFileSync(cachePath, rawYaml, 'utf8');
+
+      if (sourceId && typeof sourceId === 'string') {
+        const sourceFile = path.join(this.dataDir, 'sources', `${sourceId}.yaml`);
+        fs.writeFileSync(sourceFile, rawYaml, 'utf8');
+      }
 
       const metaPath = path.join(this.dataDir, 'subscription.meta.json');
       const subInfo = {
@@ -218,9 +268,78 @@ class MihomoManager {
   }
 
   /**
-   * 读取本地缓存的订阅节点
+   * 将多个订阅源及本地 YAML 源的节点进行聚合与防冲突合并
+   * @param {Array<Object>} sources 源列表 [{ id, type, name, target, enabled, cachedProxies }]
+   * @returns {Array<Object>} 合并后的全量代理节点列表
    */
-  loadCachedSubscription() {
+  mergeSourceProxies(sources = []) {
+    const activeSources = (Array.isArray(sources) ? sources : []).filter(s => s && s.enabled !== false);
+    if (activeSources.length === 0) {
+      this.cachedProxies = [];
+      return [];
+    }
+
+    const merged = [];
+    const seenNames = new Set();
+    const isMultiSource = activeSources.length > 1;
+
+    for (const src of activeSources) {
+      let list = Array.isArray(src.cachedProxies) ? src.cachedProxies : [];
+      // 若内存中暂无缓存节点，尝试从磁盘加载
+      if (list.length === 0) {
+        if (src.type === 'file' && src.target) {
+          const parsed = this.parseLocalYaml(src.target);
+          if (parsed.ok && parsed.proxies) {
+            list = parsed.proxies;
+            src.cachedProxies = list;
+            src.nodeCount = list.length;
+          }
+        } else if (src.type === 'url') {
+          const subFile = path.join(this.dataDir, 'sources', `${src.id}.yaml`);
+          if (fs.existsSync(subFile)) {
+            try {
+              const content = fs.readFileSync(subFile, 'utf8');
+              const obj = yaml.load(content);
+              if (obj && Array.isArray(obj.proxies)) {
+                list = obj.proxies.filter(p => p && p.name && p.type);
+                src.cachedProxies = list;
+                src.nodeCount = list.length;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      const srcTag = (src.name || (src.type === 'file' ? '本地' : '订阅')).trim();
+      for (const p of list) {
+        if (!p || typeof p !== 'object' || !p.name || !p.type) continue;
+        let finalName = p.name;
+        // 若重名，添加源标签进行隔离区分，确保 Mihomo 节点名称全局唯一
+        if (seenNames.has(finalName)) {
+          finalName = `[${srcTag}] ${p.name}`;
+          let counter = 2;
+          while (seenNames.has(finalName)) {
+            finalName = `[${srcTag}] ${p.name} (${counter++})`;
+          }
+        }
+        seenNames.add(finalName);
+        merged.push({ ...p, name: finalName });
+      }
+    }
+
+    this.cachedProxies = merged;
+    return merged;
+  }
+
+  /**
+   * 读取本地缓存的订阅与节点列表
+   * @param {Array<Object>} [sources] 传入源列表时合并全部已启用源
+   */
+  loadCachedSubscription(sources = null) {
+    if (Array.isArray(sources) && sources.length > 0) {
+      return this.mergeSourceProxies(sources);
+    }
+
     const cachePath = path.join(this.dataDir, 'subscription.yaml');
     if (!fs.existsSync(cachePath)) return [];
     try {
