@@ -19,8 +19,12 @@
 
 **Muse Desktop** (also known as `muse-desktop` or **Muse AI Desktop**) is a high-performance, cross-platform native desktop application designed for **Windows, Linux, and macOS**. It wraps Muse ([muse.ai](https://muse.ai)) and Meta AI ([meta.ai](https://www.meta.ai)) in a privacy-centric container with deep desktop OS integrations:
 
+> 📖 **Comprehensive User Manual**: Check out the **[📘 Muse Desktop User Manual (docs/guides/USER_MANUAL.md)](docs/guides/USER_MANUAL.md)** for step-by-step guides on multi-account management, multi-source Mihomo proxy routing, batch node queues, and cross-platform hot migration.
+
 - 🔒 **Master Password Screen Lock**: Salted cryptographic password protection, anti-brute-force rate limiting, and idle auto-lock with complete session concealment.
-- 👥 **Multi-Account Concurrent Login (12+ Accounts)**: Chromium partition-based profile isolation with an instant-switch, non-squeezing Dock, auto-collapse, and pin mode.
+- 👥 **Multi-Account Concurrent Login (17+ Accounts)**: Chromium partition-based profile isolation, dynamic Account Hub grid (Ctrl+Shift+G), and bidirectional Feishu Bitable synchronization.
+- 🛡️ **Embedded Mihomo Intelligent Proxy Engine**: Multi-subscription & local YAML merging with conflict-free renaming, individual account proxy modes, and 1-click batch node adding.
+- 📦 **1-Click Config Backup & Hot Migration**: Export/import all 17+ account profiles and proxy settings across Windows and Linux (Ubuntu), plus offline session cloning.
 - 🚀 **Adaptive Network & TUN Proxy**: Self-adaptive system proxy detection and TUN virtual adapter compatibility (Clash Verge, Sing-box, Surge, V2Ray).
 - 🎨 **Unified Control Center & Themes**: Distraction-free canvas with dynamic Dark, Light, and System adaptive themes.
 - ⌨️ **Global Hotkeys & Instant Chat Export**: Quick chat overlay, site switching, mic/speaker toggles, and one-click chat history export to Markdown, HTML, and JSON.

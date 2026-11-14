@@ -38,9 +38,18 @@
        4. **账号中心卡片实时反映代理模式**：在账号中心看板及气泡中实时高亮展示各账号当前所处的网络模式（走系统代理/TUN、直接连接、自定义代理或 Mihomo 节点队列）。
   3. **会话中点击外部链接无响应/误触全局弹窗深度根治与严密收口 (`main.js` / `preload-chat-export.js`)**：
      - 用户必须确切点击超链接标签（`<a>`、`[role="link"]` 或 `[data-href]`），点击消息气泡空白、普通文本、代码块直接放行，杜绝误唤起浏览器；空锚点 `href="#"` 精准自愈并仅放行以 http/https 开头的链接。
+  4. **多账号配置与代理一键导出/导入（跨机与跨系统热迁移）(`main.js` / `preload-chat-export.js` / `preload-settings.js` / `hotkeys.html`)**：
+     - **业务痛点**：当前电脑已配置 17 个 Muse 账号及其独立的专属代理队列、代理模式与机场订阅源，更换电脑或系统环境时手动逐个配置成本极高；
+     - **完整功能闭环实现**：
+       1. 主进程实现 `config:export`、`config:import`、`config:open-data-dir`；安全过滤锁屏密码 Hash/Salt 等敏感凭证，导入时自动创建防灾快照（`app-state.pre-import-*.bak`），智能兼容直接导入原始 `app-state.json`；
+       2. 九宫格看板 Header 增设 `📤 导出配置`、`📥 导入配置` 与 `📁 本地数据` 快捷操作；
+       3. 设置面板与托盘菜单深度集成，支持一键备份导出与导入。
+  5. **编写并沉淀官方全景用户使用手册与 Linux 兼容性验证 (`docs/guides/USER_MANUAL.md` / `README.zh-CN.md` / `README.md`)**：
+     - 形成跨 Windows、Linux (Ubuntu) 与 macOS 的全流程用户操作全景手册，涵盖多账号看板、Mihomo 多源分流、批量节点、跨系统热迁移与常见问题排查。
 - **真实验证证据**：
-  - 自动化全流程集成测试：`scratch/test-full-sources-flow.js` 覆盖目录初始化、本地 YAML 节点提取、多源合并与防冲突重命名、未启用源安全过滤、多账号 listeners 生成与端口映射、遗留配置自动迁移，**5 项自动化断言 100% PASS**；
-  - 页面脚本与主进程编译检查：`node scratch/check-html-syntax.js` 与 `node -c main.js preload-settings.js mihomo-manager.js` 全部 Exit Code 0。
+  - 导出/导入与容灾备份单测：`scratch/test-backup-restore.js` 覆盖字段过滤、双格式兼容、非法文件拦截与安全边界，全部 PASS；
+  - 自动化全流程集成测试：`scratch/test-full-sources-flow.js` 5 项自动化断言 100% PASS；
+  - 页面脚本与主进程编译检查：`node scratch/check-html-syntax.js` 与 `node -c main.js preload-settings.js preload-chat-export.js mihomo-manager.js` 全部 Exit Code 0。
 
 ---
 
