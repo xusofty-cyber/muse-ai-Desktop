@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld('lockAPI', {
 contextBridge.exposeInMainWorld('mihomoAPI', {
   getConfig: () => ipcRenderer.invoke('mihomo:get-config'),
   setConfig: (config) => ipcRenderer.invoke('mihomo:set-config', config),
+  chooseCustomBin: () => ipcRenderer.invoke('mihomo:choose-custom-bin'),
+  clearCustomBin: () => ipcRenderer.invoke('mihomo:clear-custom-bin'),
   chooseLocalYaml: () => ipcRenderer.invoke('mihomo:choose-local-yaml'),
   addSource: (payload) => ipcRenderer.invoke('mihomo:add-source', payload),
   updateSource: (payload) => ipcRenderer.invoke('mihomo:update-source', payload),

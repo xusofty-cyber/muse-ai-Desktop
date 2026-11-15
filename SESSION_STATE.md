@@ -6,9 +6,12 @@
 
 ## 一、当前任务概览
 
-- **关联需求 / 分支**：独立特性分支 `feature/embedded-mihomo-proxy` -> 合并发布 `v1.5.25`
+- **关联需求 / 分支**：修复分支 `fix/portable-mihomo-detection` -> 合并发布 `v1.5.26`
 - **核心问题与最新进展**：
-  1. **文档与分享链接浏览器打开与侧边栏基础路由隔离 (v1.5.25)**：
+  1. **便携版 Mihomo 物理目录自动探测与手动指定 (v1.5.26)**：
+     - **便携版物理目录自动关联**：`mihomo-manager.js` 扩展搜索路径池，追加 `process.env.PORTABLE_EXECUTABLE_DIR` 与 `path.dirname(process.execPath)`，彻底解决 Windows 便携单文件运行解压至 Temp 目录导致无法探测同级 `mihomo/` 文件夹内核的问题；
+     - **图形化手动指定内核**：在 `hotkeys.html` 设置面板与 `main.js` 新增 `mihomo:choose-custom-bin` 和 `mihomo:clear-custom-bin` IPC 接口，用户可通过 `[📂 指定内核]` 按钮图形化浏览并选择本地任意路径的 `mihomo.exe`，支持一键恢复自动探测与持久化保存；
+  2. **文档与分享链接浏览器打开与侧边栏基础路由隔离 (v1.5.25)**：
      - **分享与临时产物链接外链打开**：新增 `isShareOrDocumentUrl`，精确识别 `/share`、`/doc`、`/file`、`/artifact` 以及带有 `token=`、`expires=`、`key=` 的临时共享文件链接，点击时统一调用 `shell.openExternal` 唤起外部默认浏览器，保证主聊天窗口上下文不被破坏；
      - **侧边栏与内部路由硬隔离**：在 Preload 与 `setWindowOpenHandler` 中对左侧导航轨（`[class*="rail"]`、`nav`、`aside`、`Chat` 聊天图标、会话列表、设置等）进行严格内部路由保护，绝不拦截内部导航，杜绝点击左侧“聊天”误弹出系统浏览器标签页；
      - **富文本属性多候选提取**：支持 `data-href`、`data-url`、`data-link`、`title` 及纯文本 URL 的深度回退提取，彻底根除空锚点 `href="#"` 导致的点击无响应。
