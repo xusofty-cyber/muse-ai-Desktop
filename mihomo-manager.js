@@ -629,6 +629,17 @@ class MihomoManager {
   }
 
   /**
+   * 重启 Mihomo 内核进程
+   * @param {Array<Object>} accounts 账号列表
+   * @param {Array<Object>} [proxies] 节点列表
+   */
+  async restart(accounts = [], proxies = null) {
+    this.stop();
+    await new Promise((r) => setTimeout(r, 600));
+    return this.start(accounts, proxies);
+  }
+
+  /**
    * 热重载配置 (无需杀死进程中断现有连接)
    * @param {Array<Object>} accounts 账号列表
    * @param {Array<Object>} [proxies] 节点列表

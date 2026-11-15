@@ -46,13 +46,13 @@
     transition: background-color 0.25s ease, color 0.25s ease;
   }
   .tabs {
-    display: flex; gap: 8px; border-bottom: 1px solid var(--border-color);
-    padding-bottom: 10px; margin-bottom: 14px;
+    display: flex; gap: 6px; border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px; margin-bottom: 14px; flex-wrap: wrap;
   }
   .tab-btn {
     background: transparent; border: none; color: var(--text-muted);
-    padding: 6px 12px; font-size: 13.5px; font-weight: 600;
-    border-radius: 6px; cursor: pointer; transition: all 0.15s ease;
+    padding: 6px 11px; font-size: 13px; font-weight: 600;
+    border-radius: 6px; cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
   }
   .tab-btn:hover { background: var(--bg-hover); color: var(--text-main); }
   .tab-btn.active { background: var(--bg-hover); color: var(--accent-light); }
@@ -156,6 +156,7 @@
     <button class="tab-btn" id="tab-appearance-btn">Appearance & UI</button>
     <button class="tab-btn" id="tab-auto-btn">Automation & Rules</button>
     <button class="tab-btn" id="tab-proxy-btn">Network & Proxy</button>
+    <button class="tab-btn" id="tab-mihomo-btn">Mihomo Core</button>
     <button class="tab-btn" id="tab-security-btn">Security & Lock</button>
   </div>
 
@@ -387,69 +388,16 @@
       <div class="proxy-mode-desc" id="desc-mode-mihomo">
         内置轻量 Mihomo 内核托管机场订阅，自动为每个 Muse 账号分配独立端口和故障自动转移节点队列，实现真正物理级出口 IP 隔离。
       </div>
-
-      <!-- Mihomo 配置展开区 (多配置源管理与多账号隔离) -->
-      <div id="mihomo-proxy-panel" style="margin-top:10px; padding-top:10px; border-top:1px solid #2d323e; display:none;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
-          <div>
-            <div style="font-size:12px; font-weight:600; color:#e8eaf0;">代理配置源 (多订阅 / 本地 YAML)</div>
-            <div style="font-size:11px; color:#8a909d; margin-top:2px;" id="lbl-sources-summary">已启用 0 个源 · 合并有效节点 0 个</div>
-          </div>
-          <div style="display:flex; gap:6px;">
-            <button type="button" class="action" id="btn-show-add-url" style="padding:4px 8px; font-size:11px;">+ 添加订阅</button>
-            <button type="button" class="action" id="btn-import-local-yaml" style="padding:4px 8px; font-size:11px;">📂 导入本地 YAML</button>
-            <button type="button" class="action" id="btn-sync-all-sources" style="padding:4px 8px; font-size:11px;" title="同步更新所有已启用的远程订阅和本地文件">🔄 全部同步</button>
-          </div>
+      <div id="mihomo-quick-switch-panel" style="margin-top:10px; padding:8px 12px; background:#1b1e25; border-radius:6px; border:1px solid #2d323e; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <div style="font-size:11.5px; color:#cfd3dc;">
+          <span>内核状态: </span><span id="proxy-summary-kernel-status" style="font-weight:600; color:#8a909d;">待检测</span>
+          <span id="proxy-summary-node-count" style="margin-left:8px; color:#8a909d;">(0 个节点)</span>
         </div>
-
-        <!-- 内联添加远程订阅表单 (默认折叠) -->
-        <div id="form-add-url-container" style="display:none; background:#1b1e25; border:1px solid #3b4252; border-radius:6px; padding:10px; margin-bottom:10px;">
-          <div style="font-size:11.5px; font-weight:600; color:#cfd3dc; margin-bottom:6px;">添加远程机场订阅 (Clash 格式)</div>
-          <div style="display:flex; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
-            <input type="text" id="txt-new-source-name" placeholder="订阅名称 (如: 主力机场 A)" style="width:140px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:5px 8px; border-radius:4px; font-size:11.5px;">
-            <input type="text" id="txt-new-source-url" placeholder="https://example.com/api/v1/client/subscribe?token=..." style="flex:1; min-width:200px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:5px 8px; border-radius:4px; font-size:11.5px;">
-          </div>
-          <div style="display:flex; justify-content:flex-end; gap:6px;">
-            <button type="button" class="action" id="btn-cancel-add-url" style="padding:3px 10px; font-size:11px;">取消</button>
-            <button type="button" class="action primary" id="btn-confirm-add-url" style="padding:3px 12px; font-size:11px;">确认添加</button>
-          </div>
-        </div>
-
-        <!-- 多配置源列表展示卡片容器 -->
-        <div id="mihomo-sources-container" style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto; margin-bottom:6px;">
-          <!-- 动态注入源卡片 -->
-        </div>
-
-        <div id="mihomo-sub-status" style="margin-top:4px; margin-bottom:8px; font-size:11px; color:#8a909d; min-height:16px;"></div>
-
-        <!-- 内核状态卡片 -->
-        <div style="margin-top:6px; background:#1e2128; border:1px solid #2d323e; border-radius:6px; padding:10px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-            <div style="font-size:11.5px; color:#cfd3dc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-              <span>内核状态: </span><span id="mihomo-kernel-status" style="font-weight:600; color:#8a909d;">待检测</span>
-            </div>
-            <div style="display:flex; gap:6px; flex-shrink:0;">
-              <button type="button" class="action" id="btn-mihomo-choose-bin" style="padding:2px 8px; font-size:11px;" title="手动浏览并指定本地任意路径下的 mihomo.exe 内核">📂 指定内核</button>
-              <button type="button" class="action primary" id="btn-mihomo-start" style="padding:2px 10px; font-size:11px; display:none;">▶ 启动内核</button>
-              <button type="button" class="action" id="btn-mihomo-test-all" style="padding:2px 8px; font-size:11px;">一键全节点测速</button>
-            </div>
-          </div>
-          <div id="mihomo-bin-path-info" style="margin-top:5px; font-size:11px; color:#94a3b8; word-break:break-all; display:none;"></div>
-          <div id="mihomo-port-map" style="margin-top:6px; font-size:11px; color:#8a909d;"></div>
-        </div>
-
-        <!-- 节点列表抽屉 -->
-        <div style="margin-top:10px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" id="btn-toggle-nodes">
-            <span style="font-size:11.5px; font-weight:600; color:#cfd3dc;" id="lbl-node-count">已同步生效节点 (0)</span>
-            <span style="font-size:11px; color:#818cf8;" id="txt-toggle-nodes">查看节点列表 ▼</span>
-          </div>
-          <div id="mihomo-node-list" style="margin-top:8px; max-height:160px; overflow-y:auto; display:none; background:#16181d; border:1px solid #2d323e; border-radius:6px; padding:6px;"></div>
-        </div>
+        <button type="button" class="action primary" id="btn-goto-mihomo-tab" style="padding:4px 12px; font-size:11.5px; flex:none;">👉 前往【Mihomo 代理内核】专属标签页管理</button>
       </div>
     </div>
 
-    <!-- 模式 3: 直接连接 (禁用代理) -->
+    <!-- 模式 4: 直接连接 (禁用代理) -->
     <div class="proxy-mode-card" id="card-mode-direct">
       <div class="proxy-mode-header">
         <div class="proxy-mode-title">
@@ -486,12 +434,141 @@
       <div style="font-size:11.5px; color:var(--text-dim); line-height:1.45; margin-bottom:10px;" id="txt-backup-desc">
         完整备份当前电脑上的全部 17+ 账号配置（包含备注名称、群组分类、用途说明、专属代理出口队列、独立代理模式及所有机场订阅源），更换环境或在新电脑上一键导入即可瞬间恢复。
       </div>
+      <div style="margin-bottom:10px; padding:7px 10px; background:#1b1e25; border:1px solid #2d323e; border-radius:6px; display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="chk-export-sessions" class="toggle-switch" checked>
+        <label for="chk-export-sessions" style="font-size:12px; color:var(--text-main); cursor:pointer; font-weight:600;">包含各账号免登录会话 (Session Cookies，跨电脑/系统导入直接免重新登录)</label>
+      </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="action primary" id="btn-export-config" style="flex:1; min-width:160px; font-size:12px; padding:7px 0;">📤 导出所有配置 (.json)</button>
         <button class="action" id="btn-import-config" style="flex:1; min-width:160px; font-size:12px; padding:7px 0;">📥 导入配置备份</button>
         <button class="action" id="btn-open-datadir" style="flex:1; min-width:160px; font-size:12px; padding:7px 0;">📁 打开数据目录 (%APPDATA%\Muse)</button>
       </div>
       <div id="backup-msg" style="margin-top:8px; font-size:11.5px; min-height:16px;"></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-mihomo">
+    <h2 id="h2-mihomo">Mihomo 代理内核与多账号出口分流</h2>
+    <p class="hint" id="hint-mihomo">内置轻量 Mihomo 核心，支持多机场订阅与本地 YAML 合并、各账号独立出口端口队列及全节点低延迟测速。</p>
+
+    <!-- 模块 1: 内核运行状态与控制中心 -->
+    <div class="section-title" id="sec-title-mihomo-core">内核运行控制 (Kernel Control)</div>
+    <div class="auto-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:13px; font-weight:600; color:var(--text-main);">当前内核状态:</span>
+            <span id="tab-mihomo-status-badge" style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; background:#334155; color:#94a3b8;">待检测</span>
+          </div>
+          <div id="tab-mihomo-ports-info" style="font-size:11px; color:#8a909d; margin-top:4px;">控制器: 127.0.0.1:19090 · 账号出口起始端口: 18001</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button type="button" class="action" id="btn-tab-mihomo-choose-bin" style="padding:4px 10px; font-size:11.5px;" title="手动浏览并指定本地任意路径下的 mihomo.exe 内核">📂 指定内核</button>
+          <button type="button" class="action primary" id="btn-tab-mihomo-start" style="padding:4px 12px; font-size:11.5px;">▶ 启动内核</button>
+          <button type="button" class="action" id="btn-tab-mihomo-restart" style="padding:4px 10px; font-size:11.5px;">🔄 重启</button>
+          <button type="button" class="action" id="btn-tab-mihomo-stop" style="padding:4px 10px; font-size:11.5px; color:#ff9a9a; border-color:rgba(255,154,154,0.3);">⏹ 停止</button>
+        </div>
+      </div>
+      <div id="tab-mihomo-bin-path-info" style="margin-top:8px; font-size:11px; color:#94a3b8; word-break:break-all; padding:4px 8px; background:#16181d; border-radius:4px; border:1px solid #2d323e; display:none;"></div>
+      <div id="tab-mihomo-core-msg" style="margin-top:6px; font-size:11.5px; min-height:16px;"></div>
+    </div>
+
+    <!-- 模块 2: 代理配置源管理 (多订阅与本地导入) -->
+    <div class="section-title" id="sec-title-mihomo-sources">代理配置源 (Subscriptions & Local YAML)</div>
+    <div class="auto-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:6px;">
+        <div style="font-size:11.5px; color:#8a909d;" id="tab-sources-summary">已启用 0 个源 · 合并有效节点 0 个</div>
+        <div style="display:flex; gap:6px;">
+          <button type="button" class="action primary" id="btn-tab-show-add-url" style="padding:4px 10px; font-size:11.5px;">+ 添加订阅</button>
+          <button type="button" class="action" id="btn-tab-import-local-yaml" style="padding:4px 10px; font-size:11.5px;">📂 导入本地 YAML</button>
+          <button type="button" class="action" id="btn-tab-sync-all-sources" style="padding:4px 10px; font-size:11.5px;" title="同步更新所有已启用的远程订阅和本地文件">🔄 全部同步</button>
+        </div>
+      </div>
+
+      <!-- 添加远程订阅表单 (默认折叠) -->
+      <div id="form-tab-add-url-container" style="display:none; background:#1b1e25; border:1px solid #3b4252; border-radius:6px; padding:10px; margin-bottom:10px;">
+        <div style="font-size:12px; font-weight:600; color:#cfd3dc; margin-bottom:6px;">添加远程机场订阅 (Clash 格式)</div>
+        <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+          <input type="text" id="txt-tab-new-source-name" placeholder="订阅名称 (如: 主力机场 A)" style="width:140px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:5px 8px; border-radius:4px; font-size:12px;">
+          <input type="text" id="txt-tab-new-source-url" placeholder="https://example.com/api/v1/client/subscribe?token=..." style="flex:1; min-width:200px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:5px 8px; border-radius:4px; font-size:12px;">
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:6px;">
+          <button type="button" class="action" id="btn-tab-cancel-add-url" style="padding:3px 10px; font-size:11.5px;">取消</button>
+          <button type="button" class="action primary" id="btn-tab-confirm-add-url" style="padding:3px 14px; font-size:11.5px;">确认添加</button>
+        </div>
+      </div>
+
+      <!-- 多源卡片列表容器 -->
+      <div id="tab-mihomo-sources-container" style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;"></div>
+      <div id="tab-mihomo-sources-status" style="margin-top:6px; font-size:11px; color:#8a909d; min-height:16px;"></div>
+    </div>
+
+    <!-- 模块 3: Proxy 分组与各账号专属出口 (Account Proxy Groups) -->
+    <div class="section-title" id="sec-title-mihomo-groups">Proxy 分组与各账号独立出口 (Account Proxy Groups)</div>
+    <div class="auto-card">
+      <div style="font-size:11.5px; color:#8a909d; line-height:1.45; margin-bottom:10px;">
+        每个 Muse 账号独占专属本地端口（如 18001），并在内核中配置独立的 Proxy 分组策略队列（故障自动转移 / 测速自动优选 / 负载均衡），彻底避免多账号共用出口 IP 被平台关联封禁。
+      </div>
+      <div id="tab-mihomo-accounts-container" style="display:flex; flex-direction:column; gap:6px; max-height:260px; overflow-y:auto;"></div>
+    </div>
+
+    <!-- 模块 4: 节点池管理与全量/单节点测速 (Node Pool & Speed Test) -->
+    <div class="section-title" id="sec-title-mihomo-nodes">节点池与延迟测速 (Node Pool & Latency)</div>
+    <div class="auto-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+        <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:240px;">
+          <input type="text" id="txt-tab-node-search" placeholder="🔍 搜索节点 (输入香港、日本、美国、IEPL等)..." style="flex:1; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:5px 10px; border-radius:6px; font-size:12px;">
+          <select id="sel-tab-node-sort" style="background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:5px 8px; border-radius:6px; font-size:12px;">
+            <option value="default">默认顺序</option>
+            <option value="latency-asc">延迟升序 (低到高)</option>
+            <option value="name-asc">节点名称</option>
+          </select>
+        </div>
+        <button type="button" class="action primary" id="btn-tab-mihomo-test-all" style="padding:5px 12px; font-size:12px; flex:none;">⚡ 一键全节点测速</button>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#8a909d; margin-bottom:6px;">
+        <span id="tab-nodes-count-summary">共 0 个节点</span>
+        <span style="display:flex; gap:8px;">
+          <span style="color:#7ee2a8;">● &lt;150ms 极佳</span>
+          <span style="color:#fbbf24;">● 150-300ms 良好</span>
+          <span style="color:#f97316;">● &gt;300ms 稍高</span>
+          <span style="color:#ff9a9a;">● 超时/失败</span>
+        </span>
+      </div>
+      <div id="tab-mihomo-node-list" style="display:flex; flex-direction:column; gap:4px; max-height:300px; overflow-y:auto; background:#16181d; border:1px solid #2d323e; border-radius:6px; padding:6px;"></div>
+    </div>
+  </div>
+
+  <!-- Modal: 编辑账号专属代理策略与节点队列 -->
+  <div id="modal-account-queue-backdrop" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center; z-index:9999;">
+    <div style="background:var(--bg-card); border:1px solid var(--border-card); border-radius:8px; width:92%; max-width:480px; max-height:85vh; display:flex; flex-direction:column; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <div style="font-size:14px; font-weight:700; color:var(--text-main);" id="modal-queue-title">配置账号专属出口队列</div>
+        <button type="button" id="btn-close-queue-modal" style="background:transparent; border:none; color:var(--text-muted); font-size:16px; cursor:pointer;">✕</button>
+      </div>
+      <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:12px;" id="modal-queue-desc">
+        为该账号指定独立策略模式与候选节点。Mihomo 会按选定策略在候选节点间自动轮转或故障转移。
+      </div>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px; font-weight:600; color:var(--text-main); display:block; margin-bottom:4px;">分流策略模式 (Strategy):</label>
+        <select id="sel-modal-queue-strategy" style="width:100%; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:6px 10px; border-radius:6px; font-size:12px;">
+          <option value="fallback">fallback (自动故障转移 - 优先走队列首个健康节点)</option>
+          <option value="url-test">url-test (自动延迟优选 - 自动测速切换最低延迟节点)</option>
+          <option value="load-balance">load-balance (负载均衡 - 轮询在选定节点分流)</option>
+        </select>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <label style="font-size:12px; font-weight:600; color:var(--text-main);">选择专属节点队列 (勾选纳入):</label>
+        <div style="display:flex; gap:6px;">
+          <button type="button" class="action" id="btn-modal-select-all" style="padding:2px 8px; font-size:11px;">全选</button>
+          <button type="button" class="action" id="btn-modal-clear-all" style="padding:2px 8px; font-size:11px;">清空</button>
+        </div>
+      </div>
+      <div id="modal-queue-nodes-list" style="flex:1; overflow-y:auto; min-height:160px; max-height:260px; background:#16181d; border:1px solid #2d323e; border-radius:6px; padding:6px; display:flex; flex-direction:column; gap:4px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
+        <button type="button" class="action" id="btn-modal-cancel-queue" style="padding:6px 14px; font-size:12px;">取消</button>
+        <button type="button" class="action primary" id="btn-modal-save-queue" style="padding:6px 18px; font-size:12px;">保存生效</button>
+      </div>
     </div>
   </div>
 
@@ -600,6 +677,7 @@ const I18N_SETTINGS = {
     tabAppearance: 'Appearance & UI',
     tabAuto: 'Automation & Rules',
     tabProxy: 'Network & Proxy',
+    tabMihomo: 'Mihomo Core',
     hotkeysTitle: 'Global Hotkeys',
     hotkeysHint: 'Click a hotkey, then press the new combination. Esc cancels.',
     resetDefaults: 'Reset defaults',
@@ -706,7 +784,8 @@ const I18N_SETTINGS = {
     tabHotkeys: '快捷键',
     tabAppearance: '外观与语言',
     tabAuto: '自动化规则',
-    tabProxy: '网络与代理',
+    tabProxy: '常规网络',
+    tabMihomo: 'Mihomo 代理内核',
     tabSecurity: '安全与锁屏',
     hotkeysTitle: '全局快捷键',
     hotkeysHint: '点击快捷键输入框，直接按下新的键盘按键组合；按 Esc 键可取消。',
@@ -820,10 +899,12 @@ function applySettingsLocale(loc) {
   const tabAppearanceBtn = document.getElementById('tab-appearance-btn');
   const tabAutoBtn = document.getElementById('tab-auto-btn');
   const tabProxyBtn = document.getElementById('tab-proxy-btn');
+  const tabMihomoBtn = document.getElementById('tab-mihomo-btn');
   if (tabHotkeysBtn) tabHotkeysBtn.textContent = t.tabHotkeys;
   if (tabAppearanceBtn) tabAppearanceBtn.textContent = t.tabAppearance;
   if (tabAutoBtn) tabAutoBtn.textContent = t.tabAuto;
   if (tabProxyBtn) tabProxyBtn.textContent = t.tabProxy;
+  if (tabMihomoBtn && t.tabMihomo) tabMihomoBtn.textContent = t.tabMihomo;
 
   const h2Hotkeys = document.getElementById('h2-hotkeys');
   if (h2Hotkeys) h2Hotkeys.textContent = t.hotkeysTitle;
@@ -1292,16 +1373,18 @@ const tabHotkeysBtn = document.getElementById('tab-hotkeys-btn');
 const tabAppearanceBtn = document.getElementById('tab-appearance-btn');
 const tabAutoBtn = document.getElementById('tab-auto-btn');
 const tabProxyBtn = document.getElementById('tab-proxy-btn');
+const tabMihomoBtn = document.getElementById('tab-mihomo-btn');
 const tabSecurityBtn = document.getElementById('tab-security-btn');
 const tabHotkeys = document.getElementById('tab-hotkeys');
 const tabAppearance = document.getElementById('tab-appearance');
 const tabAuto = document.getElementById('tab-auto');
 const tabProxy = document.getElementById('tab-proxy');
+const tabMihomo = document.getElementById('tab-mihomo');
 const tabSecurity = document.getElementById('tab-security');
 
 function selectTab(btn, content) {
-  [tabHotkeysBtn, tabAppearanceBtn, tabAutoBtn, tabProxyBtn, tabSecurityBtn].forEach(b => b && b.classList.remove('active'));
-  [tabHotkeys, tabAppearance, tabAuto, tabProxy, tabSecurity].forEach(c => c && c.classList.remove('active'));
+  [tabHotkeysBtn, tabAppearanceBtn, tabAutoBtn, tabProxyBtn, tabMihomoBtn, tabSecurityBtn].forEach(b => b && b.classList.remove('active'));
+  [tabHotkeys, tabAppearance, tabAuto, tabProxy, tabMihomo, tabSecurity].forEach(c => c && c.classList.remove('active'));
   if (btn) btn.classList.add('active');
   if (content) content.classList.add('active');
 }
@@ -1319,6 +1402,12 @@ tabProxyBtn.onclick = () => {
   selectTab(tabProxyBtn, tabProxy);
   loadProxySettings();
 };
+if (tabMihomoBtn) {
+  tabMihomoBtn.onclick = () => {
+    selectTab(tabMihomoBtn, tabMihomo);
+    loadMihomoTabState();
+  };
+}
 if (tabSecurityBtn) {
   tabSecurityBtn.onclick = () => {
     selectTab(tabSecurityBtn, tabSecurity);
@@ -1496,7 +1585,7 @@ if (uiApi && uiApi.onChanged) {
 const proxyApi = window.proxyAPI;
 const mihomoApi = window.mihomoAPI;
 const customPanel = document.getElementById('custom-proxy-panel');
-const mihomoPanel = document.getElementById('mihomo-proxy-panel');
+const quickMihomoPanel = document.getElementById('mihomo-quick-switch-panel');
 const cardSystem = document.getElementById('card-mode-system');
 const cardCustom = document.getElementById('card-mode-custom');
 const cardMihomo = document.getElementById('card-mode-mihomo');
@@ -1506,13 +1595,17 @@ const radCustom = document.getElementById('rad-mode-custom');
 const radMihomo = document.getElementById('rad-mode-mihomo');
 const radDirect = document.getElementById('rad-mode-direct');
 
-let currentMihomoSources = [];
-let currentMihomoNodes = [];
+const btnGotoMihomo = document.getElementById('btn-goto-mihomo-tab');
+if (btnGotoMihomo) {
+  btnGotoMihomo.onclick = () => {
+    if (tabMihomoBtn) tabMihomoBtn.click();
+  };
+}
 
 function updateModeUI(mode) {
   [cardSystem, cardCustom, cardMihomo, cardDirect].forEach(c => c && c.classList.remove('selected'));
   if (customPanel) customPanel.style.display = 'none';
-  if (mihomoPanel) mihomoPanel.style.display = 'none';
+  if (quickMihomoPanel) quickMihomoPanel.style.display = 'none';
 
   if (mode === 'custom') {
     cardCustom.classList.add('selected');
@@ -1521,7 +1614,7 @@ function updateModeUI(mode) {
   } else if (mode === 'mihomo') {
     cardMihomo.classList.add('selected');
     radMihomo.checked = true;
-    if (mihomoPanel) mihomoPanel.style.display = 'block';
+    if (quickMihomoPanel) quickMihomoPanel.style.display = 'flex';
   } else if (mode === 'direct') {
     cardDirect.classList.add('selected');
     radDirect.checked = true;
@@ -1562,13 +1655,332 @@ document.getElementById('link-fill-clash').onclick = (e) => {
   document.getElementById('txt-proxy-port').value = '7897';
 };
 
-function renderMihomoSourcesList(sources) {
+let currentMihomoSources = [];
+let currentMihomoNodes = [];
+let currentMihomoProfiles = [];
+let currentPortMap = {};
+let currentMihomoConfig = null;
+const nodeDelays = {};
+let nodeSearchKeyword = '';
+let nodeSortOrder = 'default';
+let activeEditingProfile = null;
+
+function escapeHtml(str) {
+  if (typeof str !== 'string') return '';
+  return str.replace(/[&<>"']/g, m => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[m]);
+}
+
+function getCountryFlag(name) {
+  if (!name) return '🌐';
+  const n = String(name).toUpperCase();
+  if (n.includes('香港') || n.includes('HK') || n.includes('HONG KONG')) return '🇭🇰';
+  if (n.includes('台湾') || n.includes('TW') || n.includes('TAIWAN')) return '🇨🇳';
+  if (n.includes('日本') || n.includes('JP') || n.includes('JAPAN')) return '🇯🇵';
+  if (n.includes('美国') || n.includes('US') || n.includes('UNITED STATES')) return '🇺🇸';
+  if (n.includes('新加坡') || n.includes('SG') || n.includes('SINGAPORE')) return '🇸🇬';
+  if (n.includes('韩国') || n.includes('KR') || n.includes('KOREA')) return '🇰🇷';
+  if (n.includes('英国') || n.includes('UK') || n.includes('GB') || n.includes('BRITAIN')) return '🇬🇧';
+  if (n.includes('德国') || n.includes('DE') || n.includes('GERMANY')) return '🇩🇪';
+  if (n.includes('法国') || n.includes('FR') || n.includes('FRANCE')) return '🇫🇷';
+  if (n.includes('加拿大') || n.includes('CA') || n.includes('CANADA')) return '🇨🇦';
+  if (n.includes('澳大利亚') || n.includes('AU') || n.includes('AUSTRALIA')) return '🇦🇺';
+  if (n.includes('直连') || n.includes('DIRECT')) return '⚡';
+  return '🌐';
+}
+
+// ---- Tab Mihomo: 1. 内核运行控制 ----
+const btnTabCoreStart = document.getElementById('btn-tab-mihomo-start');
+const btnTabCoreStop = document.getElementById('btn-tab-mihomo-stop');
+const btnTabCoreRestart = document.getElementById('btn-tab-mihomo-restart');
+const btnTabChooseBin = document.getElementById('btn-tab-mihomo-choose-bin');
+
+if (btnTabCoreStart) {
+  btnTabCoreStart.onclick = async () => {
+    btnTabCoreStart.disabled = true;
+    const msgEl = document.getElementById('tab-mihomo-core-msg');
+    if (msgEl) {
+      msgEl.style.color = '#7aa2ff';
+      msgEl.textContent = '正在启动 Mihomo 内核...';
+    }
+    try {
+      const res = mihomoApi.startKernel ? await mihomoApi.startKernel() : await mihomoApi.setConfig({ enabled: true });
+      if (res && res.ok) {
+        if (msgEl) {
+          msgEl.style.color = '#7ee2a8';
+          msgEl.textContent = 'Mihomo 内核已启动，各账号出口已就绪。';
+        }
+      } else {
+        if (msgEl) {
+          msgEl.style.color = '#ff9a9a';
+          msgEl.textContent = '启动失败: ' + ((res && res.error) || '未知错误');
+        }
+      }
+      await loadMihomoTabState();
+    } catch (err) {
+      if (msgEl) {
+        msgEl.style.color = '#ff9a9a';
+        msgEl.textContent = '启动出错: ' + err.message;
+      }
+    } finally {
+      btnTabCoreStart.disabled = false;
+    }
+  };
+}
+
+if (btnTabCoreStop) {
+  btnTabCoreStop.onclick = async () => {
+    btnTabCoreStop.disabled = true;
+    const msgEl = document.getElementById('tab-mihomo-core-msg');
+    if (msgEl) {
+      msgEl.style.color = '#7aa2ff';
+      msgEl.textContent = '正在停止 Mihomo 内核...';
+    }
+    try {
+      const res = mihomoApi.stopKernel ? await mihomoApi.stopKernel() : await mihomoApi.setConfig({ enabled: false });
+      if (res && res.ok) {
+        if (msgEl) {
+          msgEl.style.color = '#cfd3dc';
+          msgEl.textContent = 'Mihomo 内核已停止。';
+        }
+      } else {
+        if (msgEl) {
+          msgEl.style.color = '#ff9a9a';
+          msgEl.textContent = '停止失败: ' + ((res && res.error) || '未知错误');
+        }
+      }
+      await loadMihomoTabState();
+    } catch (err) {
+      if (msgEl) {
+        msgEl.style.color = '#ff9a9a';
+        msgEl.textContent = '停止出错: ' + err.message;
+      }
+    } finally {
+      btnTabCoreStop.disabled = false;
+    }
+  };
+}
+
+if (btnTabCoreRestart) {
+  btnTabCoreRestart.onclick = async () => {
+    btnTabCoreRestart.disabled = true;
+    const msgEl = document.getElementById('tab-mihomo-core-msg');
+    if (msgEl) {
+      msgEl.style.color = '#7aa2ff';
+      msgEl.textContent = '正在重启 Mihomo 内核并重载最新节点配置...';
+    }
+    try {
+      const res = await mihomoApi.restartKernel();
+      if (res && res.ok) {
+        if (msgEl) {
+          msgEl.style.color = '#7ee2a8';
+          msgEl.textContent = 'Mihomo 内核已成功重启并生效！';
+        }
+      } else {
+        if (msgEl) {
+          msgEl.style.color = '#ff9a9a';
+          msgEl.textContent = '重启失败: ' + ((res && res.error) || '未知错误');
+        }
+      }
+      await loadMihomoTabState();
+    } catch (err) {
+      if (msgEl) {
+        msgEl.style.color = '#ff9a9a';
+        msgEl.textContent = '重启出错: ' + err.message;
+      }
+    } finally {
+      btnTabCoreRestart.disabled = false;
+    }
+  };
+}
+
+if (btnTabChooseBin) {
+  btnTabChooseBin.onclick = async () => {
+    if (!mihomoApi || !mihomoApi.chooseCustomBin) return;
+    const res = await mihomoApi.chooseCustomBin();
+    if (res && res.ok) {
+      const msgEl = document.getElementById('tab-mihomo-core-msg');
+      if (msgEl) {
+        msgEl.style.color = '#7ee2a8';
+        msgEl.textContent = '已指定内核: ' + res.filePath;
+      }
+      await loadMihomoTabState();
+    }
+  };
+}
+
+// ---- Tab Mihomo: 2. 多配置源管理 (订阅与本地导入) ----
+const btnTabShowAddUrl = document.getElementById('btn-tab-show-add-url');
+const formTabAddUrl = document.getElementById('form-tab-add-url-container');
+const btnTabCancelAddUrl = document.getElementById('btn-tab-cancel-add-url');
+const btnTabConfirmAddUrl = document.getElementById('btn-tab-confirm-add-url');
+const btnTabImportYaml = document.getElementById('btn-tab-import-local-yaml');
+const btnTabSyncAllSources = document.getElementById('btn-tab-sync-all-sources');
+
+if (btnTabShowAddUrl && formTabAddUrl) {
+  btnTabShowAddUrl.onclick = () => {
+    formTabAddUrl.style.display = formTabAddUrl.style.display === 'none' ? 'block' : 'none';
+    if (formTabAddUrl.style.display === 'block') {
+      document.getElementById('txt-tab-new-source-url')?.focus();
+    }
+  };
+}
+
+if (btnTabCancelAddUrl && formTabAddUrl) {
+  btnTabCancelAddUrl.onclick = () => {
+    formTabAddUrl.style.display = 'none';
+    const nameInp = document.getElementById('txt-tab-new-source-name');
+    const urlInp = document.getElementById('txt-tab-new-source-url');
+    if (nameInp) nameInp.value = '';
+    if (urlInp) urlInp.value = '';
+  };
+}
+
+if (btnTabConfirmAddUrl) {
+  btnTabConfirmAddUrl.onclick = async () => {
+    const nameInp = document.getElementById('txt-tab-new-source-name');
+    const urlInp = document.getElementById('txt-tab-new-source-url');
+    const statusEl = document.getElementById('tab-mihomo-sources-status');
+    const url = (urlInp?.value || '').trim();
+    const name = (nameInp?.value || '').trim();
+
+    if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+      if (statusEl) {
+        statusEl.style.color = '#ff9a9a';
+        statusEl.textContent = '请输入以 http:// 或 https:// 开头的有效订阅链接';
+      }
+      return;
+    }
+
+    btnTabConfirmAddUrl.disabled = true;
+    btnTabConfirmAddUrl.textContent = '添加拉取中...';
+    if (statusEl) {
+      statusEl.style.color = '#7aa2ff';
+      statusEl.textContent = '正在下载并解析机场订阅节点...';
+    }
+
+    try {
+      const res = await mihomoApi.addSource({
+        type: 'url',
+        name: name || '机场订阅',
+        target: url
+      });
+      if (res && res.ok) {
+        if (statusEl) {
+          statusEl.style.color = '#7ee2a8';
+          statusEl.textContent = '成功添加订阅 [' + res.source.name + ']！获取到 ' + res.source.nodeCount + ' 个节点，总计 ' + res.totalNodes + ' 节点';
+        }
+        if (formTabAddUrl) formTabAddUrl.style.display = 'none';
+        if (nameInp) nameInp.value = '';
+        if (urlInp) urlInp.value = '';
+        await loadMihomoTabState();
+      } else {
+        if (statusEl) {
+          statusEl.style.color = '#ff9a9a';
+          statusEl.textContent = '添加失败: ' + ((res && res.error) || '解析订阅失败');
+        }
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.style.color = '#ff9a9a';
+        statusEl.textContent = '添加出错: ' + err.message;
+      }
+    } finally {
+      btnTabConfirmAddUrl.disabled = false;
+      btnTabConfirmAddUrl.textContent = '确认添加';
+    }
+  };
+}
+
+if (btnTabImportYaml) {
+  btnTabImportYaml.onclick = async () => {
+    const statusEl = document.getElementById('tab-mihomo-sources-status');
+    try {
+      const pickRes = await mihomoApi.chooseLocalYaml();
+      if (!pickRes || pickRes.canceled || !pickRes.filePath) return;
+
+      btnTabImportYaml.disabled = true;
+      if (statusEl) {
+        statusEl.style.color = '#7aa2ff';
+        statusEl.textContent = '正在读取本地 YAML 文件: ' + pickRes.filePath + '...';
+      }
+
+      const res = await mihomoApi.addSource({
+        type: 'file',
+        name: pickRes.defaultName,
+        target: pickRes.filePath
+      });
+
+      if (res && res.ok) {
+        if (statusEl) {
+          statusEl.style.color = '#7ee2a8';
+          statusEl.textContent = '成功导入本地 YAML [' + res.source.name + ']，解析到 ' + res.source.nodeCount + ' 个节点！';
+        }
+        await loadMihomoTabState();
+      } else {
+        if (statusEl) {
+          statusEl.style.color = '#ff9a9a';
+          statusEl.textContent = '导入失败: ' + ((res && res.error) || '未能解析出有效代理节点');
+        }
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.style.color = '#ff9a9a';
+        statusEl.textContent = '导入出错: ' + err.message;
+      }
+    } finally {
+      btnTabImportYaml.disabled = false;
+    }
+  };
+}
+
+if (btnTabSyncAllSources) {
+  btnTabSyncAllSources.onclick = async () => {
+    const statusEl = document.getElementById('tab-mihomo-sources-status');
+    btnTabSyncAllSources.disabled = true;
+    btnTabSyncAllSources.textContent = '同步中...';
+    if (statusEl) {
+      statusEl.style.color = '#7aa2ff';
+      statusEl.textContent = '正在并发同步所有已启用的订阅与本地文件...';
+    }
+    try {
+      const res = await mihomoApi.syncAllSources();
+      if (res && res.ok) {
+        if (statusEl) {
+          statusEl.style.color = '#7ee2a8';
+          statusEl.textContent = '全部同步完成！成功更新 ' + res.successCount + ' 个源，合并有效节点: ' + res.totalNodes;
+        }
+        await loadMihomoTabState();
+      } else {
+        if (statusEl) {
+          statusEl.style.color = '#ff9a9a';
+          statusEl.textContent = '同步出错: ' + ((res && res.error) || '部分源更新失败');
+        }
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.style.color = '#ff9a9a';
+        statusEl.textContent = '同步出错: ' + err.message;
+      }
+    } finally {
+      btnTabSyncAllSources.disabled = false;
+      btnTabSyncAllSources.textContent = '🔄 全部同步';
+    }
+  };
+}
+
+function renderTabMihomoSources(sources) {
   currentMihomoSources = Array.isArray(sources) ? sources : [];
-  const container = document.getElementById('mihomo-sources-container');
-  const summaryEl = document.getElementById('lbl-sources-summary');
+  const container = document.getElementById('tab-mihomo-sources-container');
+  const summaryEl = document.getElementById('tab-sources-summary');
   const activeCount = currentMihomoSources.filter(s => s && s.enabled).length;
   if (summaryEl) {
-    summaryEl.textContent = `已启用 ${activeCount}/${currentMihomoSources.length} 个源 · 合并有效节点 ${currentMihomoNodes.length} 个`;
+    summaryEl.textContent = '已启用 ' + activeCount + '/' + currentMihomoSources.length + ' 个源 · 合并有效节点 ' + currentMihomoNodes.length + ' 个';
   }
   if (!container) return;
   container.innerHTML = '';
@@ -1582,7 +1994,6 @@ function renderMihomoSourcesList(sources) {
     const card = document.createElement('div');
     card.style.cssText = 'display:flex; align-items:center; justify-content:space-between; background:#16181d; border:1px solid #2d323e; border-radius:6px; padding:7px 10px; gap:8px;';
 
-    // 左侧详细信息
     const left = document.createElement('div');
     left.style.cssText = 'display:flex; align-items:center; gap:8px; min-width:0; flex:1;';
 
@@ -1592,20 +2003,20 @@ function renderMihomoSourcesList(sources) {
     chk.checked = !!src.enabled;
     chk.title = src.enabled ? '已启用 (点击禁用)' : '已禁用 (点击启用)';
     chk.onchange = async () => {
-      const statusEl = document.getElementById('mihomo-sub-status');
+      const statusEl = document.getElementById('tab-mihomo-sources-status');
       chk.disabled = true;
       try {
         if (statusEl) {
           statusEl.style.color = '#7aa2ff';
-          statusEl.textContent = `正在${chk.checked ? '启用' : '禁用'}源 [${src.name}] 并重新合并节点...`;
+          statusEl.textContent = '正在' + (chk.checked ? '启用' : '禁用') + '源 [' + src.name + '] 并重新合并节点...';
         }
-        const res = await mihomoApi.updateSource(src.id, { enabled: chk.checked });
+        const res = await mihomoApi.updateSource({ id: src.id, enabled: chk.checked });
         if (res && res.ok) {
           if (statusEl) {
             statusEl.style.color = '#7ee2a8';
-            statusEl.textContent = `源 [${src.name}] 状态已更新，当前合并总节点: ${res.totalNodes}`;
+            statusEl.textContent = '源 [' + src.name + '] 状态已更新，当前合并总节点: ' + res.totalNodes;
           }
-          await loadMihomoState();
+          await loadMihomoTabState();
         } else {
           chk.checked = !chk.checked;
           if (statusEl) {
@@ -1643,7 +2054,7 @@ function renderMihomoSourcesList(sources) {
 
     const countSpan = document.createElement('span');
     countSpan.style.cssText = 'font-size:10.5px; color:#8a909d;';
-    countSpan.textContent = `(${src.nodeCount || 0} 节点)`;
+    countSpan.textContent = '(' + (src.nodeCount || 0) + ' 节点)';
 
     titleRow.appendChild(nameSpan);
     titleRow.appendChild(countSpan);
@@ -1660,7 +2071,6 @@ function renderMihomoSourcesList(sources) {
     left.appendChild(typeBadge);
     left.appendChild(infoWrap);
 
-    // 右侧操作按钮
     const right = document.createElement('div');
     right.style.cssText = 'display:flex; align-items:center; gap:4px; flex-shrink:0;';
 
@@ -1671,25 +2081,25 @@ function renderMihomoSourcesList(sources) {
     syncBtn.textContent = src.type === 'file' ? '重新载入' : '同步';
     syncBtn.title = src.type === 'file' ? '重新读取本地 YAML 节点' : '拉取并更新此订阅节点';
     syncBtn.onclick = async () => {
-      const statusEl = document.getElementById('mihomo-sub-status');
+      const statusEl = document.getElementById('tab-mihomo-sources-status');
       syncBtn.disabled = true;
       syncBtn.textContent = '...';
       if (statusEl) {
         statusEl.style.color = '#7aa2ff';
-        statusEl.textContent = `正在同步更新 [${src.name}]...`;
+        statusEl.textContent = '正在同步更新 [' + src.name + ']...';
       }
       try {
         const res = await mihomoApi.syncSource(src.id);
         if (res && res.ok) {
           if (statusEl) {
             statusEl.style.color = '#7ee2a8';
-            statusEl.textContent = `[${src.name}] 同步成功！解析到 ${res.nodeCount} 个节点，合并总计: ${res.totalNodes}`;
+            statusEl.textContent = '[' + src.name + '] 同步成功！解析到 ' + res.nodeCount + ' 个节点，合并总计: ' + res.totalNodes;
           }
-          await loadMihomoState();
+          await loadMihomoTabState();
         } else {
           if (statusEl) {
             statusEl.style.color = '#ff9a9a';
-            statusEl.textContent = `[${src.name}] 同步失败: ` + ((res && res.error) || '未知错误');
+            statusEl.textContent = '[' + src.name + '] 同步失败: ' + ((res && res.error) || '未知错误');
           }
         }
       } catch (err) {
@@ -1710,17 +2120,17 @@ function renderMihomoSourcesList(sources) {
     delBtn.textContent = '✕';
     delBtn.title = '删除此源';
     delBtn.onclick = async () => {
-      if (!confirm(`确定要移除配置源 "${src.name}" 吗？`)) return;
+      if (!confirm('确定要移除配置源 "' + src.name + '" 吗？')) return;
       delBtn.disabled = true;
-      const statusEl = document.getElementById('mihomo-sub-status');
+      const statusEl = document.getElementById('tab-mihomo-sources-status');
       try {
         const res = await mihomoApi.removeSource(src.id);
         if (res && res.ok) {
           if (statusEl) {
             statusEl.style.color = '#7ee2a8';
-            statusEl.textContent = `已删除配置源 [${src.name}]，当前剩余节点: ${res.totalNodes}`;
+            statusEl.textContent = '已删除配置源 [' + src.name + ']，当前剩余节点: ' + res.totalNodes;
           }
-          await loadMihomoState();
+          await loadMihomoTabState();
         } else {
           if (statusEl) {
             statusEl.style.color = '#ff9a9a';
@@ -1746,426 +2156,437 @@ function renderMihomoSourcesList(sources) {
   });
 }
 
-function renderMihomoNodeList(nodes) {
-  currentMihomoNodes = Array.isArray(nodes) ? nodes : [];
-  const listEl = document.getElementById('mihomo-node-list');
-  const countEl = document.getElementById('lbl-node-count');
-  if (countEl) countEl.textContent = `已同步生效节点 (${currentMihomoNodes.length})`;
-  const summaryEl = document.getElementById('lbl-sources-summary');
-  if (summaryEl && Array.isArray(currentMihomoSources)) {
-    const activeCount = currentMihomoSources.filter(s => s && s.enabled).length;
-    summaryEl.textContent = `已启用 ${activeCount}/${currentMihomoSources.length} 个源 · 合并有效节点 ${currentMihomoNodes.length} 个`;
-  }
-  if (!listEl) return;
-  listEl.innerHTML = '';
-  if (currentMihomoNodes.length === 0) {
-    listEl.innerHTML = '<div style="color:#8a909d;font-size:11px;text-align:center;padding:10px;">暂无可用节点，请在上方添加订阅或导入本地 YAML 并开启</div>';
+// ---- Tab Mihomo: 3. Proxy 分组与各账号专属出口 ----
+function renderTabMihomoAccounts(profiles, portMap, allNodes) {
+  currentMihomoProfiles = Array.isArray(profiles) ? profiles : [];
+  currentPortMap = portMap || {};
+  const container = document.getElementById('tab-mihomo-accounts-container');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (currentMihomoProfiles.length === 0) {
+    container.innerHTML = '<div style="color:#8a909d;font-size:11.5px;text-align:center;padding:12px;">暂无账号数据</div>';
     return;
   }
-  currentMihomoNodes.forEach((node, idx) => {
+
+  currentMihomoProfiles.forEach((prof) => {
+    const card = document.createElement('div');
+    card.style.cssText = 'display:flex; align-items:center; justify-content:space-between; background:#16181d; border:1px solid #2d323e; border-radius:6px; padding:7px 10px; gap:8px;';
+
+    const left = document.createElement('div');
+    left.style.cssText = 'min-width:0; flex:1;';
+
+    const topRow = document.createElement('div');
+    topRow.style.cssText = 'display:flex; align-items:center; gap:6px;';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.style.cssText = 'font-size:12px; font-weight:600; color:#e8eaf0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;';
+    nameSpan.textContent = prof.name || prof.id;
+
+    const port = currentPortMap[prof.id];
+    const portBadge = document.createElement('span');
+    portBadge.style.cssText = 'font-family:Consolas, monospace; font-size:11px; font-weight:600; padding:1px 6px; border-radius:3px; background:rgba(126,226,168,0.15); color:#7ee2a8; border:1px solid rgba(126,226,168,0.3);';
+    portBadge.textContent = port ? ':' + port : '端口未就绪';
+
+    const stratBadge = document.createElement('span');
+    stratBadge.style.cssText = 'font-size:10px; padding:1px 5px; border-radius:3px; background:#23262e; color:#94a3b8; border:1px solid #3a3f4b;';
+    stratBadge.textContent = prof.proxyStrategy || 'fallback';
+
+    topRow.appendChild(nameSpan);
+    topRow.appendChild(portBadge);
+    topRow.appendChild(stratBadge);
+
+    const descRow = document.createElement('div');
+    descRow.style.cssText = 'font-size:11px; color:#8a909d; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+    const queueLen = Array.isArray(prof.proxyQueue) ? prof.proxyQueue.length : 0;
+    if (queueLen > 0) {
+      descRow.textContent = '专属节点队列: ' + queueLen + ' 个节点 · 优先: ' + prof.proxyQueue[0];
+    } else {
+      descRow.textContent = '默认策略队列: 全部 ' + allNodes.length + ' 个可用节点轮转';
+    }
+
+    left.appendChild(topRow);
+    left.appendChild(descRow);
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'action';
+    editBtn.style.cssText = 'padding:3px 10px; font-size:11.5px; flex-shrink:0;';
+    editBtn.textContent = '⚙ 配置出口';
+    editBtn.onclick = () => openAccountProxyQueueModal(prof, allNodes);
+
+    card.appendChild(left);
+    card.appendChild(editBtn);
+    container.appendChild(card);
+  });
+}
+
+// 账号专属队列编辑弹窗
+const modalQueueBackdrop = document.getElementById('modal-account-queue-backdrop');
+const btnCloseQueueModal = document.getElementById('btn-close-queue-modal');
+const btnCancelQueueModal = document.getElementById('btn-modal-cancel-queue');
+const btnSaveQueueModal = document.getElementById('btn-modal-save-queue');
+const btnModalSelectAll = document.getElementById('btn-modal-select-all');
+const btnModalClearAll = document.getElementById('btn-modal-clear-all');
+
+function openAccountProxyQueueModal(profile, allNodes) {
+  activeEditingProfile = profile;
+  const titleEl = document.getElementById('modal-queue-title');
+  const selStrat = document.getElementById('sel-modal-queue-strategy');
+  const listEl = document.getElementById('modal-queue-nodes-list');
+
+  if (titleEl) titleEl.textContent = '配置账号 [' + (profile.name || profile.id) + '] 专属出口队列';
+  if (selStrat) selStrat.value = profile.proxyStrategy || 'fallback';
+  if (listEl) {
+    listEl.innerHTML = '';
+    const currentQueue = new Set(Array.isArray(profile.proxyQueue) ? profile.proxyQueue : []);
+    const isAllCheckedByDefault = currentQueue.size === 0;
+
+    allNodes.forEach((node) => {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:4px; cursor:pointer; font-size:11.5px; color:#cfd3dc; hover:background:#1e222a;';
+
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.value = node.name;
+      chk.checked = isAllCheckedByDefault ? true : currentQueue.has(node.name);
+
+      const flag = document.createElement('span');
+      flag.textContent = getCountryFlag(node.name);
+
+      const name = document.createElement('span');
+      name.style.cssText = 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;';
+      name.textContent = node.name;
+
+      row.appendChild(chk);
+      row.appendChild(flag);
+      row.appendChild(name);
+      listEl.appendChild(row);
+    });
+  }
+
+  if (modalQueueBackdrop) modalQueueBackdrop.style.display = 'flex';
+}
+
+function closeAccountProxyQueueModal() {
+  if (modalQueueBackdrop) modalQueueBackdrop.style.display = 'none';
+  activeEditingProfile = null;
+}
+
+if (btnCloseQueueModal) btnCloseQueueModal.onclick = closeAccountProxyQueueModal;
+if (btnCancelQueueModal) btnCancelQueueModal.onclick = closeAccountProxyQueueModal;
+
+if (btnModalSelectAll) {
+  btnModalSelectAll.onclick = () => {
+    const listEl = document.getElementById('modal-queue-nodes-list');
+    if (!listEl) return;
+    listEl.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = true);
+  };
+}
+
+if (btnModalClearAll) {
+  btnModalClearAll.onclick = () => {
+    const listEl = document.getElementById('modal-queue-nodes-list');
+    if (!listEl) return;
+    listEl.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = false);
+  };
+}
+
+if (btnSaveQueueModal) {
+  btnSaveQueueModal.onclick = async () => {
+    if (!activeEditingProfile) return;
+    const selStrat = document.getElementById('sel-modal-queue-strategy');
+    const listEl = document.getElementById('modal-queue-nodes-list');
+    const strategy = selStrat ? selStrat.value : 'fallback';
+    const checkedNodes = [];
+    if (listEl) {
+      listEl.querySelectorAll('input[type="checkbox"]:checked').forEach(c => checkedNodes.push(c.value));
+    }
+
+    btnSaveQueueModal.disabled = true;
+    btnSaveQueueModal.textContent = '保存中...';
+    try {
+      if (mihomoApi && mihomoApi.setProfileQueue) {
+        await mihomoApi.setProfileQueue({
+          profileId: activeEditingProfile.id,
+          proxyStrategy: strategy,
+          proxyQueue: checkedNodes
+        });
+      }
+      closeAccountProxyQueueModal();
+      await loadMihomoTabState();
+    } catch (err) {
+      alert('保存账号出口队列出错: ' + err.message);
+    } finally {
+      btnSaveQueueModal.disabled = false;
+      btnSaveQueueModal.textContent = '保存生效';
+    }
+  };
+}
+
+// ---- Tab Mihomo: 4. 节点池管理与全量/单节点测速 ----
+const txtTabNodeSearch = document.getElementById('txt-tab-node-search');
+const selTabNodeSort = document.getElementById('sel-tab-node-sort');
+const btnTabTestAll = document.getElementById('btn-tab-mihomo-test-all');
+
+if (txtTabNodeSearch) {
+  txtTabNodeSearch.oninput = () => {
+    nodeSearchKeyword = (txtTabNodeSearch.value || '').trim().toLowerCase();
+    renderTabMihomoNodes(currentMihomoNodes);
+  };
+}
+
+if (selTabNodeSort) {
+  selTabNodeSort.onchange = () => {
+    nodeSortOrder = selTabNodeSort.value || 'default';
+    renderTabMihomoNodes(currentMihomoNodes);
+  };
+}
+
+function renderTabMihomoNodes(nodes) {
+  currentMihomoNodes = Array.isArray(nodes) ? nodes : [];
+  const listEl = document.getElementById('tab-mihomo-node-list');
+  const countEl = document.getElementById('tab-nodes-count-summary');
+  if (!listEl) return;
+
+  // 1. 过滤
+  let filtered = currentMihomoNodes.filter((node) => {
+    if (!nodeSearchKeyword) return true;
+    const name = String(node && node.name || '').toLowerCase();
+    const type = String(node && node.type || '').toLowerCase();
+    return name.includes(nodeSearchKeyword) || type.includes(nodeSearchKeyword);
+  });
+
+  // 2. 排序
+  if (nodeSortOrder === 'latency-asc') {
+    filtered.sort((a, b) => {
+      const da = typeof nodeDelays[a.name] === 'number' ? nodeDelays[a.name] : 999999;
+      const db = typeof nodeDelays[b.name] === 'number' ? nodeDelays[b.name] : 999999;
+      return da - db;
+    });
+  } else if (nodeSortOrder === 'name-asc') {
+    filtered.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  }
+
+  if (countEl) {
+    countEl.textContent = '共 ' + currentMihomoNodes.length + ' 个节点' + (nodeSearchKeyword ? ' · 匹配 ' + filtered.length + ' 个' : '');
+  }
+
+  listEl.innerHTML = '';
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div style="color:#8a909d;font-size:11.5px;text-align:center;padding:16px;">暂无匹配节点</div>';
+    return;
+  }
+
+  filtered.forEach((node) => {
     const item = document.createElement('div');
     item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:5px 8px; border-bottom:1px solid #23262e; font-size:11.5px;';
 
     const infoWrap = document.createElement('div');
-    infoWrap.style.cssText = 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:260px;';
+    infoWrap.style.cssText = 'display:flex; align-items:center; gap:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:320px;';
     infoWrap.title = node && node.name ? node.name : '';
 
+    const flagSpan = document.createElement('span');
+    flagSpan.textContent = getCountryFlag(node.name);
+
     const typeSpan = document.createElement('span');
-    typeSpan.style.cssText = 'color:#818cf8; font-weight:600; margin-right:4px;';
-    typeSpan.textContent = `[${String((node && node.type) || '').toUpperCase()}]`;
+    typeSpan.style.cssText = 'color:#818cf8; font-weight:600; font-size:10px; padding:1px 4px; background:rgba(99,102,241,0.15); border-radius:3px;';
+    typeSpan.textContent = String((node && node.type) || '').toUpperCase();
 
     const nameSpan = document.createElement('span');
-    nameSpan.style.cssText = 'color:#cfd3dc;';
+    nameSpan.style.cssText = 'color:#cfd3dc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
     nameSpan.textContent = (node && node.name) || '';
 
+    infoWrap.appendChild(flagSpan);
     infoWrap.appendChild(typeSpan);
     infoWrap.appendChild(nameSpan);
 
-    const badge = document.createElement('div');
-    badge.id = `delay-badge-${idx}`;
-    badge.style.cssText = 'font-size:10.5px; color:#8a909d; min-width:50px; text-align:right;';
-    badge.textContent = '--';
+    const right = document.createElement('div');
+    right.style.cssText = 'display:flex; align-items:center; gap:8px; flex-shrink:0;';
+
+    const pill = document.createElement('span');
+    pill.style.cssText = 'font-size:11px; font-family:Consolas, monospace; min-width:55px; text-align:right; font-weight:600;';
+    const delayVal = nodeDelays[node.name];
+    if (typeof delayVal === 'number') {
+      pill.textContent = delayVal + 'ms';
+      pill.style.color = delayVal < 150 ? '#7ee2a8' : (delayVal < 300 ? '#fbbf24' : '#f97316');
+    } else if (delayVal === 'timeout' || delayVal === 'error') {
+      pill.textContent = delayVal === 'timeout' ? '超时' : '失败';
+      pill.style.color = '#ff9a9a';
+    } else {
+      pill.textContent = '--';
+      pill.style.color = '#8a909d';
+    }
+
+    const testBtn = document.createElement('button');
+    testBtn.type = 'button';
+    testBtn.className = 'action';
+    testBtn.style.cssText = 'padding:2px 7px; font-size:11px;';
+    testBtn.textContent = '测速';
+    testBtn.onclick = async () => {
+      await testSingleNode(node.name, pill, testBtn);
+    };
+
+    right.appendChild(pill);
+    right.appendChild(testBtn);
 
     item.appendChild(infoWrap);
-    item.appendChild(badge);
+    item.appendChild(right);
     listEl.appendChild(item);
   });
 }
 
-document.getElementById('btn-toggle-nodes').onclick = () => {
-  const listEl = document.getElementById('mihomo-node-list');
-  const txtEl = document.getElementById('txt-toggle-nodes');
-  if (!listEl) return;
-  const isHidden = listEl.style.display === 'none';
-  listEl.style.display = isHidden ? 'block' : 'none';
-  if (txtEl) txtEl.textContent = isHidden ? '收起列表 ▲' : '查看节点列表 ▼';
-};
-
-// 交互表单与操作按钮事件绑定
-const btnShowAddUrl = document.getElementById('btn-show-add-url');
-const formAddUrl = document.getElementById('form-add-url-container');
-const btnCancelAddUrl = document.getElementById('btn-cancel-add-url');
-const btnConfirmAddUrl = document.getElementById('btn-confirm-add-url');
-
-if (btnShowAddUrl && formAddUrl) {
-  btnShowAddUrl.onclick = () => {
-    formAddUrl.style.display = formAddUrl.style.display === 'none' ? 'block' : 'none';
-    if (formAddUrl.style.display === 'block') {
-      document.getElementById('txt-new-source-url')?.focus();
-    }
-  };
-}
-
-if (btnCancelAddUrl && formAddUrl) {
-  btnCancelAddUrl.onclick = () => {
-    formAddUrl.style.display = 'none';
-    const nameInput = document.getElementById('txt-new-source-name');
-    const urlInput = document.getElementById('txt-new-source-url');
-    if (nameInput) nameInput.value = '';
-    if (urlInput) urlInput.value = '';
-  };
-}
-
-if (btnConfirmAddUrl) {
-  btnConfirmAddUrl.onclick = async () => {
-    const nameInput = document.getElementById('txt-new-source-name');
-    const urlInput = document.getElementById('txt-new-source-url');
-    const statusEl = document.getElementById('mihomo-sub-status');
-    const url = (urlInput?.value || '').trim();
-    const name = (nameInput?.value || '').trim();
-
-    if (!url) {
-      if (statusEl) {
-        statusEl.style.color = '#ff9a9a';
-        statusEl.textContent = '请先输入有效的机场订阅链接 (http/https)';
-      }
-      return;
-    }
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      if (statusEl) {
-        statusEl.style.color = '#ff9a9a';
-        statusEl.textContent = '订阅链接必须以 http:// 或 https:// 开头';
-      }
-      return;
-    }
-
-    btnConfirmAddUrl.disabled = true;
-    btnConfirmAddUrl.textContent = '添加并拉取中...';
-    if (statusEl) {
-      statusEl.style.color = '#7aa2ff';
-      statusEl.textContent = '正在连接机场服务器下载并解析 Clash YAML 节点...';
-    }
-
-    try {
-      const res = await mihomoApi.addSource({
-        type: 'url',
-        name: name || '机场订阅',
-        target: url
-      });
-      if (res && res.ok) {
-        if (statusEl) {
-          statusEl.style.color = '#7ee2a8';
-          statusEl.textContent = `成功添加订阅 [${res.source.name}]！解析出 ${res.source.nodeCount} 个节点，当前合并总节点: ${res.totalNodes}`;
-        }
-        if (formAddUrl) formAddUrl.style.display = 'none';
-        if (nameInput) nameInput.value = '';
-        if (urlInput) urlInput.value = '';
-        await loadMihomoState();
-      } else {
-        if (statusEl) {
-          statusEl.style.color = '#ff9a9a';
-          statusEl.textContent = '添加失败: ' + ((res && res.error) || '无法下载或解析订阅');
-        }
-      }
-    } catch (err) {
-      if (statusEl) {
-        statusEl.style.color = '#ff9a9a';
-        statusEl.textContent = '添加出错: ' + err.message;
-      }
-    } finally {
-      btnConfirmAddUrl.disabled = false;
-      btnConfirmAddUrl.textContent = '确认添加';
-    }
-  };
-}
-
-const btnImportYaml = document.getElementById('btn-import-local-yaml');
-if (btnImportYaml) {
-  btnImportYaml.onclick = async () => {
-    const statusEl = document.getElementById('mihomo-sub-status');
-    try {
-      const pickRes = await mihomoApi.chooseLocalYaml();
-      if (!pickRes || pickRes.canceled || !pickRes.filePath) return;
-
-      btnImportYaml.disabled = true;
-      if (statusEl) {
-        statusEl.style.color = '#7aa2ff';
-        statusEl.textContent = `正在读取并解析本地 YAML 文件: ${pickRes.filePath}...`;
-      }
-
-      const res = await mihomoApi.addSource({
-        type: 'file',
-        name: pickRes.defaultName,
-        target: pickRes.filePath
-      });
-
-      if (res && res.ok) {
-        if (statusEl) {
-          statusEl.style.color = '#7ee2a8';
-          statusEl.textContent = `已成功导入本地 YAML [${res.source.name}]，包含 ${res.source.nodeCount} 个节点！当前合并总节点: ${res.totalNodes}`;
-        }
-        await loadMihomoState();
-      } else {
-        if (statusEl) {
-          statusEl.style.color = '#ff9a9a';
-          statusEl.textContent = '导入失败: ' + ((res && res.error) || '未能解析出有效代理节点');
-        }
-      }
-    } catch (err) {
-      if (statusEl) {
-        statusEl.style.color = '#ff9a9a';
-        statusEl.textContent = '导入出错: ' + err.message;
-      }
-    } finally {
-      btnImportYaml.disabled = false;
-    }
-  };
-}
-
-const btnSyncAllSources = document.getElementById('btn-sync-all-sources');
-if (btnSyncAllSources) {
-  btnSyncAllSources.onclick = async () => {
-    const statusEl = document.getElementById('mihomo-sub-status');
-    btnSyncAllSources.disabled = true;
-    btnSyncAllSources.textContent = '同步中...';
-    if (statusEl) {
-      statusEl.style.color = '#7aa2ff';
-      statusEl.textContent = '正在并发同步所有已启用的订阅与本地文件...';
-    }
-    try {
-      const res = await mihomoApi.syncAllSources();
-      if (res && res.ok) {
-        if (statusEl) {
-          statusEl.style.color = '#7ee2a8';
-          statusEl.textContent = `全部同步完成！成功更新 ${res.successCount} 个源，合并有效节点: ${res.totalNodes}`;
-        }
-        await loadMihomoState();
-      } else {
-        if (statusEl) {
-          statusEl.style.color = '#ff9a9a';
-          statusEl.textContent = '同步出错: ' + ((res && res.error) || '部分源更新失败');
-        }
-      }
-    } catch (err) {
-      if (statusEl) {
-        statusEl.style.color = '#ff9a9a';
-        statusEl.textContent = '同步出错: ' + err.message;
-      }
-    } finally {
-      btnSyncAllSources.disabled = false;
-      btnSyncAllSources.textContent = '🔄 全部同步';
-    }
-  };
-}
-
-async function ensureMihomoKernelStarted() {
-  if (!mihomoApi) return { ok: false, error: 'mihomoAPI 不可用' };
-  const mCfg = await mihomoApi.getConfig();
-  if (mCfg && mCfg.isRunning) return { ok: true, mCfg };
-
-  const statusEl = document.getElementById('mihomo-sub-status');
-  if (statusEl) {
-    statusEl.style.color = '#7aa2ff';
-    statusEl.textContent = '正在启动内置 Mihomo 内核进程...';
+async function testSingleNode(nodeName, pillEl, btnEl) {
+  if (!nodeName) return;
+  if (btnEl) btnEl.disabled = true;
+  if (pillEl) {
+    pillEl.textContent = '...';
+    pillEl.style.color = '#7aa2ff';
   }
-  const res = await mihomoApi.setConfig({ enabled: true });
-  if (!res || !res.ok) {
-    const errMsg = (res && res.error) || '内核启动失败';
-    if (statusEl) {
-      statusEl.style.color = '#ff9a9a';
-      statusEl.textContent = '内核启动失败: ' + errMsg;
-    }
-    return { ok: false, error: errMsg };
-  }
-  updateModeUI('mihomo');
-  const updatedCfg = await loadMihomoState();
-  if (statusEl) {
-    statusEl.style.color = '#7ee2a8';
-    statusEl.textContent = 'Mihomo 内核已成功启动！各账号独立出口端口已生效。';
-  }
-  return { ok: true, mCfg: updatedCfg };
-}
-
-const btnMihomoStart = document.getElementById('btn-mihomo-start');
-if (btnMihomoStart) {
-  btnMihomoStart.onclick = async () => {
-    btnMihomoStart.disabled = true;
-    btnMihomoStart.textContent = '启动中...';
-    try {
-      await ensureMihomoKernelStarted();
-    } finally {
-      btnMihomoStart.disabled = false;
-    }
-  };
-}
-
-const btnMihomoChooseBin = document.getElementById('btn-mihomo-choose-bin');
-if (btnMihomoChooseBin) {
-  btnMihomoChooseBin.onclick = async () => {
-    if (!mihomoApi || !mihomoApi.chooseCustomBin) return;
-    const res = await mihomoApi.chooseCustomBin();
-    if (res && res.ok) {
-      await loadMihomoState();
-      const curMode = document.querySelector('input[name="proxy-mode"]:checked')?.value;
-      if (curMode === 'mihomo') {
-        await mihomoApi.setConfig({ enabled: true });
-        await loadMihomoState();
-      }
-    }
-  };
-}
-
-document.getElementById('btn-mihomo-test-all').onclick = async () => {
-  if (!currentMihomoNodes || currentMihomoNodes.length === 0) return;
-  const btn = document.getElementById('btn-mihomo-test-all');
-  btn.disabled = true;
-  btn.textContent = '启动内核...';
-
   try {
-    // 若内核尚未运行，先自动按需启动并刷新端口映射，避免全员误报“超时”
-    const bootRes = await ensureMihomoKernelStarted();
-    if (!bootRes || !bootRes.ok) {
-      return;
-    }
-
-    // 测速时自动展开节点列表以便实时观察延迟色标
-    const listEl = document.getElementById('mihomo-node-list');
-    const txtEl = document.getElementById('txt-toggle-nodes');
-    if (listEl && listEl.style.display === 'none') {
-      listEl.style.display = 'block';
-      if (txtEl) txtEl.textContent = '收起列表 ▲';
-    }
-
-    btn.textContent = '测速中...';
-
-    // 1. 先重置所有节点的测速占位徽章
-    for (let i = 0; i < currentMihomoNodes.length; i++) {
-      const badge = document.getElementById(`delay-badge-${i}`);
-      if (badge) {
-        badge.textContent = '...';
-        badge.style.color = '#7aa2ff';
+    const res = await mihomoApi.testDelay(nodeName);
+    if (res && res.ok && typeof res.delay === 'number') {
+      nodeDelays[nodeName] = res.delay;
+      if (pillEl) {
+        pillEl.textContent = res.delay + 'ms';
+        pillEl.style.color = res.delay < 150 ? '#7ee2a8' : (res.delay < 300 ? '#fbbf24' : '#f97316');
+      }
+    } else {
+      nodeDelays[nodeName] = 'timeout';
+      if (pillEl) {
+        pillEl.textContent = '超时';
+        pillEl.style.color = '#ff9a9a';
       }
     }
+  } catch (_) {
+    nodeDelays[nodeName] = 'error';
+    if (pillEl) {
+      pillEl.textContent = '错误';
+      pillEl.style.color = '#ff9a9a';
+    }
+  } finally {
+    if (btnEl) btnEl.disabled = false;
+  }
+}
 
-    // 2. 并发池并发测速 (CONCURRENCY = 6) 极大缩短全量探测耗时
-    const CONCURRENCY = 6;
-    let cursor = 0;
-    async function testWorker() {
-      while (cursor < currentMihomoNodes.length) {
-        const idx = cursor++;
-        const node = currentMihomoNodes[idx];
-        const badge = document.getElementById(`delay-badge-${idx}`);
-        try {
-          const res = await mihomoApi.testDelay(node.name);
-          if (badge) {
+if (btnTabTestAll) {
+  btnTabTestAll.onclick = async () => {
+    if (!currentMihomoNodes || currentMihomoNodes.length === 0) return;
+    btnTabTestAll.disabled = true;
+    btnTabTestAll.textContent = '并发测速中...';
+
+    try {
+      const CONCURRENCY = 6;
+      let cursor = 0;
+      async function testWorker() {
+        while (cursor < currentMihomoNodes.length) {
+          const idx = cursor++;
+          const node = currentMihomoNodes[idx];
+          try {
+            const res = await mihomoApi.testDelay(node.name);
             if (res && res.ok && typeof res.delay === 'number') {
-              badge.textContent = `${res.delay}ms`;
-              badge.style.color = res.delay < 300 ? '#7ee2a8' : (res.delay < 800 ? '#fbbf24' : '#ff9a9a');
-            } else if (res && res.error && res.error.includes('未运行')) {
-              badge.textContent = '未启动';
-              badge.style.color = '#ff9a9a';
+              nodeDelays[node.name] = res.delay;
             } else {
-              badge.textContent = '超时';
-              badge.style.color = '#ff9a9a';
+              nodeDelays[node.name] = 'timeout';
             }
+          } catch (_) {
+            nodeDelays[node.name] = 'error';
           }
-        } catch (_) {
-          if (badge) {
-            badge.textContent = '错误';
-            badge.style.color = '#ff9a9a';
-          }
+          renderTabMihomoNodes(currentMihomoNodes);
         }
       }
-    }
 
-    const pool = [];
-    for (let c = 0; c < Math.min(CONCURRENCY, currentMihomoNodes.length); c++) {
-      pool.push(testWorker());
+      const pool = [];
+      for (let c = 0; c < Math.min(CONCURRENCY, currentMihomoNodes.length); c++) {
+        pool.push(testWorker());
+      }
+      await Promise.all(pool);
+    } finally {
+      btnTabTestAll.disabled = false;
+      btnTabTestAll.textContent = '⚡ 一键全节点测速';
+      renderTabMihomoNodes(currentMihomoNodes);
     }
-    await Promise.all(pool);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '一键全节点测速';
-  }
-};
+  };
+}
 
-async function loadMihomoState() {
-  if (!mihomoApi) return;
+// ---- 加载与同步 Tab Mihomo 整体状态 ----
+async function loadMihomoTabState() {
+  if (!mihomoApi) return null;
   try {
     const mCfg = await mihomoApi.getConfig();
-    if (mCfg) {
-      currentMihomoSources = Array.isArray(mCfg.sources) ? mCfg.sources : [];
-      renderMihomoSourcesList(currentMihomoSources);
+    currentMihomoConfig = mCfg;
 
-      const kStatus = document.getElementById('mihomo-kernel-status');
-      const startBtn = document.getElementById('btn-mihomo-start');
-      if (kStatus) {
-        if (mCfg.isRunning) {
-          kStatus.textContent = '运行中 (PID 活跃 · 127.0.0.1:19090)';
-          kStatus.style.color = '#7ee2a8';
-          if (startBtn) startBtn.style.display = 'none';
-        } else if (mCfg.executablePath) {
-          kStatus.textContent = '内核文件已就绪 · 待启动';
-          kStatus.style.color = '#fbbf24';
-          if (startBtn) {
-            startBtn.style.display = 'inline-block';
-            startBtn.textContent = '▶ 启动内核';
-          }
-        } else {
-          kStatus.textContent = '未找到内核二进制文件 (请放至 bin/mihomo/)';
-          kStatus.style.color = '#ff9a9a';
-          if (startBtn) startBtn.style.display = 'none';
-        }
+    // 1. 刷新内核状态与路径
+    const badgeEl = document.getElementById('tab-mihomo-status-badge');
+    const binInfoEl = document.getElementById('tab-mihomo-bin-path-info');
+    const portsInfoEl = document.getElementById('tab-mihomo-ports-info');
+
+    if (badgeEl) {
+      if (mCfg && mCfg.isRunning) {
+        badgeEl.textContent = '🟢 运行中 (PID 活跃 · 127.0.0.1:19090)';
+        badgeEl.style.background = 'rgba(126,226,168,0.2)';
+        badgeEl.style.color = '#7ee2a8';
+      } else if (mCfg && mCfg.executablePath) {
+        badgeEl.textContent = '⚪ 已就绪 (待启动)';
+        badgeEl.style.background = 'rgba(251,191,36,0.2)';
+        badgeEl.style.color = '#fbbf24';
+      } else {
+        badgeEl.textContent = '🔴 未找到内核文件 (请放置或指定)';
+        badgeEl.style.background = 'rgba(255,154,154,0.2)';
+        badgeEl.style.color = '#ff9a9a';
       }
-
-      const pMapEl = document.getElementById('mihomo-port-map');
-      if (pMapEl && mCfg.portMap) {
-        const ports = Object.entries(mCfg.portMap).map(([id, p]) => `${id} → :${p}`).join(' | ');
-        pMapEl.textContent = ports ? `当前账号端口映射: ${ports}` : '尚未开启代理端口映射 (启动内核后自动分配)';
-      }
-
-      const binInfoEl = document.getElementById('mihomo-bin-path-info');
-      if (binInfoEl) {
-        if (mCfg.executablePath) {
-          binInfoEl.style.display = 'block';
-          const isCustom = Boolean(mCfg.customBinPath);
-          binInfoEl.innerHTML = `已探测内核: <span style="color:#7ee2a8; font-family:Consolas, monospace;">${escapeHtml(mCfg.executablePath)}</span>` +
-            (isCustom ? ` <a href="#" id="btn-clear-custom-bin" style="color:#ff9a9a; margin-left:6px; font-size:11px; text-decoration:none;">[恢复自动搜索]</a>` : '');
-          const clearBtn = document.getElementById('btn-clear-custom-bin');
-          if (clearBtn) {
-            clearBtn.onclick = async (ev) => {
-              ev.preventDefault();
-              if (mihomoApi && mihomoApi.clearCustomBin) {
-                await mihomoApi.clearCustomBin();
-                await loadMihomoState();
-              }
-            };
-          }
-        } else {
-          binInfoEl.style.display = 'block';
-          binInfoEl.innerHTML = `<span style="color:#ff9a9a;">未在默认目录探测到内核。可点击上方【📂 指定内核】手动选择已有的 mihomo.exe</span>`;
-        }
-      }
-
-      const nodes = await mihomoApi.getNodes();
-      renderMihomoNodeList(nodes || []);
-      return mCfg;
     }
+
+    if (binInfoEl) {
+      if (mCfg && mCfg.executablePath) {
+        binInfoEl.style.display = 'block';
+        const isCustom = Boolean(mCfg.customBinPath);
+        binInfoEl.innerHTML = '已探测内核: <span style="color:#7ee2a8; font-family:Consolas, monospace;">' + escapeHtml(mCfg.executablePath) + '</span>' +
+          (isCustom ? ' <a href="#" id="btn-tab-clear-custom-bin" style="color:#ff9a9a; margin-left:6px; font-size:11px; text-decoration:none;">[恢复自动搜索]</a>' : '');
+        const clearBtn = document.getElementById('btn-tab-clear-custom-bin');
+        if (clearBtn) {
+          clearBtn.onclick = async (ev) => {
+            ev.preventDefault();
+            if (mihomoApi.clearCustomBin) {
+              await mihomoApi.clearCustomBin();
+              await loadMihomoTabState();
+            }
+          };
+        }
+      } else {
+        binInfoEl.style.display = 'block';
+        binInfoEl.innerHTML = '<span style="color:#ff9a9a;">未在默认目录探测到内核。可点击上方【📂 指定内核】手动选择已有的 mihomo.exe</span>';
+      }
+    }
+
+    if (portsInfoEl && mCfg) {
+      portsInfoEl.textContent = '控制器: 127.0.0.1:' + (mCfg.controllerPort || 19090) + ' · 账号出口起始端口: ' + (mCfg.basePort || 18001);
+    }
+
+    // 2. 加载节点并渲染配置源与节点列表
+    const nodes = (await mihomoApi.getNodes()) || [];
+    currentMihomoNodes = nodes;
+    renderTabMihomoSources((mCfg && mCfg.sources) || []);
+    renderTabMihomoNodes(nodes);
+
+    // 3. 加载账号并渲染 Proxy 分组
+    let accounts = [];
+    if (mihomoApi.getAccounts) {
+      const accState = await mihomoApi.getAccounts();
+      if (accState && Array.isArray(accState.profiles)) {
+        accounts = accState.profiles;
+      }
+    }
+    renderTabMihomoAccounts(accounts, (mCfg && mCfg.portMap) || {}, nodes);
+
+    return mCfg;
   } catch (err) {
-    console.warn('Could not load mihomo config:', err);
+    console.warn('loadMihomoTabState error:', err);
+    return null;
   }
 }
 
+const loadMihomoState = loadMihomoTabState;
 async function loadProxySettings() {
   if (!proxyApi) return;
   try {
@@ -2291,19 +2712,26 @@ const btnImportConfig = document.getElementById('btn-import-config');
 const btnOpenDataDir = document.getElementById('btn-open-datadir');
 const backupMsg = document.getElementById('backup-msg');
 
+const chkExportSessions = document.getElementById('chk-export-sessions');
 if (btnExportConfig) {
   btnExportConfig.onclick = async () => {
     if (!window.backupAPI || !window.backupAPI.exportConfig) return;
+    const includeSessions = chkExportSessions ? chkExportSessions.checked : true;
     if (backupMsg) {
       backupMsg.style.color = '#7aa2ff';
-      backupMsg.textContent = '正在导出配置备份...';
+      backupMsg.textContent = includeSessions
+        ? '正在导出完整配置及各账号免登录会话凭据...'
+        : '正在导出配置备份...';
     }
     try {
-      const res = await window.backupAPI.exportConfig();
+      const res = await window.backupAPI.exportConfig({ includeSessions });
       if (res && res.ok) {
         if (backupMsg) {
           backupMsg.style.color = '#7ee2a8';
-          backupMsg.textContent = `已成功导出 ${res.profileCount} 个账号与代理配置至: ${res.filePath}`;
+          const sessionInfo = (typeof res.sessionCount === 'number' && res.sessionCount > 0)
+            ? `（含 ${res.sessionCount} 个免登录会话）`
+            : '';
+          backupMsg.textContent = `已成功导出 ${res.profileCount} 个账号与代理配置${sessionInfo}至: ${res.filePath}`;
         }
       } else if (res && !res.canceled) {
         if (backupMsg) {
@@ -2327,16 +2755,22 @@ if (btnImportConfig) {
     if (!window.backupAPI || !window.backupAPI.importConfig) return;
     if (backupMsg) {
       backupMsg.style.color = '#7aa2ff';
-      backupMsg.textContent = '正在读取并校验备份文件...';
+      backupMsg.textContent = '正在读取并校验备份文件，恢复配置与登录会话...';
     }
     try {
       const res = await window.backupAPI.importConfig();
       if (res && res.ok) {
         if (backupMsg) {
           backupMsg.style.color = '#7ee2a8';
-          backupMsg.textContent = `成功恢复 ${res.profileCount} 个账号与代理配置！`;
+          const sessionInfo = (typeof res.restoredSessionCount === 'number' && res.restoredSessionCount > 0)
+            ? `，并成功恢复 ${res.restoredSessionCount} 个账号的免登录会话！`
+            : '！';
+          backupMsg.textContent = `成功导入 ${res.profileCount} 个账号与代理配置${sessionInfo}`;
         }
         await loadProxySettings();
+        if (typeof loadMihomoTabState === 'function') {
+          await loadMihomoTabState();
+        }
       } else if (res && !res.canceled) {
         if (backupMsg) {
           backupMsg.style.color = '#ff9a9a';
@@ -2366,6 +2800,8 @@ if (window.settingsTabAPI) {
   window.settingsTabAPI.onSwitchTab((tabId) => {
     if (tabId === 'tab-proxy') {
       tabProxyBtn.click();
+    } else if (tabId === 'tab-mihomo') {
+      if (tabMihomoBtn) tabMihomoBtn.click();
     } else if (tabId === 'tab-auto') {
       tabAutoBtn.click();
     } else if (tabId === 'tab-hotkeys') {

@@ -73,6 +73,9 @@ contextBridge.exposeInMainWorld('lockAPI', {
 contextBridge.exposeInMainWorld('mihomoAPI', {
   getConfig: () => ipcRenderer.invoke('mihomo:get-config'),
   setConfig: (config) => ipcRenderer.invoke('mihomo:set-config', config),
+  restartKernel: () => ipcRenderer.invoke('mihomo:restart-kernel'),
+  stopKernel: () => ipcRenderer.invoke('mihomo:stop-kernel'),
+  startKernel: () => ipcRenderer.invoke('mihomo:start-kernel'),
   chooseCustomBin: () => ipcRenderer.invoke('mihomo:choose-custom-bin'),
   clearCustomBin: () => ipcRenderer.invoke('mihomo:clear-custom-bin'),
   chooseLocalYaml: () => ipcRenderer.invoke('mihomo:choose-local-yaml'),
@@ -84,11 +87,12 @@ contextBridge.exposeInMainWorld('mihomoAPI', {
   syncSubscription: (subUrl) => ipcRenderer.invoke('mihomo:sync-subscription', subUrl),
   getNodes: () => ipcRenderer.invoke('mihomo:get-nodes'),
   testDelay: (proxyName) => ipcRenderer.invoke('mihomo:test-delay', proxyName),
+  getAccounts: () => ipcRenderer.invoke('account:get-state'),
   setProfileQueue: (payload) => ipcRenderer.invoke('account:set-proxy-queue', payload),
 });
 
 contextBridge.exposeInMainWorld('backupAPI', {
-  exportConfig: () => ipcRenderer.invoke('config:export'),
+  exportConfig: (opts) => ipcRenderer.invoke('config:export', opts),
   importConfig: () => ipcRenderer.invoke('config:import'),
   openDataDir: () => ipcRenderer.invoke('config:open-data-dir'),
 });
