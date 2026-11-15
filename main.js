@@ -875,10 +875,57 @@ function extractExternalTargetUrl(rawUrl) {
   return null;
 }
 
+function isShareOrDocumentUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  try {
+    const parsed = new URL(rawUrl);
+    const pathname = parsed.pathname.toLowerCase();
+    const search = parsed.search.toLowerCase();
+    const sharePaths = [
+      '/share',
+      '/s/',
+      '/doc',
+      '/docs',
+      '/d/',
+      '/file',
+      '/files',
+      '/f/',
+      '/artifact',
+      '/artifacts',
+      '/attachment',
+      '/attachments',
+      '/download',
+      '/export',
+      '/preview',
+      '/view',
+      '/v/',
+      '/p/',
+    ];
+    if (sharePaths.some((p) => pathname.includes(p))) {
+      return true;
+    }
+    if (
+      search.includes('share=') ||
+      search.includes('token=') ||
+      search.includes('key=') ||
+      search.includes('expires=') ||
+      search.includes('signature=') ||
+      search.includes('sig=')
+    ) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function isInternalSiteUrl(rawUrl) {
   try {
     // 若属于外部链接包装重定向，实质属于外链
     if (extractExternalTargetUrl(rawUrl)) return false;
+    // 分享/文档/附件/临时资源链接不作为应用内基础导航，应作为独立资源处理
+    if (isShareOrDocumentUrl(rawUrl)) return false;
 
     const parsed = new URL(rawUrl);
     const host = parsed.hostname.toLowerCase();
@@ -1110,11 +1157,6 @@ function setupExternalLinkHandler(win, profileId) {
   win.webContents.setWindowOpenHandler((details) => {
     const { url } = details;
 
-    // 内部站点链接：绝不直接在新窗口打开以防覆盖或打乱会话，交由主窗口内嵌逻辑处理
-    if (isInternalSiteUrl(url)) {
-      return { action: 'deny' };
-    }
-
     // 严禁向外部默认浏览器打开第三方统计、埋点与广告追踪链接
     if (isTrackingOrAdUrl(url)) {
       return { action: 'deny' };
@@ -1133,7 +1175,20 @@ function setupExternalLinkHandler(win, profileId) {
       };
     }
 
-    // 所有外部链接（包括带 target="_blank" 的聊天链接、GitHub 仓库、外部文档等）：统一由系统默认浏览器打开
+    // 关键守卫：内部站点常规基础功能路由（如左侧栏的聊天 /chat、会话切换 /c/、设置等），绝不向外打开浏览器
+    if (isInternalSiteUrl(url)) {
+      try {
+        const parsed = new URL(url);
+        const curUrl = win.webContents.getURL() || '';
+        if (parsed.pathname && parsed.pathname !== '/' && !curUrl.endsWith(parsed.pathname)) {
+          win.loadURL(url);
+        }
+      } catch {}
+      return { action: 'deny' };
+    }
+
+    // 所有外部链接及独立文档/分享链接（如聊天内分享链接、文档、GitHub 仓库等）：
+    // 统一交由系统默认浏览器打开，绝不无响应丢弃或弹空白无头窗口
     const extracted = extractExternalTargetUrl(url);
     const finalExternalUrl = (extracted || url).trim().replace(/[，。；、？！）》」"',;!]+$/, '');
 

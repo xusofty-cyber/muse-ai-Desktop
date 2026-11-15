@@ -6,9 +6,13 @@
 
 ## 一、当前任务概览
 
-- **关联需求 / 分支**：独立特性分支 `feature/embedded-mihomo-proxy`
+- **关联需求 / 分支**：独立特性分支 `feature/embedded-mihomo-proxy` -> 合并发布 `v1.5.25`
 - **核心问题与最新进展**：
-  1. **冷启动代理竞态与内核指纹兼容性修复 (Commit `0483b2e`)**：
+  1. **文档与分享链接浏览器打开与侧边栏基础路由隔离 (v1.5.25)**：
+     - **分享与临时产物链接外链打开**：新增 `isShareOrDocumentUrl`，精确识别 `/share`、`/doc`、`/file`、`/artifact` 以及带有 `token=`、`expires=`、`key=` 的临时共享文件链接，点击时统一调用 `shell.openExternal` 唤起外部默认浏览器，保证主聊天窗口上下文不被破坏；
+     - **侧边栏与内部路由硬隔离**：在 Preload 与 `setWindowOpenHandler` 中对左侧导航轨（`[class*="rail"]`、`nav`、`aside`、`Chat` 聊天图标、会话列表、设置等）进行严格内部路由保护，绝不拦截内部导航，杜绝点击左侧“聊天”误弹出系统浏览器标签页；
+     - **富文本属性多候选提取**：支持 `data-href`、`data-url`、`data-link`、`title` 及纯文本 URL 的深度回退提取，彻底根除空锚点 `href="#"` 导致的点击无响应。
+  2. **冷启动代理竞态与内核指纹兼容性修复 (Commit `0483b2e`)**：
      - **冷启动时序前置**：在 `app.whenReady()` 中将 Mihomo 内核启动置于 `createMainWindow()` 之前，并在建窗前显式为活动账号 `Session` 与 `defaultSession` 预配置代理端口，彻底解决关闭外部代理后首屏直连触发 `-100 ERR_CONNECTION_CLOSED` 的问题；
      - **节点指纹属性清洗**：`mihomo-manager.js` 新增 `_sanitizeProxyNode`，自动将订阅中不规范的 `fingerprint: chrome/safari...` 转换为 Mihomo 标准的 `client-fingerprint`，消除 `fingerprint is used for TLS certificate pinning` 报错；
      - **代理组防雪崩二级兜底**：在账号专属 fallback 队列后追加全局可用节点作为备用，当特定 VPS（如大阪）故障时自动优雅降级，防止直接重置连接；

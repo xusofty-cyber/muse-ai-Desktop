@@ -4289,9 +4289,55 @@ function injectExportButton() {}
     return null;
   }
 
+  function isShareOrDocumentUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return false;
+    try {
+      const parsed = new URL(rawUrl, window.location.href);
+      const pathname = parsed.pathname.toLowerCase();
+      const search = parsed.search.toLowerCase();
+      const sharePaths = [
+        '/share',
+        '/s/',
+        '/doc',
+        '/docs',
+        '/d/',
+        '/file',
+        '/files',
+        '/f/',
+        '/artifact',
+        '/artifacts',
+        '/attachment',
+        '/attachments',
+        '/download',
+        '/export',
+        '/preview',
+        '/view',
+        '/v/',
+        '/p/',
+      ];
+      if (sharePaths.some((p) => pathname.includes(p))) {
+        return true;
+      }
+      if (
+        search.includes('share=') ||
+        search.includes('token=') ||
+        search.includes('key=') ||
+        search.includes('expires=') ||
+        search.includes('signature=') ||
+        search.includes('sig=')
+      ) {
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
   function isInternalUrl(rawUrl) {
     try {
       if (extractTargetUrl(rawUrl)) return false;
+      if (isShareOrDocumentUrl(rawUrl)) return false;
       const parsed = new URL(rawUrl, window.location.href);
       const host = parsed.hostname.toLowerCase();
       if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
@@ -4426,41 +4472,56 @@ function injectExportButton() {}
         if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
         if (window.getSelection && window.getSelection().toString().trim().length > 0) return;
 
-        // 严禁在输入框、文本编辑区、自身 Dock 控制栏或弹出对话框中触发外链跳转
+        // 严禁在输入框、文本编辑区、应用自身注入组件或左侧导航/侧边栏中触发外链跳转
         if (e.target && e.target.closest) {
-          if (e.target.closest('#acct-dock, #muse-export-btn, input, textarea, select, [contenteditable="true"]')) {
+          if (e.target.closest('#acct-dock, #muse-export-btn, [id^="acct-"], input, textarea, select, [contenteditable="true"]')) {
             return;
           }
-          if (e.target.closest('[role="dialog"], [aria-modal="true"], [class*="dialog"], [class*="modal"], [class*="settings"]')) {
+          // 导航栏、侧边栏、快捷栏及应用全局框架按钮：坚决不拦截，保证原生应用内点击行为
+          if (e.target.closest('nav, aside, [role="navigation"], [class*="sidebar"], [class*="rail"], [class*="navbar"], [class*="nav-"], [id*="sidebar"], [id*="nav"]')) {
             return;
           }
         }
 
-        // 核心守卫：必须确切命中 a 标签、带 data-href/data-url 的元素或 role="link"
+        // 核心守卫：必须确切命中 a 标签、带 data-href/data-url/data-link 的元素或 role="link"
         const anchor = e.target && e.target.closest
-          ? (e.target.closest('a') || e.target.closest('[data-href], [data-url], [role="link"]'))
+          ? (e.target.closest('a') || e.target.closest('[data-href], [data-url], [data-link], [data-target], [data-share-url], [role="link"]'))
           : null;
 
         // 如果用户点击的不是超链接元素（如普通文本、气泡背景、邮箱、Key 等普通文字），坚决不拦截！
         if (!anchor) return;
 
-        let rawHref = anchor.getAttribute('href') || anchor.href || anchor.getAttribute('data-href') || anchor.getAttribute('data-url');
-
-        // 若 href 为 "#"、"javascript:..." 或为空（常见于 React/Slate 等前端组件）：
-        // 仅当该 anchor 自身纯文本内容是以 http:// 或 https:// 开头的 URL 时才提取
-        if (!rawHref || rawHref === '#' || rawHref.startsWith('#') || rawHref.startsWith('javascript:')) {
-          const anchorText = (anchor.innerText || anchor.textContent || '').trim();
-          if (/^https?:\/\//i.test(anchorText)) {
-            const match = anchorText.match(/^https?:\/\/[^\s，。；、？！）》」"'\`<>]+/i);
-            if (match) {
-              rawHref = match[0];
-            } else {
-              return;
-            }
-          } else {
-            return;
+        // 多属性候选提取：支持 href、data-href、data-url、data-link、data-target 等
+        let rawHref = null;
+        const candidateAttrs = ['href', 'data-href', 'data-url', 'data-link', 'data-target', 'data-share-url', 'data-download-url', 'data-raw-url', 'data-to'];
+        for (const attr of candidateAttrs) {
+          const val = anchor.getAttribute && anchor.getAttribute(attr);
+          if (val && val !== '#' && !val.startsWith('#') && !val.startsWith('javascript:')) {
+            rawHref = val;
+            break;
           }
         }
+        if (!rawHref && anchor.href && typeof anchor.href === 'string' && !anchor.href.startsWith('#') && !anchor.href.startsWith('javascript:') && !anchor.href.endsWith('#')) {
+          rawHref = anchor.href;
+        }
+        if (!rawHref && anchor.getAttribute) {
+          const titleVal = anchor.getAttribute('title');
+          if (titleVal && /^https?:\/\//i.test(titleVal.trim())) {
+            rawHref = titleVal.trim();
+          }
+        }
+
+        // 若 href 为 "#"、"javascript:..." 或为空（常见于 React/Slate 等前端组件）：
+        // 若该 anchor 自身纯文本内容包含 URL，亦可作为回退提取
+        if (!rawHref) {
+          const anchorText = (anchor.innerText || anchor.textContent || '').trim();
+          const match = anchorText.match(/https?:\/\/[^\s，。；、？！）》」"'\`<>]+/i);
+          if (match) {
+            rawHref = match[0];
+          }
+        }
+
+        if (!rawHref) return;
 
         let fullHref = rawHref.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
         try {
@@ -4473,17 +4534,21 @@ function injectExportButton() {}
           return;
         }
 
-        // 关键防御：内部主站点链接，不在此拦截，交由应用主窗口内部导航
-        if (isInternalUrl(fullHref)) {
-          return;
-        }
-
         // 关键防御：如果是身份验证或连接器相关 URL，交由主进程 setWindowOpenHandler 弹窗处理
         if (isAuthOrConnectorUrl(fullHref)) {
           return;
         }
 
-        // 外部链接（GitHub 仓库、文档、文章等）：调用系统默认外部浏览器打开，阻止应用内无响应或误拦截
+        // 关键防御：内部主站点链接（如 muse.ai / meta.ai）：
+        // 仅当明确属于分享/文档/产物临时资源（isShareOrDocumentUrl）时才调起外部浏览器；
+        // 其余所有常规内部路由（如 /chat, /c/..., /, /settings 等），绝对交由主窗口内部处理，杜绝弹出外部标签页！
+        if (isInternalUrl(fullHref)) {
+          if (!isShareOrDocumentUrl(fullHref)) {
+            return;
+          }
+        }
+
+        // 外部链接、分享/文档链接或聊天内点击的链接：调用系统默认外部浏览器打开，阻止应用内无响应或误拦截
         const externalTarget = extractTargetUrl(fullHref);
         const finalUrl = (externalTarget || fullHref).trim().replace(/[，。；、？！）》」"',;!]+$/, '');
 
