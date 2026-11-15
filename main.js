@@ -2575,13 +2575,14 @@ function openHotkeySettings(initialTab) {
     return;
   }
   hotkeyWindow = new BrowserWindow({
-    width: 480,
-    height: 660,
+    width: 650,
+    height: 750,
     icon: APP_ICON_PATH,
     title: 'Customize hotkeys & settings',
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
+    resizable: true,
+    minWidth: 540,
+    minHeight: 640,
+    maximizable: true,
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload-settings.js') },
   });
@@ -3403,6 +3404,41 @@ ipcMain.handle('mihomo:test-delay', async (e, proxyName) => {
   return mm.testNodeDelay(proxyName);
 });
 
+ipcMain.handle('mihomo:restart-kernel', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const mm = getMihomoManager();
+  if (!mm) return { ok: false, error: 'Mihomo 管理器未初始化' };
+  const res = await mm.restart(state.profiles, (state.mihomo && state.mihomo.cachedProxies) || []);
+  if (res && res.ok) {
+    await applyProxySettings();
+  }
+  return res;
+});
+
+ipcMain.handle('mihomo:stop-kernel', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const mm = getMihomoManager();
+  if (!mm) return { ok: false, error: 'Mihomo 管理器未初始化' };
+  mm.stop();
+  if (state.mihomo) state.mihomo.enabled = false;
+  saveState();
+  await applyProxySettings();
+  return { ok: true };
+});
+
+ipcMain.handle('mihomo:start-kernel', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const mm = getMihomoManager();
+  if (!mm) return { ok: false, error: 'Mihomo 管理器未初始化' };
+  if (state.mihomo) state.mihomo.enabled = true;
+  saveState();
+  const res = await mm.start(state.profiles, (state.mihomo && state.mihomo.cachedProxies) || []);
+  if (res && res.ok) {
+    await applyProxySettings();
+  }
+  return res;
+});
+
 ipcMain.handle('account:set-proxy-queue', async (e, payload) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   const { profileId, proxyQueue, proxyStrategy, proxyMode, proxyCustom } = payload || {};
@@ -3441,12 +3477,12 @@ ipcMain.handle('account:set-proxy-queue', async (e, payload) => {
 });
 
 // ==================== 配置与多账号备份/导出/导入 ====================
-async function handleConfigExport(parentWin) {
+async function handleConfigExport(parentWin, opts = {}) {
   const targetWin = (parentWin && !parentWin.isDestroyed()) ? parentWin : (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10);
   const saveOpts = {
-    title: '导出所有账号与代理配置备份',
+    title: '导出所有账号与代理配置备份 (包含免登录会话)',
     defaultPath: `muse-backup-${dateStr}.json`,
     filters: [
       { name: 'JSON 配置文件 (*.json)', extensions: ['json'] },
@@ -3461,14 +3497,51 @@ async function handleConfigExport(parentWin) {
     return { canceled: true };
   }
 
+  const includeSessions = opts.includeSessions !== false;
+  const profileSessions = {};
+
+  if (includeSessions && Array.isArray(state.profiles)) {
+    // 导出前强制将会话持久化落盘
+    try {
+      await flushAllSessions();
+    } catch (_) {}
+
+    for (const p of state.profiles) {
+      if (!p || !p.id) continue;
+      try {
+        const ses = session.fromPartition(partitionFor(p.id));
+        if (ses && ses.cookies) {
+          const cookies = await ses.cookies.get({});
+          profileSessions[p.id] = (cookies || []).map((c) => ({
+            name: c.name,
+            value: c.value,
+            domain: c.domain,
+            path: c.path || '/',
+            secure: !!c.secure,
+            httpOnly: !!c.httpOnly,
+            expirationDate: c.expirationDate,
+            sameSite: c.sameSite,
+          }));
+        }
+      } catch (err) {
+        console.warn(`[ConfigExport] Failed to export cookies for profile ${p.id}:`, err);
+      }
+    }
+  }
+
+  const sessionProfileCount = Object.keys(profileSessions).length;
+
   const backupData = {
     _meta: {
       app: 'Muse',
       version: app.getVersion(),
       exportedAt: now.toISOString(),
       profileCount: (state.profiles || []).length,
+      includesAuthSessions: includeSessions,
+      sessionProfileCount: sessionProfileCount,
     },
     profiles: state.profiles || [],
+    sessions: profileSessions,
     accountGroups: state.accountGroups || ['默认群组'],
     mihomoSources: (state.mihomo && state.mihomo.sources) || [],
     proxy: state.proxy || defaultProxy(),
@@ -3484,6 +3557,7 @@ async function handleConfigExport(parentWin) {
     canceled: false,
     filePath: res.filePath,
     profileCount: (state.profiles || []).length,
+    sessionCount: sessionProfileCount,
     sourceCount: backupData.mihomoSources.length,
   };
 }
@@ -3574,7 +3648,44 @@ async function handleConfigImport(parentWin) {
     state = sanitizeAndMergeState(state);
     saveState();
 
-    // 6. 重新同步并热载 Mihomo 内核
+    // 7. 恢复各账号会话 Cookie (跨机免登录恢复)
+    let restoredSessionCount = 0;
+    let totalCookiesInjected = 0;
+    if (parsed.sessions && typeof parsed.sessions === 'object') {
+      for (const [profId, cookies] of Object.entries(parsed.sessions)) {
+        if (!Array.isArray(cookies) || cookies.length === 0) continue;
+        try {
+          const ses = session.fromPartition(partitionFor(profId));
+          for (const c of cookies) {
+            if (!c || !c.name || typeof c.value !== 'string') continue;
+            try {
+              const protocol = c.secure ? 'https' : 'http';
+              const cleanDomain = String(c.domain || '').replace(/^\./, '');
+              if (!cleanDomain) continue;
+              const url = `${protocol}://${cleanDomain}${c.path || '/'}`;
+              await ses.cookies.set({
+                url,
+                name: c.name,
+                value: c.value,
+                domain: c.domain,
+                path: c.path || '/',
+                secure: !!c.secure,
+                httpOnly: !!c.httpOnly,
+                expirationDate: c.expirationDate,
+                sameSite: c.sameSite || 'unspecified',
+              });
+              totalCookiesInjected++;
+            } catch (_) {}
+          }
+          await ses.cookies.flushStore().catch(() => {});
+          restoredSessionCount++;
+        } catch (sErr) {
+          console.warn(`[ConfigImport] Failed to restore cookies for profile ${profId}:`, sErr);
+        }
+      }
+    }
+
+    // 8. 重新同步并热载 Mihomo 内核
     const mm = getMihomoManager();
     if (state.mihomo && state.mihomo.sources && state.mihomo.sources.length > 0 && mm) {
       mm.syncAllSources(state.mihomo.sources).then(async (syncRes) => {
@@ -3588,7 +3699,7 @@ async function handleConfigImport(parentWin) {
       }).catch((e) => console.warn('[Config] Error resyncing mihomo sources after import:', e));
     }
 
-    // 7. 重新应用各账号代理
+    // 9. 重新应用各账号代理
     for (const prof of state.profiles) {
       try {
         const ses = session.fromPartition(partitionFor(prof.id));
@@ -3599,11 +3710,20 @@ async function handleConfigImport(parentWin) {
     buildTrayMenu();
     broadcastAccountChange();
 
+    // 如果恢复了登录凭据且主窗口已打开，重新加载主窗口使登录态直接呈现
+    if (restoredSessionCount > 0 && mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        mainWindow.loadURL(currentSite().url);
+      } catch (_) {}
+    }
+
     return {
       ok: true,
       canceled: false,
       filePath,
       profileCount: state.profiles.length,
+      restoredSessionCount,
+      totalCookiesInjected,
       sourceCount: (state.mihomo && state.mihomo.sources && state.mihomo.sources.length) || 0,
     };
   } catch (err) {
@@ -3612,10 +3732,10 @@ async function handleConfigImport(parentWin) {
   }
 }
 
-ipcMain.handle('config:export', async (e) => {
+ipcMain.handle('config:export', async (e, opts) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   const senderWin = BrowserWindow.fromWebContents(e.sender);
-  return await handleConfigExport(senderWin);
+  return await handleConfigExport(senderWin, opts);
 });
 
 ipcMain.handle('config:import', async (e) => {
