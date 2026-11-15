@@ -6,12 +6,60 @@
 
 ## 一、当前任务概览
 
-- **最新已完成任务**：左侧账号列表上下拖拽排序（Drag & Drop Reordering）支持，方便多账号聚合归类
-- **核心需求与实现**：
-  - 支持直接在左侧 Dock 栏中拖拽账号头像进行上下拖动排序，将正在工作的账号拖到一块；
-  - 渲染高对比度动态放置指示线（Top / Bottom Indicator），拖拽期间冻结侧边栏自动收缩，松手即刻响应；
-  - 增加 250ms 点击防抖保护，彻底避免拖拽结束误触发账号切换；
-  - `account:reorder` 主进程 IPC 处理，完整校验账号 ID 集合与数量，并实时同步持久化落盘、托盘菜单排序与快捷键切换序列。
+- **关联需求 / 分支**：独立特性分支 `feature/embedded-mihomo-proxy` -> 合并发布 `v1.5.25`
+- **核心问题与最新进展**：
+  1. **文档与分享链接浏览器打开与侧边栏基础路由隔离 (v1.5.25)**：
+     - **分享与临时产物链接外链打开**：新增 `isShareOrDocumentUrl`，精确识别 `/share`、`/doc`、`/file`、`/artifact` 以及带有 `token=`、`expires=`、`key=` 的临时共享文件链接，点击时统一调用 `shell.openExternal` 唤起外部默认浏览器，保证主聊天窗口上下文不被破坏；
+     - **侧边栏与内部路由硬隔离**：在 Preload 与 `setWindowOpenHandler` 中对左侧导航轨（`[class*="rail"]`、`nav`、`aside`、`Chat` 聊天图标、会话列表、设置等）进行严格内部路由保护，绝不拦截内部导航，杜绝点击左侧“聊天”误弹出系统浏览器标签页；
+     - **富文本属性多候选提取**：支持 `data-href`、`data-url`、`data-link`、`title` 及纯文本 URL 的深度回退提取，彻底根除空锚点 `href="#"` 导致的点击无响应。
+  2. **冷启动代理竞态与内核指纹兼容性修复 (Commit `0483b2e`)**：
+     - **冷启动时序前置**：在 `app.whenReady()` 中将 Mihomo 内核启动置于 `createMainWindow()` 之前，并在建窗前显式为活动账号 `Session` 与 `defaultSession` 预配置代理端口，彻底解决关闭外部代理后首屏直连触发 `-100 ERR_CONNECTION_CLOSED` 的问题；
+     - **节点指纹属性清洗**：`mihomo-manager.js` 新增 `_sanitizeProxyNode`，自动将订阅中不规范的 `fingerprint: chrome/safari...` 转换为 Mihomo 标准的 `client-fingerprint`，消除 `fingerprint is used for TLS certificate pinning` 报错；
+     - **代理组防雪崩二级兜底**：在账号专属 fallback 队列后追加全局可用节点作为备用，当特定 VPS（如大阪）故障时自动优雅降级，防止直接重置连接；
+     - **静默容错与防扰**：彻底移除 `did-fail-load` 自动强弹设置窗口的逻辑，遇到瞬态连接波动自动延迟 1200ms 重试 1 次；
+     - **内置 DoH 独立解析**：在 `generateConfig` 中为内核内置独立 DNS 与 DoH 上游，杜绝系统 Fake-IP 冲突与 DNS 污染。
+  2. **内置 Mihomo 智能分流支持多订阅与本地 YAML 节点同时开启与合并管理 (`hotkeys.html` / `main.js` / `mihomo-manager.js` / `preload-settings.js`)**：
+     - **业务痛点**：此前仅支持单个机场订阅 URL，无法配置多个订阅，且无法加载本地 Clash/Mihomo 的 `.yaml`/`.yml` 配置文件，且无法多源同时开启合并为一个节点池；
+     - **完整功能闭环实现**：
+       1. **底层核心引擎 (`mihomo-manager.js`)**：
+          - 支持本地 YAML/YML 配置文件解析（`parseLocalYaml`），兼容各类格式的 `proxies` 节点定义；
+          - 实现多源节点智能冲突规避合并引擎（`mergeSourceProxies`）：遍历所有处于 `enabled: true` 的源，对跨机场重名节点自动注入 `[源名称] 原节点名` 前缀，杜绝 Mihomo 节点名重复报错；
+          - 自动建立各配置源独立存储目录（`.mihomo-runtime/sources/`），支持独立缓存与热重载；
+          - 兼容单源与多源配置平滑迁移（`loadCachedSubscription`）。
+       2. **主进程 IPC 调度与状态治理 (`main.js`)**：
+          - 配置模式向下兼容迁移：若检测到旧版 `subscriptionUrl` 自动透明迁移为首个 `sources` 项；
+          - 实现 `mihomo:choose-local-yaml`：原生文件对话框过滤并选择 `.yaml`/`.yml` 文件；
+          - 实现配置源增删改查与同步 IPC：`mihomo:add-source`、`mihomo:update-source`、`mihomo:remove-source`、`mihomo:sync-source`、`mihomo:sync-all-sources`；
+          - 变更状态实时触发 `refreshMihomoMergedProxiesAndReload`，动态更新节点池并热重载 Mihomo 内核与多账号出口队列。
+       3. **Preload 桥接层 (`preload-settings.js`)**：
+          - 暴露 `chooseLocalYaml`、`addSource`、`updateSource`、`removeSource`、`syncSource`、`syncAllSources` 接口供设置前端调用。
+       4. **前端交互与设置面板重构 (`hotkeys.html`)**：
+          - 重新设计 Mihomo 配置面板：展示源汇总统计（`已启用 X/Y 个源 · 合并有效节点 Z 个`）；
+          - 顶部工具栏提供快捷操作：`[+ 添加订阅]`、`[📂 导入本地 YAML]`、`[🔄 全部同步]`；
+          - 内联优雅抽屉添加订阅表单（支持命名与 URL 校验）；
+          - 动态源列表卡片：每个源具备独立启用/禁用复选框开关、类型徽章（本地 YAML / 远程订阅）、节点数、目标路径、独立更新同步与删除操作；
+          - 保留多账号端口映射卡片、一键全节点并发测速与已合并生效节点列表展示。
+  2. **账号级独立代理模式与批量节点选择管理 (`main.js` / `preload-chat-export.js`)**：
+     - **业务诉求**：支持每个账号单独设置代理模式（如独立走系统代理/TUN、独立直接连接、独立自定义代理或跟随全局），并支持在编辑账号出口队列时批量选择与快速批量添加节点；
+     - **完整功能实现**：
+       1. **账号级代理模式自由切换**：支持 5 种模式（`inherit` 跟随全局、`system` 强制走系统代理/TUN 网卡、`mihomo` 内置专属出口队列、`direct` 直接连接、`custom` 独立自定义代理）；当账号选定为 `system` 时，即便全局开启了 Mihomo，该账号也强制直通系统网络与 TUN，彻底满足多账号差异化网络出口需求；
+       2. **批量节点选择器模态框 (`openBatchNodeSelectModal`)**：提供全量节点列表、实时关键词模糊搜索、地区/状态快捷过滤胶囊（全部/美国/香港/日本/新加坡/未在队列）、全选/反选/清空、已选计数与批量一键添加；
+       3. **1-Click 快捷批量添加**：提供 `+ 全部节点`、`+ 全部美国`、`+ 全部香港`、`+ 全部日本`、`+ 全部新加坡` 及 `+ 按关键字...` 快捷动作按钮，秒级导入数十个节点；
+       4. **账号中心卡片实时反映代理模式**：在账号中心看板及气泡中实时高亮展示各账号当前所处的网络模式（走系统代理/TUN、直接连接、自定义代理或 Mihomo 节点队列）。
+  3. **会话中点击外部链接无响应/误触全局弹窗深度根治与严密收口 (`main.js` / `preload-chat-export.js`)**：
+     - 用户必须确切点击超链接标签（`<a>`、`[role="link"]` 或 `[data-href]`），点击消息气泡空白、普通文本、代码块直接放行，杜绝误唤起浏览器；空锚点 `href="#"` 精准自愈并仅放行以 http/https 开头的链接。
+  4. **多账号配置与代理一键导出/导入（跨机与跨系统热迁移）(`main.js` / `preload-chat-export.js` / `preload-settings.js` / `hotkeys.html`)**：
+     - **业务痛点**：当前电脑已配置 17 个 Muse 账号及其独立的专属代理队列、代理模式与机场订阅源，更换电脑或系统环境时手动逐个配置成本极高；
+     - **完整功能闭环实现**：
+       1. 主进程实现 `config:export`、`config:import`、`config:open-data-dir`；安全过滤锁屏密码 Hash/Salt 等敏感凭证，导入时自动创建防灾快照（`app-state.pre-import-*.bak`），智能兼容直接导入原始 `app-state.json`；
+       2. 九宫格看板 Header 增设 `📤 导出配置`、`📥 导入配置` 与 `📁 本地数据` 快捷操作；
+       3. 设置面板与托盘菜单深度集成，支持一键备份导出与导入。
+  5. **编写并沉淀官方全景用户使用手册与 Linux 兼容性验证 (`docs/guides/USER_MANUAL.md` / `README.zh-CN.md` / `README.md`)**：
+     - 形成跨 Windows、Linux (Ubuntu) 与 macOS 的全流程用户操作全景手册，涵盖多账号看板、Mihomo 多源分流、批量节点、跨系统热迁移与常见问题排查。
+- **真实验证证据**：
+  - 导出/导入与容灾备份单测：`scratch/test-backup-restore.js` 覆盖字段过滤、双格式兼容、非法文件拦截与安全边界，全部 PASS；
+  - 自动化全流程集成测试：`scratch/test-full-sources-flow.js` 5 项自动化断言 100% PASS；
+  - 页面脚本与主进程编译检查：`node scratch/check-html-syntax.js` 与 `node -c main.js preload-settings.js preload-chat-export.js mihomo-manager.js` 全部 Exit Code 0。
 
 ---
 
@@ -226,7 +274,6 @@
       - Linux: `Muse-1.5.20.AppImage`, `muse-desktop_1.5.20_amd64.deb`, `muse-desktop-1.5.20.tar.gz`, `latest-linux.yml`
       - macOS: `Muse-1.5.20-arm64-mac.zip.blockmap` 及 DMG/ZIP 安装包
 
-## 五、当前断点与后续待执行事项
 
 21. **GitHub Actions 发布流彻底重构（杜绝多端并发 Draft 竞态与资产分裂）**：
     - **根因消除**：彻底废除 3 端并行 Runner 调用 `electron-builder --publish always` 直接上传 GitHub Releases 的做法（消除了 Draft 竞态与多端孤立 Release）；
@@ -250,6 +297,29 @@
       2. 简介段落高频覆盖 `Muse Desktop`、`muse-desktop`、`Muse AI Desktop` 等核心短语；
       3. 补充 Electron 框架标识、v1.5.20~v1.5.22 主密码锁屏与 12+ 账号高密度防挤压 Dock 等最新特性说明与快捷键清单；
     - **合并流转**：已通过临时分支 `docs/seo-readme-optimization` 合入 `main` 主分支并推送到 `origin/main`。
+
+
+24. **多账号切换栏重构为底部居中水平 macOS 风格 Dock（彻底解决遮挡与 20+ 账号伸缩）**：
+    - **背景痛点**：原 `#acct-dock` 固定在左下角垂直堆叠，10 个账号高度已达 440px+ 出现纵向滚动条，严重遮挡底层网页左下角操作区与侧边栏折叠按钮，且无法承载 20+ 账号。
+    - **改造设计（形态 A）**：
+      1. **底部居中横向排布**：`bottom: 12px; left: 50%; transform: translateX(-50%)`，完全释放左侧垂直空间与原生网页操作区；
+      2. **左右自适应充分延展，彻底消除滚动条**：列表解除 860px 限制并开放至 `calc(100vw - 180px)`，配合 `scrollbar-width: none` 与 `::-webkit-scrollbar { display: none }`，自然向左右大空间延展容纳 20~40+ 账号，彻底消除了头像下方的白色滚动条横条；
+      3. **固定下方控制栏时主窗口智能避让交互区**：当用户点击 `📌` 图钉固定底部 Dock 时，页面根容器与主体自动将视口高度收缩 `calc(100vh - 62px)`，配合对固定定位 Chat 输入框的 `translateY(-62px)` 提升与 MutationObserver 动态监听，确保聊天输入框、发送按钮及整个交互区永远端正处于 Dock 上方，绝不产生遮挡；
+      4. **智能呼吸与平滑贴底收缩**：未固定时移开鼠标 350ms 平滑下沉贴底（仅留 6px 药丸状细条指示器），鼠标悬停（触碰底部感应区）即刻平滑滑出；点击 `📌` 图钉常驻展开；
+      5. **横向滚轮与左右拖拽支持**：中间账号列表支持普通垂直滚轮直接平滑横向滚动（`wheel deltaY -> scrollLeft`）；拖拽排序指示线由上下改为左右高亮（`midX` 判定）；
+      6. **上浮 Tooltip 与微型控制区**：账号信息卡片与指示 Tooltip 向上弹出，右侧集成添加账号、主题切换与控制中心（Popover 动态吸附至 `⚙` 按钮正上方展开）；
+    - **验证记录**：语法检查通过（`node -c main.js preload-settings.js preload-chat-export.js mihomo-manager.js`，Exit Code 0）。
+
+25. **多账号切换平滑双缓冲与 Dock 尺寸硬锁定（彻底消除黑屏与 DOM 样式失效）**：
+    - **现场缺陷**：由于 `MAX_RESIDENT_PROFILE_WINDOWS = 5`，在 17 个账号间切换到非驻留窗口时，新窗口刚调用 `loadURL` 尚未接收远端响应，此前窗口立即被隐藏，导致黑屏且无法切号；此外早期曾尝试向 `<html>` 过早挂载 DOM，导致样式被 Blink 抛弃，SVG 环形进度条未受约束出现巨大圆弧异常；
+    - **根因消除与最终稳定架构**：
+      1. **双缓冲平滑切换（Seamless Double-Buffering）**：在 `main.js` `switchAccount` 中，当目标窗口尚未就绪（`!win._isContentLoaded` 或正在加载中）时，绝不提前隐藏原窗口；原窗口保持展示并向 Dock 广播 `account:switching`，目标账号头像呈现平滑脉冲与旋转指示圈；当目标窗口触发 `dom-ready` 或 `did-finish-load`（或 3.5 秒保底超时）后再完成平滑切入并隐藏原窗口；
+      2. **安全稳健的 DOM 生命周期**：移除过早向 `document.documentElement` 的侵入性操作，Dock 样式注入 `document.head`，容器注入 `document.body`，生命周期由 `DOMContentLoaded` 与 `window.load` 保障；
+      3. **SVG 与 Dock 尺寸双重硬锁定**：为环形进度条 SVG 显式写入 XML 属性 `width="36"`、`height="36"` 及行内固定宽高像素，`.acct-dock-item` 行内锁定 `width: 36px; height: 36px; flex-shrink: 0;`，从根本上杜绝任何样式失效下的形变与膨胀。
+
+26. **飞书多维表格 Token 重置时间规整与配置完整导入导出**：
+    - **时间格式规整**：实现智能时间规整函数 `formatDateTime(val)`，自动将飞书 Bitable 的 10 位 / 13 位毫秒时间戳（如 `1794898620000`）规范转换显示为标准日期时间 `年-月-日 时:分:秒`（`YYYY-MM-DD HH:mm:ss`），同时兼容 ISO 字符串与常规时间文本；在飞书记录同步、本地 Profile 存储、九宫格卡片、账号编辑弹窗及 Dock 悬浮气泡中全面落地；
+    - **飞书配置导出导入互通**：在配置导出/导入体系中完整支持飞书多维表格（`appId`, `appSecret`, `appToken`, `tableId`, `fieldMap`, `autoSync`）的无缝热恢复与自动定时同步引擎重新挂载。
 
 ## 五、当前断点与后续待执行事项
 

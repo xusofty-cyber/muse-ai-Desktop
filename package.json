@@ -14,6 +14,9 @@
     },
     "files": [
       "main.js",
+      "feishu-sync.js",
+      "mihomo-manager.js",
+      "bin/**/*",
       "hotkeys.html",
       "lock.html",
       "offline.html",
@@ -22,6 +25,9 @@
       "preload-settings.js",
       "assets/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "bin/**/*"
     ],
     "nsis": {
       "allowToChangeInstallationDirectory": true,
@@ -66,6 +72,9 @@
         "tar.gz"
       ]
     },
+    "deb": {
+      "afterInstall": "scripts/linux-after-install.sh"
+    },
     "mac": {
       "icon": "assets/icon.png",
       "category": "public.app-category.productivity",
@@ -82,7 +91,9 @@
       ]
     }
   },
-  "dependencies": {},
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
   "description": "Muse for Desktop (Windows, macOS, Linux): your personal AI agent in a native desktop app",
   "devDependencies": {
     "electron": "^44.6.0",
@@ -100,7 +111,7 @@
     "dist:linux": "electron-builder --linux AppImage deb",
     "dist:linux:tar": "electron-builder --linux tar.gz",
     "dist:mac": "electron-builder --mac dmg zip",
-    "start": "electron ."
+    "start": "electron . --no-sandbox"
   },
-  "version": "1.5.24"
+  "version": "1.5.25"
 }

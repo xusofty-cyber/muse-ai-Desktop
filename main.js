@@ -2,6 +2,9 @@ const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeI
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const os = require('os');
+const { defaultFeishuConfig, detectFeishuCli, executeFeishuSync, setupFeishuAutoSync, formatDateTime } = require('./feishu-sync');
+const { MihomoManager, DEFAULT_CONTROLLER_PORT, DEFAULT_BASE_PROXY_PORT } = require('./mihomo-manager');
 
 // ---- 核心加固 1 & 2: 先定身份/UserData 再拿单例锁 + 统一 UserData 目录 -------------
 // 顺序要点 (v1.5.15 修正评审 P1-11): Chromium 单例锁绑定获取时刻的 userData
@@ -129,6 +132,9 @@ const I18N_MAIN = {
     hintMedia: 'Approve microphone, camera, audio, and media permission requests',
     showOnScreenWidget: 'Show On-Screen Widget',
     settingsKeybinds: 'Settings & Keybinds…',
+    openAccountHub: '⊞ Open Account Hub (Grid View)…',
+    sessionTools: 'Session & Media Tools',
+    preferencesMenu: 'Preferences & Settings',
     profileMenu: (name) => `Profile: ${name}`,
     addProfile: 'Add profile…',
     signOutFrom: (site) => `Sign out of ${site}…`,
@@ -138,6 +144,9 @@ const I18N_MAIN = {
     muteSpeaker: (hk) => `Mute / unmute app sound  (${hk})`,
     customizeHotkeys: 'Customize hotkeys & settings…',
     networkProxy: 'Network & Proxy settings…',
+    backupExport: 'Backup / Export all accounts & configs…',
+    backupImport: 'Import config backup…',
+    openDataDir: 'Open local data folder (%APPDATA%\\Muse)…',
     resetGoogleSession: 'Reset Google Sign-in & Security Cache…',
     appearance: (cur) => `Appearance: ${cur}`,
     darkMode: 'Dark mode 🌙',
@@ -190,6 +199,9 @@ const I18N_MAIN = {
     hintMedia: '自动批准麦克风、摄像头与媒体访问权限',
     showOnScreenWidget: '显示屏幕悬浮组件',
     settingsKeybinds: '自动化与快捷键设置…',
+    openAccountHub: '⊞ 打开账号总览看板 (九宫格全景)…',
+    sessionTools: '会话与多媒体工具',
+    preferencesMenu: '偏好与系统设置',
     profileMenu: (name) => `当前账号: ${name}`,
     addProfile: '添加新账号…',
     signOutFrom: (site) => `退出 ${site} 登录…`,
@@ -199,6 +211,9 @@ const I18N_MAIN = {
     muteSpeaker: (hk) => `应用声音静音 / 开关  (${hk})`,
     customizeHotkeys: '全局快捷键与高级偏好设置…',
     networkProxy: '网络代理配置 (TUN/系统)…',
+    backupExport: '备份 / 导出当前所有账号与代理配置…',
+    backupImport: '导入配置备份 (.json)…',
+    openDataDir: '打开本地数据与配置目录 (%APPDATA%\\Muse)…',
     resetGoogleSession: '重置 Google 登录与风控缓存…',
     appearance: (cur) => `主题外观: ${cur}`,
     darkMode: '深色模式 🌙',
@@ -398,21 +413,52 @@ function verifyPassword(password, salt, storedHash) {
   }
 }
 
+function defaultMihomoConfig() {
+  return {
+    enabled: false,
+    subscriptionUrl: '',
+    sources: [], // Array<{ id, type: 'url'|'file', name, target, enabled, nodeCount, updatedAt, cachedProxies, subscriptionUserinfo }>
+    autoUpdateInterval: 24,
+    lastUpdated: '',
+    basePort: DEFAULT_BASE_PROXY_PORT,
+    controllerPort: DEFAULT_CONTROLLER_PORT,
+    customBinPath: '',
+    cachedProxies: [],
+  };
+}
+
 function defaultState() {
   return {
     window: {},
     windowByProfile: {},
     site: 'muse',
-    profiles: [{ id: 'default', name: '账号 1', color: AVATAR_COLORS[0] }],
+    profiles: [{
+      id: 'default',
+      name: '账号 1',
+      color: AVATAR_COLORS[0],
+      group: '默认群组',
+      purpose: '',
+      usagePercent: 0,
+      usageText: '',
+      tokenResetAt: '',
+      status: 'normal',
+      proxyQueue: [],
+      proxyStrategy: 'fallback',
+      proxyMode: 'inherit',
+      proxyCustom: { type: 'http', host: '127.0.0.1', port: 7897 },
+    }],
     activeProfileId: 'default',
+    accountGroups: ['默认群组'],
+    feishu: defaultFeishuConfig(),
     hotkeys: { ...DEFAULT_HOTKEYS },
     automation: defaultAutomation(),
     proxy: defaultProxy(),
+    mihomo: defaultMihomoConfig(),
     theme: 'dark', // 'dark' | 'light' | 'system'
     locale: detectDefaultLocale(), // 'zh-CN' | 'en'
     ui: {
       autoHideButtons: true, // 自动隐藏右上角与右下角按钮
-      dockPinned: false, // 账号栏是否固定常态展开 (默认 false: 鼠标移开后自动收起)
+      dockPinned: true, // 账号栏是否固定常态展开 (默认 true: 常驻展示，方便多账号切换)
     },
     lock: defaultLock(),
   };
@@ -462,6 +508,59 @@ function sanitizeAndMergeState(raw) {
     merged.proxy.mode = 'system';
     merged.proxy.enabled = false;
   }
+  // 群组与飞书多维表格同步配置合并
+  merged.accountGroups = Array.isArray(raw.accountGroups) && raw.accountGroups.length > 0
+    ? [...new Set(raw.accountGroups.filter((g) => typeof g === 'string' && g.trim()))]
+    : ['默认群组'];
+  if (!merged.accountGroups.includes('默认群组')) {
+    merged.accountGroups.unshift('默认群组');
+  }
+
+  merged.feishu = {
+    ...defaultFeishuConfig(),
+    ...(raw.feishu || {}),
+    fieldMap: {
+      ...defaultFeishuConfig().fieldMap,
+      ...((raw.feishu && raw.feishu.fieldMap) || {}),
+    },
+  };
+
+  const rawMihomo = (raw && raw.mihomo) || {};
+  let rawSources = Array.isArray(rawMihomo.sources) ? rawMihomo.sources : [];
+  // 兼容旧版单一 subscriptionUrl 自动平滑迁移至多源架构
+  if (rawSources.length === 0 && typeof rawMihomo.subscriptionUrl === 'string' && rawMihomo.subscriptionUrl.trim()) {
+    rawSources = [{
+      id: 'src_default',
+      type: 'url',
+      name: '默认订阅',
+      target: rawMihomo.subscriptionUrl.trim(),
+      enabled: true,
+      nodeCount: Array.isArray(rawMihomo.cachedProxies) ? rawMihomo.cachedProxies.length : 0,
+      updatedAt: rawMihomo.lastUpdated || '',
+      cachedProxies: Array.isArray(rawMihomo.cachedProxies) ? rawMihomo.cachedProxies : [],
+      subscriptionUserinfo: '',
+    }];
+  }
+
+  merged.mihomo = {
+    ...defaultMihomoConfig(),
+    ...rawMihomo,
+    sources: rawSources.map((s) => ({
+      id: (s && s.id) || ('src_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
+      type: s && s.type === 'file' ? 'file' : 'url',
+      name: (s && typeof s.name === 'string' && s.name.trim())
+        ? s.name.trim()
+        : (s && s.type === 'file' ? '本地 YAML 节点' : '机场订阅'),
+      target: (s && typeof s.target === 'string') ? s.target.trim() : '',
+      enabled: typeof (s && s.enabled) === 'boolean' ? s.enabled : true,
+      nodeCount: typeof (s && s.nodeCount) === 'number' ? s.nodeCount : (Array.isArray(s && s.cachedProxies) ? s.cachedProxies.length : 0),
+      updatedAt: (s && typeof s.updatedAt === 'string') ? s.updatedAt : '',
+      cachedProxies: Array.isArray(s && s.cachedProxies) ? s.cachedProxies : [],
+      subscriptionUserinfo: (s && s.subscriptionUserinfo) || '',
+    })),
+    cachedProxies: Array.isArray(rawMihomo.cachedProxies) ? rawMihomo.cachedProxies : [],
+  };
+
   // profiles 合法性校验 (v1.5.16, 评审 P2): 此前只补颜色, 不查 id。空/重复/
   // 非字符串 id 会让多个账号映射到同一 persist:muse-undefined 分区且不可拆分。
   // 现在过滤非法与重复 id (保留首个), 全部非法时回退默认账号。
@@ -476,10 +575,38 @@ function sanitizeAndMergeState(raw) {
       .map((prof, idx) => ({
         ...prof,
         color: prof.color || AVATAR_COLORS[idx % AVATAR_COLORS.length],
+        group: typeof prof.group === 'string' && prof.group.trim() ? prof.group.trim() : '默认群组',
+        purpose: typeof prof.purpose === 'string' ? prof.purpose : '',
+        usagePercent: typeof prof.usagePercent === 'number' ? Math.max(0, Math.min(100, Math.round(prof.usagePercent))) : 0,
+        usageText: typeof prof.usageText === 'string' ? prof.usageText : '',
+        tokenResetAt: prof.tokenResetAt ? formatDateTime(prof.tokenResetAt) : '',
+        status: ['normal', 'warning', 'exhausted', 'idle'].includes(prof.status) ? prof.status : 'normal',
+        proxyQueue: Array.isArray(prof.proxyQueue) ? prof.proxyQueue.filter((n) => typeof n === 'string' && n.trim()) : [],
+        proxyStrategy: ['fallback', 'url-test', 'load-balance', 'select'].includes(prof.proxyStrategy) ? prof.proxyStrategy : 'fallback',
+        proxyMode: ['inherit', 'system', 'mihomo', 'direct', 'custom'].includes(prof.proxyMode) ? prof.proxyMode : 'inherit',
+        proxyCustom: (prof.proxyCustom && typeof prof.proxyCustom === 'object') ? {
+          type: ['http', 'socks5'].includes(prof.proxyCustom.type) ? prof.proxyCustom.type : 'http',
+          host: typeof prof.proxyCustom.host === 'string' && prof.proxyCustom.host.trim() ? prof.proxyCustom.host.trim() : '127.0.0.1',
+          port: parseInt(prof.proxyCustom.port, 10) || 7897,
+        } : { type: 'http', host: '127.0.0.1', port: 7897 },
       }));
   }
   if (!Array.isArray(merged.profiles) || merged.profiles.length === 0) {
-    merged.profiles = [{ id: 'default', name: '账号 1', color: AVATAR_COLORS[0] }];
+    merged.profiles = [{
+      id: 'default',
+      name: '账号 1',
+      color: AVATAR_COLORS[0],
+      group: '默认群组',
+      purpose: '',
+      usagePercent: 0,
+      usageText: '',
+      tokenResetAt: '',
+      status: 'normal',
+      proxyQueue: [],
+      proxyStrategy: 'fallback',
+      proxyMode: 'inherit',
+      proxyCustom: { type: 'http', host: '127.0.0.1', port: 7897 },
+    }];
   }
   // windowByProfile 只保留现存账号的条目, 防已删账号的几何记录无限堆积
   {
@@ -685,7 +812,14 @@ const webPrefs = () => ({
 
 function attachZoomShortcuts(win) {
   win.webContents.on('before-input-event', (e, input) => {
-    if (!(input.control && !input.meta && !input.alt && input.type === 'keyDown')) return;
+    if (input.type !== 'keyDown') return;
+    if ((input.key === 'q' || input.key === 'Q') && (input.control || input.meta) && !input.alt) {
+      e.preventDefault();
+      app.quitting = true;
+      app.quit();
+      return;
+    }
+    if (!(input.control && !input.meta && !input.alt)) return;
     const z = win.webContents.getZoomFactor();
     if (input.key === '=' || input.key === '+') {
       win.webContents.setZoomFactor(Math.min(2.0, +(z + 0.1).toFixed(2)));
@@ -704,15 +838,21 @@ function attachZoomShortcuts(win) {
 function extractExternalTargetUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   try {
-    const parsed = new URL(rawUrl);
-    // 只解包已知跳转站的重定向参数 (v1.5.17 加固, 评审 P2): 此前任意 URL 的
-    // ?u=/?url= 参数都会被解包直达, 页面可借此绕过外链提示把用户带到钓鱼站
+    let cleanUrl = rawUrl.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
+    const parsed = new URL(cleanUrl);
+    const host = parsed.hostname.toLowerCase();
+
+    // 只解包已知跳转站与内部重定向包装的参数 (含 Meta AI / Facebook / Instagram / Google 等外链跳板)
     const REDIRECTOR_HOSTS = new Set([
       'www.google.com', 'google.com', 'www.bing.com', 'bing.com',
-      'duckduckgo.com', 'html.duckduckgo.com', 'l.facebook.com',
+      'duckduckgo.com', 'html.duckduckgo.com',
+      'link.meta.com', 'l.facebook.com', 'lm.facebook.com',
+      'l.instagram.com', 'l.messenger.com', 'www.facebook.com', 'facebook.com',
       'out.reddit.com', 'www.youtube.com',
+      'muse.ai', 'meta.ai', 'meta.com',
     ]);
-    if (!REDIRECTOR_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+    if (!REDIRECTOR_HOSTS.has(host) && !REDIRECTOR_HOSTS.has(host.replace(/^www\./, ''))) return null;
+
     // 识别常见重定向跳转参数
     const redirectKeys = ['u', 'url', 'target', 'dest', 'destination', 'link', 'href', 'q'];
     for (const key of redirectKeys) {
@@ -735,10 +875,57 @@ function extractExternalTargetUrl(rawUrl) {
   return null;
 }
 
+function isShareOrDocumentUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  try {
+    const parsed = new URL(rawUrl);
+    const pathname = parsed.pathname.toLowerCase();
+    const search = parsed.search.toLowerCase();
+    const sharePaths = [
+      '/share',
+      '/s/',
+      '/doc',
+      '/docs',
+      '/d/',
+      '/file',
+      '/files',
+      '/f/',
+      '/artifact',
+      '/artifacts',
+      '/attachment',
+      '/attachments',
+      '/download',
+      '/export',
+      '/preview',
+      '/view',
+      '/v/',
+      '/p/',
+    ];
+    if (sharePaths.some((p) => pathname.includes(p))) {
+      return true;
+    }
+    if (
+      search.includes('share=') ||
+      search.includes('token=') ||
+      search.includes('key=') ||
+      search.includes('expires=') ||
+      search.includes('signature=') ||
+      search.includes('sig=')
+    ) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function isInternalSiteUrl(rawUrl) {
   try {
     // 若属于外部链接包装重定向，实质属于外链
     if (extractExternalTargetUrl(rawUrl)) return false;
+    // 分享/文档/附件/临时资源链接不作为应用内基础导航，应作为独立资源处理
+    if (isShareOrDocumentUrl(rawUrl)) return false;
 
     const parsed = new URL(rawUrl);
     const host = parsed.hostname.toLowerCase();
@@ -755,54 +942,58 @@ function isInternalSiteUrl(rawUrl) {
 }
 
 function isAuthOrConnectorUrl(rawUrl) {
-  if (!rawUrl || typeof rawUrl !== 'string') return false;
-  // 关键：允许空白弹窗占位符（现代前端异步打开 OAuth 弹窗的通用标准模式）
-  if (rawUrl === 'about:blank' || rawUrl === '' || rawUrl.startsWith('about:')) {
+  if (typeof rawUrl !== 'string') return false;
+  // 关键：允许空白弹窗占位符（现代前端异步打开 OAuth 弹窗的通用标准模式：先 window.open('') 再重定向）
+  const trimmed = rawUrl.trim();
+  if (trimmed === '' || trimmed === 'about:blank' || trimmed.startsWith('about:')) {
     return true;
   }
   try {
-    const parsed = new URL(rawUrl);
+    const parsed = new URL(trimmed);
     const host = parsed.hostname.toLowerCase();
     const pathname = parsed.pathname.toLowerCase();
     const search = parsed.search.toLowerCase();
 
-    // 1. Meta / Facebook / Instagram 家族认证域名及通用 OAuth 域名
-    const authHosts = [
-      'meta.com',
+    // 0. Meta / Muse 跨域 SSO 与 AYMH ("Accounts You Might Have") 握手链
+    if (pathname.includes('/aymh') || (search.includes('origin=') && host.endsWith('muse.ai'))) {
+      return true;
+    }
+
+    // 1. 专属纯身份认证域名（该域名整个域均为登录/认证中心）
+    const dedicatedAuthHosts = [
+      'accounts.google.com',
+      'appleid.apple.com',
       'auth.meta.com',
       'account.meta.com',
       'family.meta.com',
       'work.meta.com',
-      'facebook.com',
-      'fb.com',
-      'instagram.com',
-      'accounts.google.com',
-      'appleid.apple.com',
-      'github.com',
-      'spotify.com',
-      'accounts.spotify.com',
-      'dropbox.com',
-      'zoom.us',
-      'canva.com',
-      'onepeloton.com',
-      'peloton.com',
-      'slack.com',
-      'notion.so',
       'login.microsoftonline.com',
-      'live.com',
       'login.live.com',
-      'linkedin.com',
-      'twitter.com',
-      'x.com',
-      'plaid.com',
-      'functionhealth.com',
-      'healthex.com',
+      'accounts.spotify.com',
     ];
-    if (authHosts.some((h) => host === h || host.endsWith('.' + h))) {
+    if (dedicatedAuthHosts.some((h) => host === h || host.endsWith('.' + h))) {
       return true;
     }
 
-    // 2. 内部站点的连接器中转授权与登录路由（含认证错误回调、状态码与授权换码）
+    // 2. Meta 家族 (Facebook / Instagram / Messenger) 的认证、授权与 SSO 路径
+    const metaFamilyHosts = ['facebook.com', 'fb.com', 'instagram.com', 'messenger.com'];
+    if (metaFamilyHosts.some((h) => host === h || host.endsWith('.' + h))) {
+      if (
+        pathname.includes('/aymh') ||
+        pathname.includes('/login') ||
+        pathname.includes('/signin') ||
+        pathname.includes('/oauth') ||
+        pathname.includes('/dialog') ||
+        pathname.includes('/checkpoint') ||
+        pathname.includes('/recover') ||
+        search.includes('client_id=') ||
+        search.includes('redirect_uri=')
+      ) {
+        return true;
+      }
+    }
+
+    // 3. 内部站点的连接器中转授权与登录路由（含认证错误回调、状态码与授权换码）
     const isInternal = host === 'muse.ai' || host.endsWith('.muse.ai') ||
                        host === 'meta.ai' || host.endsWith('.meta.ai') ||
                        host === 'meta.com' || host.endsWith('.meta.com');
@@ -823,10 +1014,91 @@ function isAuthOrConnectorUrl(rawUrl) {
       }
     }
 
-    // 3. 通用 OAuth 特征（包含 client_id 以及 redirect_uri / response_type）
+    // 4. 通用 OAuth 特征（包含 client_id 以及 redirect_uri / response_type / state / code）
     if (
       (search.includes('client_id=') || search.includes('response_type=')) &&
       (search.includes('redirect_uri=') || pathname.includes('oauth') || pathname.includes('auth'))
+    ) {
+      return true;
+    }
+
+    // 5. 第三方常用开放平台（GitHub, Slack, Notion, Zoom, Dropbox, Canva 等）的特定登录/授权路径
+    const thirdPartyOAuthHosts = [
+      'github.com',
+      'spotify.com',
+      'dropbox.com',
+      'zoom.us',
+      'canva.com',
+      'onepeloton.com',
+      'peloton.com',
+      'slack.com',
+      'notion.so',
+      'live.com',
+      'linkedin.com',
+      'twitter.com',
+      'x.com',
+      'plaid.com',
+      'functionhealth.com',
+      'healthex.com',
+    ];
+    if (thirdPartyOAuthHosts.some((h) => host === h || host.endsWith('.' + h))) {
+      // 只有明确属于 OAuth 授权或登录的路径才认定为 Auth 弹窗，普通仓库/文章/主页属于常规外部链接
+      if (
+        pathname.includes('/oauth') ||
+        pathname.startsWith('/login') ||
+        pathname.startsWith('/signin') ||
+        pathname.includes('/authorize') ||
+        search.includes('client_id=') ||
+        search.includes('redirect_uri=')
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// 识别第三方广告、追踪分析与数据上报埋点链接 (防止 iframe 内部重定向或打点唤起外部默认浏览器)
+function isTrackingOrAdUrl(rawUrl) {
+  if (typeof rawUrl !== 'string') return false;
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.toLowerCase();
+    const search = parsed.search.toLowerCase();
+
+    // 常见广告 / 埋点统计 / 转化追踪域名
+    const trackingHosts = [
+      'doubleclick.net',
+      'google-analytics.com',
+      'googletagmanager.com',
+      'fbthirdpartypixel.com',
+      'analytics.twitter.com',
+      'clarity.ms',
+      'hotjar.com',
+      'segment.io',
+      'mixpanel.com',
+      'scorecardresearch.com',
+      'criteo.com',
+      'adroll.com',
+    ];
+
+    if (trackingHosts.some((h) => host === h || host.endsWith('.' + h))) {
+      return true;
+    }
+
+    if (host === 'tr.snapchat.com' || (host.endsWith('snapchat.com') && pathname.startsWith('/cm/'))) {
+      return true;
+    }
+
+    if (
+      pathname.includes('/activityi') ||
+      pathname.includes('/pixel') ||
+      search.includes('dc_pre=') ||
+      search.includes('fbthirdpartypixel')
     ) {
       return true;
     }
@@ -883,15 +1155,18 @@ function setupExternalLinkHandler(win, profileId) {
 
   // 1. 拦截 window.open() 或带 target="_blank" 的链接
   win.webContents.setWindowOpenHandler((details) => {
-    const { url, disposition, features } = details;
+    const { url } = details;
 
-    // 允许身份验证、连接器弹窗以及所有显式弹窗（Popup）
+    // 严禁向外部默认浏览器打开第三方统计、埋点与广告追踪链接
+    if (isTrackingOrAdUrl(url)) {
+      return { action: 'deny' };
+    }
+
+    // 允许身份验证、连接器弹窗（如 Google 登录、OAuth 授权弹窗）或空白占位弹窗在应用内完成
     const isAuth = isAuthOrConnectorUrl(url);
-    const isPopup = disposition === 'new-window' ||
-                    (typeof features === 'string' && features.length > 0) ||
-                    url === 'about:blank' || url === '';
+    const isBlank = url === 'about:blank' || url === '' || url.startsWith('about:');
 
-    if (isAuth || isPopup) {
+    if (isAuth || isBlank) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
@@ -900,18 +1175,31 @@ function setupExternalLinkHandler(win, profileId) {
       };
     }
 
-    // 检查是否为外部链接或包装的外链重定向（由外部默认浏览器打开）
+    // 关键守卫：内部站点常规基础功能路由（如左侧栏的聊天 /chat、会话切换 /c/、设置等），绝不向外打开浏览器
+    if (isInternalSiteUrl(url)) {
+      try {
+        const parsed = new URL(url);
+        const curUrl = win.webContents.getURL() || '';
+        if (parsed.pathname && parsed.pathname !== '/' && !curUrl.endsWith(parsed.pathname)) {
+          win.loadURL(url);
+        }
+      } catch {}
+      return { action: 'deny' };
+    }
+
+    // 所有外部链接及独立文档/分享链接（如聊天内分享链接、文档、GitHub 仓库等）：
+    // 统一交由系统默认浏览器打开，绝不无响应丢弃或弹空白无头窗口
     const extracted = extractExternalTargetUrl(url);
-    const finalExternalUrl = extracted || (!isInternalSiteUrl(url) ? url : null);
+    const finalExternalUrl = (extracted || url).trim().replace(/[，。；、？！）》」"',;!]+$/, '');
 
     if (finalExternalUrl && (finalExternalUrl.startsWith('http://') || finalExternalUrl.startsWith('https://') || finalExternalUrl.startsWith('mailto:'))) {
+      console.log('[ExternalLink window.open] Opening external URL in default browser:', finalExternalUrl);
       shell.openExternal(finalExternalUrl).catch((err) => {
         console.warn('[ExternalLink] Failed to open external URL:', finalExternalUrl, err);
       });
       return { action: 'deny' };
     }
 
-    // 内部站点链接：绝不直接在主窗口执行 win.loadURL(url) 以免冲毁当前正在聊天的会话
     return { action: 'deny' };
   });
 
@@ -960,20 +1248,37 @@ function setupExternalLinkHandler(win, profileId) {
   });
 
   // 2. 拦截在主窗口内的普通超链接跳转（如 <a href="...">）及 302 重定向，防止主聊天窗口被覆盖或因阻止导航挂起黑屏
-  const handleNavigation = (event, url) => {
+  const handleNavigation = (event, url, isInPlace, isMainFrame) => {
+    // 关键守卫：严格忽略子框架 (iframe/subframe) 的所有导航与 302 重定向！
+    // 页面内的第三方统计埋点（Snapchat Pixel, DoubleClick, Facebook Pixel 等）及后台嵌入 iframe 频繁重定向，
+    // 若拦截子框架会导致 Blink Mojo 报错并误唤起外部系统浏览器打开后台资源。
+    if (isMainFrame === false || (event && event.isMainFrame === false)) {
+      return;
+    }
+    // 忽略第三方统计埋点与广告跟踪 URL
+    if (isTrackingOrAdUrl(url)) {
+      return;
+    }
+    // 允许身份验证流程导航
     if (isAuthOrConnectorUrl(url)) {
       return;
     }
-    const extracted = extractExternalTargetUrl(url);
-    const finalExternalUrl = extracted || (!isInternalSiteUrl(url) ? url : null);
+    // 内部站点链接：主框架正常导航
+    if (isInternalSiteUrl(url)) {
+      return;
+    }
 
-    if (finalExternalUrl) {
-      event.preventDefault();
-      if (finalExternalUrl.startsWith('http://') || finalExternalUrl.startsWith('https://') || finalExternalUrl.startsWith('mailto:')) {
-        shell.openExternal(finalExternalUrl).catch((err) => {
-          console.warn('[ExternalLink] Failed to open external URL on nav:', finalExternalUrl, err);
-        });
-      }
+    // 主框架点击的真正外部网络链接 (如 https://ulife.vip/):
+    // 阻止应用内导航并由系统默认浏览器打开，绝不覆盖主聊天窗口
+    event.preventDefault();
+    const extracted = extractExternalTargetUrl(url);
+    const finalExternalUrl = (extracted || url).trim().replace(/[，。；、？！）》」"',;!]+$/, '');
+
+    if (finalExternalUrl && (finalExternalUrl.startsWith('http://') || finalExternalUrl.startsWith('https://') || finalExternalUrl.startsWith('mailto:'))) {
+      console.log('[ExternalLink Navigation] Opening in default browser:', finalExternalUrl);
+      shell.openExternal(finalExternalUrl).catch((err) => {
+        console.warn('[ExternalLink] Failed to open external URL on nav:', finalExternalUrl, err);
+      });
     }
   };
 
@@ -981,9 +1286,84 @@ function setupExternalLinkHandler(win, profileId) {
   win.webContents.on('will-redirect', handleNavigation);
 }
 
+let mihomoManager = null;
+function getMihomoManager() {
+  if (!mihomoManager) {
+    const mihomoDataDir = path.join(app.getPath('userData'), 'mihomo');
+    mihomoManager = new MihomoManager({
+      dataDir: mihomoDataDir,
+      binPath: state.mihomo && state.mihomo.customBinPath,
+      basePort: (state.mihomo && state.mihomo.basePort) || DEFAULT_BASE_PROXY_PORT,
+      controllerPort: (state.mihomo && state.mihomo.controllerPort) || DEFAULT_CONTROLLER_PORT,
+    });
+  }
+  return mihomoManager;
+}
+
 // ---- network & proxy settings ---------------------------------------------
-async function applyProxyToSession(targetSession) {
+async function applyProxyToSession(targetSession, profileId = null) {
   if (!targetSession) return;
+
+  const prof = profileId ? state.profiles.find((p) => p.id === profileId) : null;
+  const acctMode = (prof && prof.proxyMode && prof.proxyMode !== 'inherit') ? prof.proxyMode : null;
+
+  // 1. 若账号单独指定了代理模式（system / direct / custom）
+  if (acctMode === 'system') {
+    try {
+      await targetSession.setProxy({ mode: 'system' });
+      console.log(`[Proxy] Applied individual system/TUN mode to session for profile: ${profileId}`);
+      return;
+    } catch (err) {
+      console.error(`[Proxy] Failed to apply system mode to profile ${profileId}:`, err);
+    }
+  } else if (acctMode === 'direct') {
+    try {
+      await targetSession.setProxy({ mode: 'direct' });
+      console.log(`[Proxy] Applied individual direct mode to session for profile: ${profileId}`);
+      return;
+    } catch (err) {
+      console.error(`[Proxy] Failed to apply direct mode to profile ${profileId}:`, err);
+    }
+  } else if (acctMode === 'custom') {
+    const c = (prof && prof.proxyCustom) || { type: 'http', host: '127.0.0.1', port: 7897 };
+    const type = (c.type || 'http').toLowerCase();
+    const host = (c.host || '127.0.0.1').trim();
+    const port = parseInt(c.port, 10) || 7897;
+    const proxyRules = `${type}://${host}:${port}`;
+    const proxyBypassRules = '<local>;localhost;127.0.0.1';
+    try {
+      await targetSession.setProxy({ proxyRules, proxyBypassRules });
+      console.log(`[Proxy] Applied individual custom proxy (${proxyRules}) to session for profile: ${profileId}`);
+      return;
+    } catch (err) {
+      console.error(`[Proxy] Failed to apply custom proxy to profile ${profileId}:`, err);
+    }
+  }
+
+  // 2. 账号选了 mihomo 或跟随全局 (inherit):
+  // 若开启了内置 Mihomo 智能分流（或账号显式选了 mihomo）
+  if (acctMode === 'mihomo' || (state.mihomo && state.mihomo.enabled)) {
+    const mm = getMihomoManager();
+    // 优先从 portMap 中找该 profileId 对应的独立端口，没有则按账号索引确定推算
+    let dedicatedPort = profileId && mm && mm.portMap ? mm.portMap[profileId] : null;
+    if (!dedicatedPort) {
+      const basePort = (state.mihomo && state.mihomo.basePort) || DEFAULT_BASE_PROXY_PORT;
+      const acctIdx = state.profiles ? state.profiles.findIndex((p) => p.id === profileId) : -1;
+      dedicatedPort = acctIdx >= 0 ? (basePort + acctIdx) : basePort;
+    }
+    try {
+      const proxyRules = `http=127.0.0.1:${dedicatedPort};https=127.0.0.1:${dedicatedPort}`;
+      const proxyBypassRules = '<local>;localhost;127.0.0.1';
+      await targetSession.setProxy({ proxyRules, proxyBypassRules });
+      console.log(`[Proxy] Applied Mihomo dedicated port ${dedicatedPort} to session for profile: ${profileId || 'default'}`);
+      return;
+    } catch (err) {
+      console.error(`[Proxy] Failed to apply Mihomo port ${dedicatedPort} to profile ${profileId}:`, err);
+    }
+    return;
+  }
+
+  // 3. 传统全局通用代理策略 (Custom / Direct / System 自适应)
   const p = state.proxy || defaultProxy();
   try {
     if (p.mode === 'custom' && p.enabled !== false) {
@@ -1132,7 +1512,7 @@ async function applyProxySettings() {
   await applyProxyToSession(session.defaultSession);
   for (const p of state.profiles) {
     const s = session.fromPartition(partitionFor(p.id));
-    await applyProxyToSession(s);
+    await applyProxyToSession(s, p.id);
   }
 }
 
@@ -1211,6 +1591,8 @@ function broadcastAccountChange() {
     profiles: state.profiles,
     activeProfileId: state.activeProfileId,
     dockPinned: !!(state.ui && state.ui.dockPinned),
+    accountGroups: state.accountGroups || ['默认群组'],
+    feishu: state.feishu || defaultFeishuConfig(),
   };
   for (const win of profileWindows.values()) {
     if (win && !win.isDestroyed()) {
@@ -1295,7 +1677,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
 
   // 确保新窗口的 Session 立即继承全局统一的网络代理配置
   const ses = session.fromPartition(partitionFor(profileId));
-  applyProxyToSession(ses);
+  applyProxyToSession(ses, profileId);
 
   const saved = ensureBoundsVisible(
     targetBounds || (state.windowByProfile && state.windowByProfile[profileId]) || state.window || {}
@@ -1320,8 +1702,14 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
   }
 
   win.webContents.setUserAgent(CHROME_UA);
+  win._isContentLoaded = false;
+  win.webContents.on('dom-ready', () => {
+    win._isContentLoaded = true;
+  });
   win.loadURL(currentSite().url);
   win.webContents.on('did-finish-load', () => {
+    win._failLoadRetries = 0;
+    win._isContentLoaded = true;
     injectMicShim(win);
     broadcastAccountChange();
     broadcastThemeChange();
@@ -1329,7 +1717,7 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     broadcastLocaleChange();
   });
 
-  // 网络错误处理：加载离线诊断页并自动弹出网络配置界面
+  // 网络错误处理：主框架加载失败时进行轻量重试并在必要时进入离线页（绝不静默弹窗扰民）
   win.webContents.on('did-fail-load', async (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     // 仅在主框架（Main Frame）加载失败时触发诊断自愈，子框架/iframe/资源/第三方埋点失败绝不冲毁主界面
     if (isMainFrame === false) return;
@@ -1340,15 +1728,21 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
     console.warn(`[Network] Main frame failed to load ${validatedURL}: [${errorCode}] ${errorDescription}`);
     if (validatedURL && validatedURL.includes('offline.html')) return;
 
-    // 若发生连接失败且为严重网络阻断（代理故障/连接被拒/超时），主动唤出网络配置界面引导修复
-    const isConnFailure = errorCode === -130 || errorCode === -100 || errorCode === -102 || errorCode === -7 || errorCode === -105;
-    if (isConnFailure) {
-      console.log(`[Network] Connection failed with [${errorCode}] ${errorDescription}, popping up proxy settings...`);
-      openHotkeySettings('tab-proxy');
-    }
-
     // 目标地址兜底：必须为内部合法站点（如 muse.ai / meta.ai），防止第三方外链或重定向劫持导致离线重试跳出客户端
     const safeTargetUrl = (validatedURL && isInternalSiteUrl(validatedURL)) ? validatedURL : currentSite().url;
+
+    // 轻量瞬态容错重试：代理节点故障转移/网络抖动时会有毫秒级连接重置 (-100/-102/-7)
+    // 自动重试 1 次 (延迟 1200ms 等待代理内核故障转移完成)，避免轻微波动直接将用户打入离线页
+    win._failLoadRetries = (win._failLoadRetries || 0) + 1;
+    if (win._failLoadRetries <= 1 && (errorCode === -100 || errorCode === -102 || errorCode === -7)) {
+      console.log(`[Network] Transient connection drop [${errorCode}], retrying in 1200ms (${win._failLoadRetries}/1)...`);
+      setTimeout(() => {
+        if (win && !win.isDestroyed()) {
+          win.loadURL(safeTargetUrl).catch(() => {});
+        }
+      }, 1200);
+      return;
+    }
 
     win.loadFile(path.join(__dirname, 'offline.html'), {
       query: {
@@ -1722,6 +2116,8 @@ function showMainWindow() {
   }, 250);
 }
 
+let currentSwitchTargetId = null;
+
 function switchAccount(id) {
   if (isScreenLocked) return;
   recordUserActivity();
@@ -1734,14 +2130,13 @@ function switchAccount(id) {
     currentBounds = prevWin.getBounds();
   }
 
+  currentSwitchTargetId = id;
   state.activeProfileId = id;
   saveState();
 
   // 获取或复用目标账号的常驻窗口（零重载瞬切）
   const targetWin = getOrCreateProfileWindow(id, currentBounds);
   mainWindow = targetWin;
-
-  showWindowSafely(targetWin);
 
   // 快捷窗的 partition 在创建时绑定, 切账号后必须销毁, 否则它会继续以
   // 上一个账号的登录态响应 (评审 P0-4); 下次打开时按新账号重建
@@ -1750,21 +2145,61 @@ function switchAccount(id) {
   // 子弹窗跟随账号可见性: 目标账号此前开着的弹窗恢复显示
   setChildWindowsVisible(id, true);
 
-  // 隐藏前一个窗口并强制落盘会话 Cookie; 其子弹窗一并隐藏 (防串号感知)
-  if (prevWin && prevWin !== targetWin && !prevWin.isDestroyed()) {
-    const prevProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
-    if (prevProfile) setChildWindowsVisible(prevProfile.id, false);
-    prevWin.hide();
-    try {
-      const flushProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
-      if (flushProfile) {
-        session.fromPartition(partitionFor(flushProfile.id)).cookies.flushStore().catch(() => {});
-      }
-    } catch {}
-  }
+  const applySwitchDone = () => {
+    if (targetWin.isDestroyed()) return;
+    showWindowSafely(targetWin);
+    targetWin.focus();
 
-  buildTrayMenu();
-  broadcastAccountChange();
+    // 隐藏前一个窗口并强制落盘会话 Cookie; 其子弹窗一并隐藏 (防串号感知)
+    if (prevWin && prevWin !== targetWin && !prevWin.isDestroyed()) {
+      const prevProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
+      if (prevProfile) setChildWindowsVisible(prevProfile.id, false);
+      prevWin.hide();
+      try {
+        const flushProfile = state.profiles.find((p) => profileWindows.get(p.id) === prevWin);
+        if (flushProfile) {
+          session.fromPartition(partitionFor(flushProfile.id)).cookies.flushStore().catch(() => {});
+        }
+      } catch {}
+    }
+
+    buildTrayMenu();
+    broadcastAccountChange();
+  };
+
+  // 核心防黑屏保护：
+  // 1. 若目标窗口内容已就绪（且没有在加载），立即完成无感瞬切
+  // 2. 若目标窗口是新建或正在加载，先保持原窗口及 Dock 交互可见，
+  //    目标窗口 DOM 准备好（dom-ready 或 did-finish-load / did-fail-load）后再平滑切入；
+  //    设置 3.5 秒保底超时防止网络阻断一直卡住。
+  const isTargetReady = targetWin._isContentLoaded && !targetWin.webContents.isLoading();
+  if (isTargetReady || !prevWin || prevWin.isDestroyed() || !prevWin.isVisible()) {
+    applySwitchDone();
+  } else {
+    // 广播正在切换至目标账号（在 Dock 上渲染脉冲/旋转指示）
+    for (const w of profileWindows.values()) {
+      if (w && !w.isDestroyed()) {
+        w.webContents.send('account:switching', { targetProfileId: id });
+      }
+    }
+
+    let finished = false;
+    const onReady = () => {
+      if (finished || currentSwitchTargetId !== id) return;
+      finished = true;
+      try {
+        targetWin.webContents.removeListener('dom-ready', onReady);
+        targetWin.webContents.removeListener('did-finish-load', onReady);
+        targetWin.webContents.removeListener('did-fail-load', onReady);
+      } catch {}
+      applySwitchDone();
+    };
+
+    targetWin.webContents.once('dom-ready', onReady);
+    targetWin.webContents.once('did-finish-load', onReady);
+    targetWin.webContents.once('did-fail-load', onReady);
+    setTimeout(onReady, 3500);
+  }
 }
 
 function switchProfile(id) {
@@ -1780,7 +2215,7 @@ function nextAccount() {
   switchAccount(state.profiles[nextIdx].id);
 }
 
-function addProfile(customName) {
+function addProfile(customName, customGroup, customPurpose) {
   // 账号 id 必须全局唯一 (v1.5.16, 评审 P2): 此前用 acc_${Date.now()}, 托盘与
   // 页面两入口同毫秒各触发一次即撞号, 两账号共用同一 partition 完全串号,
   // 删其一还会清掉另一个。改用 randomUUID 并做唯一性兜底。
@@ -1790,15 +2225,49 @@ function addProfile(customName) {
   }
   const color = AVATAR_COLORS[state.profiles.length % AVATAR_COLORS.length];
   const name = (customName && customName.trim()) || `账号 ${state.profiles.length + 1}`;
-  const profile = { id, name, color };
+  const group = (customGroup && customGroup.trim()) || (state.accountGroups && state.accountGroups[0]) || '默认群组';
+  const purpose = (customPurpose && customPurpose.trim()) || '';
+  const profile = {
+    id,
+    name,
+    color,
+    group,
+    purpose,
+    usagePercent: 0,
+    usageText: '',
+    tokenResetAt: '',
+    status: 'normal',
+    proxyQueue: [],
+    proxyStrategy: 'fallback',
+    proxyMode: 'inherit',
+    proxyCustom: { type: 'http', host: '127.0.0.1', port: 7897 },
+    updatedAt: Date.now(),
+  };
   state.profiles.push(profile);
+  if (state.accountGroups && !state.accountGroups.includes(group)) {
+    state.accountGroups.push(group);
+  }
   saveState();
   setupDownloadHandler(id);
   setupPermissions(id);
   setupSessionPersistence(id);
-  applyProxyToSession(session.fromPartition(partitionFor(id)));
+
+  if (state.mihomo && state.mihomo.enabled) {
+    const mm = getMihomoManager();
+    if (mm && mm.isRunning) {
+      mm.reload(state.profiles, state.mihomo.cachedProxies)
+        .then(() => applyProxySettings())
+        .catch((e) => console.warn('[Mihomo] Reload on addProfile failed:', e));
+    } else {
+      applyProxyToSession(session.fromPartition(partitionFor(id)), id);
+    }
+  } else {
+    applyProxyToSession(session.fromPartition(partitionFor(id)), id);
+  }
+
   switchAccount(id);
   notify('新增账号', `${profile.name} 已创建，已就绪独立会话环境。`);
+  return profile;
 }
 
 // ---- 会话清除工具 (v1.5.16, 评审 P1-13) -------------------------------------
@@ -2255,6 +2724,8 @@ ipcMain.handle('account:get-state', (e) => (denyUntrusted(e) ? undefined : ({
   profiles: state.profiles,
   activeProfileId: state.activeProfileId,
   dockPinned: !!(state.ui && state.ui.dockPinned),
+  accountGroups: state.accountGroups || ['默认群组'],
+  feishu: state.feishu || defaultFeishuConfig(),
 })));
 
 ipcMain.handle('dock:set-pinned', (e, { pinned }) => {
@@ -2272,10 +2743,106 @@ ipcMain.handle('account:switch', (e, { id }) => {
   return { ok: true };
 });
 
-ipcMain.handle('account:add', (e, { name }) => {
+ipcMain.handle('account:add', (e, { name, group, purpose }) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
-  addProfile(name);
-  return { ok: true };
+  const prof = addProfile(name, group, purpose);
+  return { ok: true, profile: prof };
+});
+
+ipcMain.handle('account:update-meta', (e, { id, name, group, purpose, usagePercent, usageText, tokenResetAt, status }) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const p = state.profiles.find((item) => item.id === id);
+  if (!p) return { ok: false, error: 'Account not found' };
+
+  if (typeof name === 'string' && name.trim()) p.name = name.trim();
+  if (typeof group === 'string' && group.trim()) {
+    p.group = group.trim();
+    if (!state.accountGroups.includes(p.group)) {
+      state.accountGroups.push(p.group);
+    }
+  }
+  if (typeof purpose === 'string') p.purpose = purpose.trim();
+  if (typeof usagePercent === 'number') {
+    p.usagePercent = Math.max(0, Math.min(100, Math.round(usagePercent)));
+  }
+  if (typeof usageText === 'string') p.usageText = usageText.trim();
+  if (typeof tokenResetAt === 'string') p.tokenResetAt = formatDateTime(tokenResetAt.trim());
+  if (['normal', 'warning', 'exhausted', 'idle'].includes(status)) {
+    p.status = status;
+  }
+  p.updatedAt = Date.now();
+
+  saveState();
+  buildTrayMenu();
+  broadcastAccountChange();
+  return { ok: true, profile: p };
+});
+
+ipcMain.handle('account:set-groups', (e, { groups }) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!Array.isArray(groups)) return { ok: false, error: 'groups must be an array' };
+  const cleanGroups = [...new Set(groups.filter((g) => typeof g === 'string' && g.trim()))];
+  if (!cleanGroups.includes('默认群组')) cleanGroups.unshift('默认群组');
+  state.accountGroups = cleanGroups;
+
+  for (const prof of state.profiles) {
+    if (!state.accountGroups.includes(prof.group)) {
+      prof.group = '默认群组';
+    }
+  }
+
+  saveState();
+  broadcastAccountChange();
+  return { ok: true, groups: state.accountGroups };
+});
+
+ipcMain.handle('feishu:get-config', (e) => {
+  if (denyUntrusted(e)) return undefined;
+  return state.feishu || defaultFeishuConfig();
+});
+
+ipcMain.handle('feishu:detect-cli', async (e, customCliPath) => {
+  if (denyUntrusted(e)) return { available: false, error: 'untrusted sender' };
+  return await detectFeishuCli(customCliPath || (state.feishu && state.feishu.customCliPath));
+});
+
+ipcMain.handle('feishu:save-config', (e, config) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!config || typeof config !== 'object') return { ok: false, error: 'Invalid config' };
+
+  state.feishu = {
+    ...defaultFeishuConfig(),
+    ...(state.feishu || {}),
+    ...config,
+    fieldMap: {
+      ...defaultFeishuConfig().fieldMap,
+      ...((state.feishu && state.feishu.fieldMap) || {}),
+      ...(config.fieldMap || {}),
+    },
+  };
+
+  saveState();
+  setupFeishuAutoSync(state.feishu, () => state.profiles, () => {
+    saveState();
+    buildTrayMenu();
+    broadcastAccountChange();
+  });
+  broadcastAccountChange();
+  return { ok: true, feishu: state.feishu };
+});
+
+ipcMain.handle('feishu:sync-now', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  try {
+    const res = await executeFeishuSync(state.feishu, state.profiles, () => {
+      saveState();
+      buildTrayMenu();
+      broadcastAccountChange();
+    });
+    return res;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });
 
 ipcMain.handle('account:rename', (e, { id, name }) => {
@@ -2311,6 +2878,16 @@ ipcMain.handle('account:reorder', (e, { orderedIds }) => {
   saveState();
   buildTrayMenu();
   broadcastAccountChange();
+
+  if (state.mihomo && state.mihomo.enabled) {
+    const mm = getMihomoManager();
+    if (mm && mm.isRunning) {
+      mm.reload(state.profiles, state.mihomo.cachedProxies)
+        .then(() => applyProxySettings())
+        .catch((e) => console.warn('[Mihomo] Reload on account reorder failed:', e));
+    }
+  }
+
   return { ok: true };
 });
 
@@ -2375,6 +2952,16 @@ ipcMain.handle('account:delete', async (e, { id }) => {
     mainWindow = getOrCreateProfileWindow(state.activeProfileId);
     showWindowSafely(mainWindow);
   }
+
+  if (state.mihomo && state.mihomo.enabled) {
+    const mm = getMihomoManager();
+    if (mm && mm.isRunning) {
+      mm.reload(state.profiles, state.mihomo.cachedProxies)
+        .then(() => applyProxySettings())
+        .catch((e) => console.warn('[Mihomo] Reload on account delete failed:', e));
+    }
+  }
+
   return { ok: true };
 });
 
@@ -2415,6 +3002,603 @@ ipcMain.handle('proxy-set', async (e, config) => {
     else markWindowNavPending(quickWindow, 'reload');
   }
   return { ok: true };
+});
+
+// 内置 Mihomo 智能代理分流：重新聚合所有启用源并热重载内核
+async function refreshMihomoMergedProxiesAndReload(shouldReloadKernel = true) {
+  const mm = getMihomoManager();
+  const merged = mm.mergeSourceProxies(state.mihomo.sources);
+  state.mihomo.cachedProxies = merged;
+  state.mihomo.lastUpdated = new Date().toISOString();
+  saveState();
+
+  if (state.mihomo.enabled && shouldReloadKernel) {
+    if (mm.isRunning) {
+      await mm.reload(state.profiles, merged);
+    } else {
+      await mm.start(state.profiles, merged);
+    }
+    await applyProxySettings();
+  }
+  return merged;
+}
+
+// 内置 Mihomo 智能代理分流 IPC handlers
+ipcMain.handle('mihomo:get-config', (e) => {
+  if (denyUntrusted(e)) return undefined;
+  const mm = getMihomoManager();
+  return {
+    ...(state.mihomo || defaultMihomoConfig()),
+    isRunning: mm ? mm.isRunning : false,
+    portMap: mm ? mm.portMap : {},
+    executablePath: mm ? mm.findExecutable() : null,
+    nodeCount: (state.mihomo && Array.isArray(state.mihomo.cachedProxies)) ? state.mihomo.cachedProxies.length : 0,
+  };
+});
+
+ipcMain.handle('mihomo:choose-local-yaml', async (e) => {
+  if (denyUntrusted(e)) return { canceled: true };
+  const senderWin = BrowserWindow.fromWebContents(e.sender);
+  const res = await dialog.showOpenDialog(senderWin || hotkeyWindow || mainWindow, {
+    title: '选择 Clash / Mihomo 本地 YAML 节点文件',
+    filters: [
+      { name: 'Clash YAML 配置文件 (*.yaml;*.yml)', extensions: ['yaml', 'yml'] },
+      { name: '所有文件 (*.*)', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  });
+  if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
+    return { canceled: true };
+  }
+  const filePath = res.filePaths[0];
+  const defaultName = path.basename(filePath, path.extname(filePath));
+  return { canceled: false, filePath, defaultName };
+});
+
+ipcMain.handle('mihomo:add-source', async (e, payload) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const { type, name, target } = payload || {};
+  if (!target || typeof target !== 'string' || !target.trim()) {
+    return { ok: false, error: '目标链接或文件路径不能为空' };
+  }
+  const cleanTarget = target.trim();
+  const cleanType = type === 'file' ? 'file' : 'url';
+  const cleanName = (typeof name === 'string' && name.trim())
+    ? name.trim()
+    : (cleanType === 'file' ? path.basename(cleanTarget, path.extname(cleanTarget)) : '新订阅');
+
+  const mm = getMihomoManager();
+  const sourceId = 'src_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  let initialProxies = [];
+  let nodeCount = 0;
+  let subInfo = null;
+
+  if (cleanType === 'file') {
+    const parsed = mm.parseLocalYaml(cleanTarget);
+    if (!parsed.ok) {
+      return { ok: false, error: parsed.error };
+    }
+    initialProxies = parsed.proxies || [];
+    nodeCount = parsed.nodeCount || 0;
+  } else {
+    const subRes = await mm.fetchSubscription(cleanTarget, sourceId);
+    if (!subRes.ok) {
+      return { ok: false, error: subRes.error };
+    }
+    initialProxies = subRes.proxies || [];
+    nodeCount = subRes.nodeCount || 0;
+    subInfo = subRes.subInfo;
+  }
+
+  const newSource = {
+    id: sourceId,
+    type: cleanType,
+    name: cleanName,
+    target: cleanTarget,
+    enabled: true,
+    nodeCount,
+    updatedAt: new Date().toISOString(),
+    cachedProxies: initialProxies,
+    subscriptionUserinfo: (subInfo && subInfo.subscriptionUserinfo) || '',
+  };
+
+  if (!Array.isArray(state.mihomo.sources)) {
+    state.mihomo.sources = [];
+  }
+  state.mihomo.sources.push(newSource);
+  const merged = await refreshMihomoMergedProxiesAndReload(true);
+
+  return {
+    ok: true,
+    source: newSource,
+    totalNodes: merged.length,
+    portMap: mm.portMap,
+  };
+});
+
+ipcMain.handle('mihomo:update-source', async (e, payload) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const { sourceId, updates } = payload || {};
+  if (!sourceId || !Array.isArray(state.mihomo.sources)) {
+    return { ok: false, error: '未找到指定源' };
+  }
+  const idx = state.mihomo.sources.findIndex(s => s && s.id === sourceId);
+  if (idx === -1) return { ok: false, error: '指定源不存在' };
+
+  const src = state.mihomo.sources[idx];
+  if (updates) {
+    if (typeof updates.name === 'string' && updates.name.trim()) {
+      src.name = updates.name.trim();
+    }
+    if (typeof updates.enabled === 'boolean') {
+      src.enabled = updates.enabled;
+    }
+    if (typeof updates.target === 'string' && updates.target.trim() && updates.target.trim() !== src.target) {
+      src.target = updates.target.trim();
+      const mm = getMihomoManager();
+      if (src.type === 'file') {
+        const parsed = mm.parseLocalYaml(src.target);
+        if (parsed.ok) {
+          src.cachedProxies = parsed.proxies || [];
+          src.nodeCount = parsed.nodeCount || 0;
+          src.updatedAt = new Date().toISOString();
+        }
+      } else {
+        const subRes = await mm.fetchSubscription(src.target, src.id);
+        if (subRes.ok) {
+          src.cachedProxies = subRes.proxies || [];
+          src.nodeCount = subRes.nodeCount || 0;
+          src.updatedAt = new Date().toISOString();
+        }
+      }
+    }
+  }
+
+  const merged = await refreshMihomoMergedProxiesAndReload(true);
+  const mm = getMihomoManager();
+  return { ok: true, source: src, totalNodes: merged.length, portMap: mm.portMap };
+});
+
+ipcMain.handle('mihomo:remove-source', async (e, sourceId) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!sourceId || !Array.isArray(state.mihomo.sources)) {
+    return { ok: false, error: '未找到指定源' };
+  }
+  const idx = state.mihomo.sources.findIndex(s => s && s.id === sourceId);
+  if (idx === -1) return { ok: false, error: '指定源不存在' };
+
+  state.mihomo.sources.splice(idx, 1);
+  const merged = await refreshMihomoMergedProxiesAndReload(true);
+  const mm = getMihomoManager();
+  return { ok: true, totalNodes: merged.length, portMap: mm.portMap };
+});
+
+ipcMain.handle('mihomo:sync-source', async (e, sourceId) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!sourceId || !Array.isArray(state.mihomo.sources)) {
+    return { ok: false, error: '未找到指定源' };
+  }
+  const src = state.mihomo.sources.find(s => s && s.id === sourceId);
+  if (!src) return { ok: false, error: '指定源不存在' };
+
+  const mm = getMihomoManager();
+  if (src.type === 'file') {
+    const parsed = mm.parseLocalYaml(src.target);
+    if (!parsed.ok) {
+      return { ok: false, error: parsed.error };
+    }
+    src.cachedProxies = parsed.proxies || [];
+    src.nodeCount = parsed.nodeCount || 0;
+    src.updatedAt = new Date().toISOString();
+  } else {
+    const subRes = await mm.fetchSubscription(src.target, src.id);
+    if (!subRes.ok) {
+      return { ok: false, error: subRes.error };
+    }
+    src.cachedProxies = subRes.proxies || [];
+    src.nodeCount = subRes.nodeCount || 0;
+    src.updatedAt = new Date().toISOString();
+    if (subRes.subInfo && subRes.subInfo.subscriptionUserinfo) {
+      src.subscriptionUserinfo = subRes.subInfo.subscriptionUserinfo;
+    }
+  }
+
+  const merged = await refreshMihomoMergedProxiesAndReload(true);
+  const mm2 = getMihomoManager();
+  return { ok: true, source: src, totalNodes: merged.length, portMap: mm2.portMap };
+});
+
+ipcMain.handle('mihomo:sync-all-sources', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!Array.isArray(state.mihomo.sources) || state.mihomo.sources.length === 0) {
+    return { ok: false, error: '尚未添加任何订阅或本地 YAML 源' };
+  }
+
+  const mm = getMihomoManager();
+  const errors = [];
+  let updatedCount = 0;
+
+  for (const src of state.mihomo.sources) {
+    if (!src || src.enabled === false) continue;
+    try {
+      if (src.type === 'file') {
+        const parsed = mm.parseLocalYaml(src.target);
+        if (parsed.ok) {
+          src.cachedProxies = parsed.proxies || [];
+          src.nodeCount = parsed.nodeCount || 0;
+          src.updatedAt = new Date().toISOString();
+          updatedCount++;
+        } else {
+          errors.push(`[${src.name}]: ${parsed.error}`);
+        }
+      } else {
+        const subRes = await mm.fetchSubscription(src.target, src.id);
+        if (subRes.ok) {
+          src.cachedProxies = subRes.proxies || [];
+          src.nodeCount = subRes.nodeCount || 0;
+          src.updatedAt = new Date().toISOString();
+          if (subRes.subInfo && subRes.subInfo.subscriptionUserinfo) {
+            src.subscriptionUserinfo = subRes.subInfo.subscriptionUserinfo;
+          }
+          updatedCount++;
+        } else {
+          errors.push(`[${src.name}]: ${subRes.error}`);
+        }
+      }
+    } catch (err) {
+      errors.push(`[${src.name}]: ${err.message}`);
+    }
+  }
+
+  const merged = await refreshMihomoMergedProxiesAndReload(true);
+  return {
+    ok: errors.length === 0 || updatedCount > 0,
+    updatedCount,
+    totalNodes: merged.length,
+    errors: errors.length > 0 ? errors : null,
+    sources: state.mihomo.sources,
+    portMap: mm.portMap,
+  };
+});
+
+ipcMain.handle('mihomo:set-config', async (e, cfg) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!cfg || typeof cfg !== 'object') return { ok: false, error: 'Invalid configuration' };
+
+  const prevState = state.mihomo ? { ...state.mihomo } : defaultMihomoConfig();
+  const prevEnabled = !!prevState.enabled;
+  state.mihomo = {
+    ...defaultMihomoConfig(),
+    ...prevState,
+    ...cfg,
+  };
+
+  const mm = getMihomoManager();
+  if (state.mihomo.enabled) {
+    // 确保使用最新合并的源节点
+    const merged = mm.mergeSourceProxies(state.mihomo.sources);
+    if (merged && merged.length > 0) {
+      state.mihomo.cachedProxies = merged;
+    }
+    let coreRes = null;
+    if (!mm.isRunning) {
+      coreRes = await mm.start(state.profiles, state.mihomo.cachedProxies);
+    } else {
+      coreRes = await mm.reload(state.profiles, state.mihomo.cachedProxies);
+    }
+    if (!coreRes || !coreRes.ok) {
+      // 启动/重载失败时不保存假启用状态，直接回滚并透传真实错误
+      state.mihomo.enabled = prevEnabled;
+      saveState();
+      return {
+        ok: false,
+        error: (coreRes && coreRes.error) || 'Mihomo 内核启动失败，请检查 mihomo.log',
+        isRunning: mm.isRunning,
+        portMap: mm.portMap,
+      };
+    }
+  } else if (prevEnabled && !state.mihomo.enabled) {
+    mm.stop();
+  }
+
+  saveState();
+  await applyProxySettings();
+
+  // 同步重载可见窗口（隐藏窗口打脏标记），确保网页即时切至独立 Mihomo 端口或恢复常规代理
+  for (const win of profileWindows.values()) {
+    if (win && !win.isDestroyed()) {
+      if (win.isVisible()) win.webContents.reload();
+      else markWindowNavPending(win, 'reload');
+    }
+  }
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    if (quickWindow.isVisible()) quickWindow.webContents.reload();
+    else markWindowNavPending(quickWindow, 'reload');
+  }
+
+  return { ok: true, isRunning: mm.isRunning, portMap: mm.portMap };
+});
+
+ipcMain.handle('mihomo:sync-subscription', async (e, urlToSync) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const targetUrl = typeof urlToSync === 'string' && urlToSync.trim() ? urlToSync.trim() : (state.mihomo && state.mihomo.subscriptionUrl);
+  if (!targetUrl) return { ok: false, error: '请先填写有效的机场订阅 URL' };
+
+  const mm = getMihomoManager();
+  const subRes = await mm.fetchSubscription(targetUrl);
+  if (!subRes.ok) {
+    return { ok: false, error: subRes.error };
+  }
+
+  state.mihomo = {
+    ...defaultMihomoConfig(),
+    ...(state.mihomo || {}),
+    subscriptionUrl: targetUrl,
+    lastUpdated: new Date().toISOString(),
+    cachedProxies: subRes.proxies || [],
+  };
+  saveState();
+
+  // 若已开启，自动热更新内核配置
+  if (state.mihomo.enabled) {
+    if (mm.isRunning) {
+      await mm.reload(state.profiles, state.mihomo.cachedProxies);
+    } else {
+      await mm.start(state.profiles, state.mihomo.cachedProxies);
+    }
+    await applyProxySettings();
+  }
+
+  return {
+    ok: true,
+    nodeCount: subRes.proxies.length,
+    proxies: subRes.proxies,
+    subInfo: subRes.subInfo
+  };
+});
+
+ipcMain.handle('mihomo:get-nodes', (e) => {
+  if (denyUntrusted(e)) return undefined;
+  return (state.mihomo && Array.isArray(state.mihomo.cachedProxies)) ? state.mihomo.cachedProxies : [];
+});
+
+ipcMain.handle('mihomo:test-delay', async (e, proxyName) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const mm = getMihomoManager();
+  if (!mm || !mm.isRunning) return { ok: false, error: 'Mihomo 内核未运行' };
+  return mm.testNodeDelay(proxyName);
+});
+
+ipcMain.handle('account:set-proxy-queue', async (e, payload) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const { profileId, proxyQueue, proxyStrategy, proxyMode, proxyCustom } = payload || {};
+  if (!profileId || typeof profileId !== 'string') return { ok: false, error: 'Invalid profileId' };
+
+  const targetProf = state.profiles.find((p) => p.id === profileId);
+  if (!targetProf) return { ok: false, error: 'Profile not found' };
+
+  targetProf.proxyQueue = Array.isArray(proxyQueue) ? proxyQueue.filter((n) => typeof n === 'string' && n.trim()) : [];
+  if (['fallback', 'url-test', 'load-balance', 'select'].includes(proxyStrategy)) {
+    targetProf.proxyStrategy = proxyStrategy;
+  }
+  if (['inherit', 'system', 'mihomo', 'direct', 'custom'].includes(proxyMode)) {
+    targetProf.proxyMode = proxyMode;
+  }
+  if (proxyCustom && typeof proxyCustom === 'object') {
+    targetProf.proxyCustom = {
+      type: ['http', 'socks5'].includes(proxyCustom.type) ? proxyCustom.type : 'http',
+      host: typeof proxyCustom.host === 'string' && proxyCustom.host.trim() ? proxyCustom.host.trim() : '127.0.0.1',
+      port: parseInt(proxyCustom.port, 10) || 7897,
+    };
+  }
+  saveState();
+
+  const mm = getMihomoManager();
+  if (state.mihomo && state.mihomo.enabled && mm && mm.isRunning) {
+    await mm.reload(state.profiles, state.mihomo.cachedProxies);
+  }
+
+  // 重新应用该账号的分区代理
+  const s = session.fromPartition(partitionFor(profileId));
+  await applyProxyToSession(s, profileId);
+
+  broadcastAccountChange();
+  return { ok: true, profile: targetProf };
+});
+
+// ==================== 配置与多账号备份/导出/导入 ====================
+async function handleConfigExport(parentWin) {
+  const targetWin = (parentWin && !parentWin.isDestroyed()) ? parentWin : (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  const saveOpts = {
+    title: '导出所有账号与代理配置备份',
+    defaultPath: `muse-backup-${dateStr}.json`,
+    filters: [
+      { name: 'JSON 配置文件 (*.json)', extensions: ['json'] },
+      { name: '所有文件 (*.*)', extensions: ['*'] },
+    ],
+  };
+  const res = targetWin
+    ? await dialog.showSaveDialog(targetWin, saveOpts)
+    : await dialog.showSaveDialog(saveOpts);
+
+  if (res.canceled || !res.filePath) {
+    return { canceled: true };
+  }
+
+  const backupData = {
+    _meta: {
+      app: 'Muse',
+      version: app.getVersion(),
+      exportedAt: now.toISOString(),
+      profileCount: (state.profiles || []).length,
+    },
+    profiles: state.profiles || [],
+    accountGroups: state.accountGroups || ['默认群组'],
+    mihomoSources: (state.mihomo && state.mihomo.sources) || [],
+    proxy: state.proxy || defaultProxy(),
+    feishu: state.feishu || defaultFeishuConfig(),
+    theme: state.theme || 'dark',
+    locale: state.locale || 'zh-CN',
+    ui: state.ui || {},
+  };
+
+  fs.writeFileSync(res.filePath, JSON.stringify(backupData, null, 2), 'utf8');
+  return {
+    ok: true,
+    canceled: false,
+    filePath: res.filePath,
+    profileCount: (state.profiles || []).length,
+    sourceCount: backupData.mihomoSources.length,
+  };
+}
+
+async function handleConfigImport(parentWin) {
+  const targetWin = (parentWin && !parentWin.isDestroyed()) ? parentWin : (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
+  const openOpts = {
+    title: '导入账号与代理配置备份',
+    filters: [
+      { name: 'JSON 配置文件 (*.json)', extensions: ['json'] },
+      { name: '所有文件 (*.*)', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  };
+  const res = targetWin
+    ? await dialog.showOpenDialog(targetWin, openOpts)
+    : await dialog.showOpenDialog(openOpts);
+
+  if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
+    return { canceled: true };
+  }
+
+  const filePath = res.filePaths[0];
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(content);
+    if (!parsed || typeof parsed !== 'object') {
+      return { ok: false, error: '无效的 JSON 配置文件' };
+    }
+
+    const importedProfiles = Array.isArray(parsed.profiles) ? parsed.profiles : [];
+    if (importedProfiles.length === 0) {
+      return { ok: false, error: '文件中未检测到有效的 profiles 账号列表' };
+    }
+
+    // 导入前为当前已有 state 文件做安全备份
+    try {
+      const curStatePath = statePath();
+      if (fs.existsSync(curStatePath)) {
+        fs.copyFileSync(curStatePath, path.join(app.getPath('userData'), `app-state.pre-import-${Date.now()}.bak`));
+      }
+    } catch (bakErr) {
+      console.warn('[Config] Failed to create pre-import backup:', bakErr);
+    }
+
+    // 1. 恢复 profiles
+    state.profiles = importedProfiles;
+
+    // 2. 恢复 accountGroups
+    if (Array.isArray(parsed.accountGroups) && parsed.accountGroups.length > 0) {
+      state.accountGroups = parsed.accountGroups;
+    }
+
+    // 3. 恢复 mihomo sources (兼容 mihomoSources 与 mihomo.sources)
+    const importedSources = Array.isArray(parsed.mihomoSources)
+      ? parsed.mihomoSources
+      : (parsed.mihomo && Array.isArray(parsed.mihomo.sources) ? parsed.mihomo.sources : null);
+
+    if (importedSources && state.mihomo) {
+      state.mihomo.sources = importedSources;
+    }
+
+    // 4. 恢复全局 proxy
+    if (parsed.proxy && typeof parsed.proxy === 'object') {
+      state.proxy = { ...defaultProxy(), ...parsed.proxy };
+    }
+
+    // 5. 恢复飞书多维表格同步配置
+    if (parsed.feishu && typeof parsed.feishu === 'object') {
+      state.feishu = {
+        ...defaultFeishuConfig(),
+        ...parsed.feishu,
+        fieldMap: {
+          ...defaultFeishuConfig().fieldMap,
+          ...((parsed.feishu && parsed.feishu.fieldMap) || {}),
+        },
+      };
+      if (state.feishu.autoSync) {
+        setupFeishuAutoSync(state.feishu, () => state.profiles, () => saveState());
+      }
+    }
+
+    // 6. 校验 activeProfileId
+    if (!state.profiles.some((p) => p && p.id === state.activeProfileId)) {
+      state.activeProfileId = state.profiles[0] ? state.profiles[0].id : 'default';
+    }
+
+    state = sanitizeAndMergeState(state);
+    saveState();
+
+    // 6. 重新同步并热载 Mihomo 内核
+    const mm = getMihomoManager();
+    if (state.mihomo && state.mihomo.sources && state.mihomo.sources.length > 0 && mm) {
+      mm.syncAllSources(state.mihomo.sources).then(async (syncRes) => {
+        if (syncRes && syncRes.ok) {
+          state.mihomo.cachedProxies = syncRes.cachedProxies;
+          saveState();
+          if (mm.isRunning) {
+            await mm.reload(state.profiles, state.mihomo.cachedProxies);
+          }
+        }
+      }).catch((e) => console.warn('[Config] Error resyncing mihomo sources after import:', e));
+    }
+
+    // 7. 重新应用各账号代理
+    for (const prof of state.profiles) {
+      try {
+        const ses = session.fromPartition(partitionFor(prof.id));
+        applyProxyToSession(ses, prof.id);
+      } catch {}
+    }
+
+    buildTrayMenu();
+    broadcastAccountChange();
+
+    return {
+      ok: true,
+      canceled: false,
+      filePath,
+      profileCount: state.profiles.length,
+      sourceCount: (state.mihomo && state.mihomo.sources && state.mihomo.sources.length) || 0,
+    };
+  } catch (err) {
+    console.error('[Config] Import failed:', err);
+    return { ok: false, error: '导入失败: ' + (err.message || String(err)) };
+  }
+}
+
+ipcMain.handle('config:export', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const senderWin = BrowserWindow.fromWebContents(e.sender);
+  return await handleConfigExport(senderWin);
+});
+
+ipcMain.handle('config:import', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const senderWin = BrowserWindow.fromWebContents(e.sender);
+  return await handleConfigImport(senderWin);
+});
+
+ipcMain.handle('config:open-data-dir', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  try {
+    const dir = app.getPath('userData');
+    await shell.openPath(dir);
+    return { ok: true, path: dir };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });
 
 // 主题与外观配置 IPC handlers
@@ -2563,9 +3747,22 @@ ipcMain.on('muse-export-request', (e) => { if (!denyUntrusted(e)) exportChat(); 
 
 // 处理页面请求用系统默认浏览器打开外部链接
 ipcMain.on('open-external-url', (e, rawUrl) => {
-  if (denyUntrusted(e)) return;
-  const target = extractExternalTargetUrl(rawUrl) || rawUrl;
+  if (typeof rawUrl !== 'string') return;
+  // 安全校验：发送者必须属于本应用纳管窗口
+  const senderWin = BrowserWindow.fromWebContents(e.sender);
+  const owned = [mainWindow, quickWindow, hotkeyWindow, lockWindow, ...profileWindows.values()];
+  const isOwned = (senderWin && owned.includes(senderWin)) ||
+                  owned.some((w) => w && !w.isDestroyed() && (w.webContents === e.sender || w.webContents.id === e.sender.id));
+  if (!isOwned) {
+    console.warn('[ExternalLink IPC] Rejected call from unowned webContents id:', e.sender && e.sender.id);
+    return;
+  }
+
+  let trimmed = rawUrl.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
+  const target = extractExternalTargetUrl(trimmed) || trimmed;
+  // 严格白名单协议：仅放行普通网页外链（http/https/mailto），杜绝 file: 或危险 scheme
   if (typeof target === 'string' && (target.startsWith('http://') || target.startsWith('https://') || target.startsWith('mailto:'))) {
+    console.log('[ExternalLink IPC] Opening external URL in default browser:', target);
     shell.openExternal(target).catch((err) => {
       console.warn('[ExternalLink] Failed to open external URL from IPC:', target, err);
     });
@@ -3216,16 +4413,27 @@ function buildTrayMenu() {
       label: lang === 'zh-CN' ? `🔒 锁定客户端  (${prettyHotkey(state.hotkeys.lock)})` : `🔒 Lock Client  (${prettyHotkey(state.hotkeys.lock)})`,
       click: () => lockScreen(),
     }] : []),
+    { type: 'separator' },
     {
-      label: t.multiAccounts,
+      label: lang === 'zh-CN' ? `账号管理 (当前: ${activeProfile().name})` : `Accounts (Current: ${activeProfile().name})`,
       submenu: [
+        {
+          label: t.openAccountHub,
+          click: () => {
+            showMainWindow();
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('account:open-hub');
+            }
+          },
+        },
+        { type: 'separator' },
         ...profileItems,
         { type: 'separator' },
         { label: t.nextAccount(prettyHotkey(state.hotkeys.metaAccount)), click: nextAccount },
         { label: t.addAccount, click: () => addProfile() },
+        { label: t.signOutFrom(currentSite().name), click: signOut },
       ],
     },
-    { type: 'separator' },
     {
       label: t.automationMenu,
       submenu: [
@@ -3309,60 +4517,65 @@ function buildTrayMenu() {
         { label: t.settingsKeybinds, click: openHotkeySettings },
       ],
     },
-    { type: 'separator' },
     {
-      label: t.profileMenu(activeProfile().name),
+      label: t.sessionTools,
       submenu: [
-        ...profileItems,
+        { label: t.saveClipboard, click: saveClipboardAsFile },
+        { label: t.exportChat(prettyHotkey(state.hotkeys.export)), click: exportChat },
         { type: 'separator' },
-        { label: t.addProfile, click: addProfile },
-        { label: t.signOutFrom(currentSite().name), click: signOut },
+        { label: t.muteMic(prettyHotkey(state.hotkeys.mic)), click: toggleMic },
+        { label: t.muteSpeaker(prettyHotkey(state.hotkeys.speaker)), click: toggleSpeaker },
       ],
     },
-    { label: t.saveClipboard, click: saveClipboardAsFile },
-    { label: t.exportChat(prettyHotkey(state.hotkeys.export)), click: exportChat },
-    { type: 'separator' },
-    { label: t.muteMic(prettyHotkey(state.hotkeys.mic)), click: toggleMic },
-    { label: t.muteSpeaker(prettyHotkey(state.hotkeys.speaker)), click: toggleSpeaker },
-    { label: t.customizeHotkeys, click: () => openHotkeySettings() },
-    { label: t.networkProxy, click: () => openHotkeySettings('tab-proxy') },
-    { label: t.resetGoogleSession, click: promptResetGoogleSession },
     { type: 'separator' },
     {
-      label: t.appearance(state.theme === 'light' ? t.lightMode : state.theme === 'system' ? t.systemMode : t.darkMode),
+      label: t.preferencesMenu,
       submenu: [
-        { label: t.darkMode, type: 'radio', checked: state.theme === 'dark', click: () => setAppTheme('dark') },
-        { label: t.lightMode, type: 'radio', checked: state.theme === 'light', click: () => setAppTheme('light') },
-        { label: t.systemMode, type: 'radio', checked: state.theme === 'system', click: () => setAppTheme('system') },
+        { label: t.customizeHotkeys, click: () => openHotkeySettings() },
+        { label: t.networkProxy, click: () => openHotkeySettings('tab-proxy') },
+        { label: t.backupExport, click: () => handleConfigExport() },
+        { label: t.backupImport, click: () => handleConfigImport() },
+        { label: t.openDataDir, click: () => shell.openPath(app.getPath('userData')) },
+        { label: t.resetGoogleSession, click: promptResetGoogleSession },
+        { type: 'separator' },
+        {
+          label: t.appearance(state.theme === 'light' ? t.lightMode : state.theme === 'system' ? t.systemMode : t.darkMode),
+          submenu: [
+            { label: t.darkMode, type: 'radio', checked: state.theme === 'dark', click: () => setAppTheme('dark') },
+            { label: t.lightMode, type: 'radio', checked: state.theme === 'light', click: () => setAppTheme('light') },
+            { label: t.systemMode, type: 'radio', checked: state.theme === 'system', click: () => setAppTheme('system') },
+          ],
+        },
+        {
+          label: t.language,
+          submenu: [
+            { label: t.langEn, type: 'radio', checked: (state.locale || 'en') === 'en', click: () => setAppLocale('en') },
+            { label: t.langZh, type: 'radio', checked: state.locale === 'zh-CN', click: () => setAppLocale('zh-CN') },
+          ],
+        },
+        {
+          label: t.autoHideButtons,
+          type: 'checkbox',
+          checked: !!(state.ui && state.ui.autoHideButtons),
+          click: (item) => setUIAutoHide(item.checked),
+        },
+        { type: 'separator' },
+        {
+          label: t.runOnStartup,
+          type: 'checkbox',
+          checked: loginSettings.openAtLogin,
+          click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
+        },
+        { label: t.checkUpdates, click: () => checkForUpdates(true) },
+        ...(updateDownloaded
+          ? [{ label: t.restartInstall, click: installUpdateAndRestart }]
+          : []),
       ],
     },
-    {
-      label: t.language,
-      submenu: [
-        { label: t.langEn, type: 'radio', checked: (state.locale || 'en') === 'en', click: () => setAppLocale('en') },
-        { label: t.langZh, type: 'radio', checked: state.locale === 'zh-CN', click: () => setAppLocale('zh-CN') },
-      ],
-    },
-    {
-      label: t.autoHideButtons,
-      type: 'checkbox',
-      checked: !!(state.ui && state.ui.autoHideButtons),
-      click: (item) => setUIAutoHide(item.checked),
-    },
-    { type: 'separator' },
-    {
-      label: t.runOnStartup,
-      type: 'checkbox',
-      checked: loginSettings.openAtLogin,
-      click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
-    },
-    { label: t.checkUpdates, click: () => checkForUpdates(true) },
-    ...(updateDownloaded
-      ? [{ label: t.restartInstall, click: installUpdateAndRestart }]
-      : []),
     { type: 'separator' },
     {
       label: t.quitMuse,
+      accelerator: 'CmdOrCtrl+Q',
       click: () => {
         app.quitting = true;
         app.quit();
@@ -3390,10 +4603,41 @@ function createTray() {
 app.on('second-instance', showMainWindow);
 
 app.whenReady().then(async () => {
-  // 首屏优先 (v1.5.15, 评审 P1-8): 此前 await applyProxySettings 排在建窗之前,
-  // 任一分区 setProxy 卡住即表现为进程在、无窗无托盘, 与窗口事故表型相同。
-  // 现在先建窗/托盘, 代理异步补应用并加 5s 超时降级 (新窗口创建时各自还会
-  // 按当前配置 applyProxyToSession, 不依赖这条全量应用完成)。
+  // 1. 若开启内置 Mihomo 智能分流，启动前优先就绪内核进程与端口映射，彻底消除冷启动无代理直连导致的握手失败 (-100)
+  if (state.mihomo && state.mihomo.enabled) {
+    const mm = getMihomoManager();
+    const merged = mm.loadCachedSubscription(state.mihomo.sources);
+    if (Array.isArray(merged) && merged.length > 0) {
+      state.mihomo.cachedProxies = merged;
+    }
+    try {
+      mm.generateConfig(state.profiles, state.mihomo.cachedProxies);
+    } catch (_) {}
+    try {
+      console.log('[Mihomo] Boot: starting Mihomo kernel before window creation...');
+      const res = await Promise.race([
+        mm.start(state.profiles, state.mihomo.cachedProxies),
+        new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'startup timeout' }), 2500))
+      ]);
+      if (res && res.ok) {
+        console.log('[Mihomo] Kernel ready on boot.');
+      } else {
+        console.warn('[Mihomo] Boot start warning:', res && res.error);
+      }
+    } catch (err) {
+      console.error('[Mihomo] Boot start error:', err);
+    }
+  }
+
+  // 2. 预先应用当前活动账号与 defaultSession 代理，保证首屏 loadURL 必定走专属代理端口
+  try {
+    const initialSes = session.fromPartition(partitionFor(state.activeProfileId));
+    await applyProxyToSession(initialSes, state.activeProfileId);
+    await applyProxyToSession(session.defaultSession);
+  } catch (err) {
+    console.warn('[Proxy] Initial active session proxy error:', err);
+  }
+
   createMainWindow();
   createTray();
   registerHotkeys();
@@ -3404,6 +4648,13 @@ app.whenReady().then(async () => {
   });
   setupAutoUpdate();
   startAutoLockTimer();
+  if (state.feishu && state.feishu.enabled && state.feishu.autoSync) {
+    setupFeishuAutoSync(state.feishu, () => state.profiles, () => {
+      saveState();
+      buildTrayMenu();
+      broadcastAccountChange();
+    });
+  }
   app.on('browser-window-focus', () => recordUserActivity());
   if (state.lock && state.lock.enabled && state.lock.hash) {
     lockScreen();
@@ -3422,6 +4673,9 @@ app.on('window-all-closed', () => {
 
 let isFlushingOnQuit = false;
 app.on('before-quit', async (e) => {
+  if (mihomoManager) {
+    try { mihomoManager.stop(); } catch (_) {}
+  }
   if (!isFlushingOnQuit) {
     e.preventDefault();
     isFlushingOnQuit = true;
@@ -3434,8 +4688,17 @@ app.on('before-quit', async (e) => {
 });
 
 app.on('will-quit', () => {
+  if (mihomoManager) {
+    try { mihomoManager.stop(); } catch (_) {}
+  }
   if (autoLockTimer) clearInterval(autoLockTimer);
   globalShortcut.unregisterAll();
+});
+
+process.on('exit', () => {
+  if (mihomoManager) {
+    try { mihomoManager.stop(); } catch (_) {}
+  }
 });
 
 // 仅供本地冒烟测试引用内部纯函数; Electron 运行时忽略该导出。

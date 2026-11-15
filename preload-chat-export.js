@@ -72,6 +72,42 @@ const I18N_RENDERER = {
     openFolder: 'Open Folder',
     openFile: 'Open File',
     closeToast: 'Close',
+    accountHubTitle: 'Account Hub · Grid Overview',
+    openAccountHubTooltip: 'Open Account Grid Overview (Multi-session hub)',
+    allGroups: 'All Groups',
+    searchAccountPlaceholder: 'Search name, purpose, or group...',
+    manageGroups: 'Manage Groups',
+    feishuSyncBtn: 'Feishu Sync',
+    feishuSyncSettings: 'Feishu Settings',
+    feishuSyncNow: 'Sync Now',
+    feishuSyncing: 'Syncing...',
+    purposeLabel: 'Purpose',
+    noPurpose: 'No purpose specified',
+    tokenResetLabel: 'Token Reset',
+    noResetInfo: 'No reset info',
+    usageLabel: 'Usage',
+    switchToAccount: 'Switch to this account',
+    currentActive: 'Active Now',
+    editMeta: 'Edit Details',
+    groupLabel: 'Group',
+    usagePercentLabel: 'Usage Quota (%)',
+    saveChanges: 'Save Changes',
+    feishuAppId: 'Feishu App ID',
+    feishuAppSecret: 'Feishu App Secret',
+    feishuAppToken: 'Bitable Base Token',
+    feishuTableId: 'Table ID',
+    feishuAutoSync: 'Auto sync in background',
+    feishuInterval: 'Interval (minutes)',
+    feishuFieldMap: 'Column Mappings',
+    editProfileTitle: (name) => `Edit Account Details (${name})`,
+    groupManagerTitle: 'Manage Account Groups',
+    addGroupPrompt: 'Enter new group name:',
+    exportConfigBtn: 'Export Backup',
+    importConfigBtn: 'Import Config',
+    openDataDirBtn: 'Data Folder',
+    exportConfigTooltip: 'Export all accounts, proxy queues and settings to a .json file',
+    importConfigTooltip: 'Restore all accounts and proxy queues from a .json backup',
+    openDataDirTooltip: 'Open Muse local data directory (%APPDATA%\\Muse)',
   },
   'zh-CN': {
     expandDock: '展开多账号栏',
@@ -121,6 +157,42 @@ const I18N_RENDERER = {
     openFolder: '打开所在文件夹',
     openFile: '打开文件',
     closeToast: '关闭',
+    accountHubTitle: '多账号管理中心 · 九宫格看板',
+    openAccountHubTooltip: '打开九宫格账号管理看板 (全景视图)',
+    allGroups: '全部群组',
+    searchAccountPlaceholder: '搜索账号昵称、主要用途或群组...',
+    manageGroups: '群组管理',
+    feishuSyncBtn: '飞书同步',
+    feishuSyncSettings: '飞书同步配置',
+    feishuSyncNow: '立即从飞书同步',
+    feishuSyncing: '正在同步多维表格...',
+    purposeLabel: '主要用途',
+    noPurpose: '未设定用途（点击编辑补充）',
+    tokenResetLabel: 'Token 重置',
+    noResetInfo: '暂无重置记录',
+    usageLabel: '当前用量',
+    switchToAccount: '切换至此账号',
+    currentActive: '当前正在使用',
+    editMeta: '编辑详情',
+    groupLabel: '所属群组',
+    usagePercentLabel: '当前用量占比 (0-100%)',
+    saveChanges: '保存并应用',
+    feishuAppId: '自建应用 App ID (cli_xxx)',
+    feishuAppSecret: '自建应用 App Secret',
+    feishuAppToken: '多维表格 Base Token (bascnxxx)',
+    feishuTableId: '数据表 Table ID (tblxxx)',
+    feishuAutoSync: '开启后台定时自动同步',
+    feishuInterval: '自动同步轮询周期 (分钟)',
+    feishuFieldMap: '多维表格列名映射关系',
+    editProfileTitle: (name) => `编辑账号信息 (${name})`,
+    groupManagerTitle: '管理业务群组与分类',
+    addGroupPrompt: '输入新群组名称：',
+    exportConfigBtn: '导出配置',
+    importConfigBtn: '导入配置',
+    openDataDirBtn: '数据目录',
+    exportConfigTooltip: '导出当前所有账号与代理出口队列至 .json 备份文件',
+    importConfigTooltip: '从 .json 备份文件一键恢复所有账号与代理配置',
+    openDataDirTooltip: '打开本地数据与配置目录 (%APPDATA%\\Muse)',
   },
 };
 
@@ -338,13 +410,27 @@ function injectThemeStyles() {
       background: rgba(37, 99, 235, 0.14) !important;
     }
     [data-ui-theme="light"] .acct-dock-list {
-      scrollbar-color: rgba(0, 0, 0, 0.22) transparent !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
     }
-    [data-ui-theme="light"] .acct-dock-list::-webkit-scrollbar-thumb {
-      background: rgba(0, 0, 0, 0.18) !important;
+    [data-ui-theme="light"] .acct-dock-list::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
     }
-    [data-ui-theme="light"] .acct-dock-list::-webkit-scrollbar-thumb:hover {
-      background: rgba(0, 0, 0, 0.35) !important;
+    [data-ui-theme="light"] .acct-dock-hub-btn {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.12)) !important;
+      border-color: rgba(168, 85, 247, 0.35) !important;
+      color: #6366f1 !important;
+      box-shadow: 0 2px 6px rgba(99, 102, 241, 0.1) !important;
+    }
+    [data-ui-theme="light"] .acct-dock-hub-btn:hover {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(168, 85, 247, 0.22)) !important;
+      color: #4f46e5 !important;
+      border-color: #6366f1 !important;
+    }
+    [data-ui-theme="light"] .acct-dock-divider {
+      background: rgba(0, 0, 0, 0.1) !important;
     }
     [data-ui-theme="light"] .acct-dock-add-btn {
       background: rgba(0, 0, 0, 0.06) !important;
@@ -836,6 +922,15 @@ ipcRenderer.on('muse-export:scrape', async () => {
       pop.style.display = 'none';
     } else {
       renderSettingsPopoverContent();
+      const settingsBtn = document.getElementById('acct-dock-settings-btn');
+      if (settingsBtn) {
+        const rect = settingsBtn.getBoundingClientRect();
+        const popWidth = 295;
+        const left = Math.max(12, Math.min(window.innerWidth - popWidth - 12, rect.right - popWidth));
+        const bottom = Math.max(12, window.innerHeight - rect.top + 8);
+        pop.style.left = `${left}px`;
+        pop.style.bottom = `${bottom}px`;
+      }
       pop.style.display = 'flex';
     }
   }
@@ -1138,19 +1233,29 @@ function injectExportButton() {}
 
 // ---- Multi-Account Quick Dock -----------------------------------------------
 (function initAccountDock() {
-  let isPinned = false;
+  let isPinned = true;
   try {
-    isPinned = localStorage.getItem('acct_dock_pinned') === '1';
+    const saved = localStorage.getItem('acct_dock_pinned');
+    if (saved !== null) {
+      isPinned = saved === '1';
+    }
   } catch {}
 
   let dockState = {
     profiles: [],
     activeProfileId: 'default',
+    switchingTargetId: null,
     pinned: isPinned,
     collapsed: !isPinned,
+    accountGroups: ['默认群组'],
+    feishu: null,
+    hubOpen: false,
+    activeGroupFilter: 'all',
+    searchKeyword: '',
   };
 
   let dockContainer = null;
+  let hubOverlay = null;
   let activeContextMenu = null;
   let activeModal = null;
   let collapseTimer = null;
@@ -1161,7 +1266,7 @@ function injectExportButton() {}
   function scheduleAutoCollapse(delay = 250) {
     if (collapseTimer) clearTimeout(collapseTimer);
     collapseTimer = setTimeout(() => {
-      if (!dockState.pinned && !activeContextMenu && !activeModal && !isDraggingAccount && dockContainer) {
+      if (!dockState.pinned && !dockState.hubOpen && !activeContextMenu && !activeModal && !isDraggingAccount && dockContainer) {
         dockState.collapsed = true;
         dockContainer.classList.add('collapsed');
         updateHeaderButtons();
@@ -1176,13 +1281,57 @@ function injectExportButton() {}
     }
   }
 
+  function updateComposerOffset(pinned) {
+    try {
+      const inputEl = document.querySelector('textarea, [contenteditable="true"], div[role="textbox"]');
+      if (!inputEl) return;
+
+      let curr = inputEl;
+      let fixedBottomParent = null;
+      while (curr && curr !== document.body && curr !== document.documentElement) {
+        const style = window.getComputedStyle(curr);
+        if ((style.position === 'fixed' || style.position === 'sticky' || style.position === 'absolute') &&
+            style.bottom && style.bottom !== 'auto') {
+          fixedBottomParent = curr;
+          break;
+        }
+        curr = curr.parentElement;
+      }
+
+      if (fixedBottomParent) {
+        if (pinned) {
+          fixedBottomParent.style.transform = 'translateY(-62px)';
+          fixedBottomParent.style.transition = 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)';
+        } else {
+          fixedBottomParent.style.transform = '';
+        }
+      }
+    } catch {}
+  }
+
+  function applyDockPinnedOffset(pinned) {
+    try {
+      const root = document.documentElement;
+      const body = document.body;
+      if (root) {
+        if (pinned) root.classList.add('muse-dock-pinned');
+        else root.classList.remove('muse-dock-pinned');
+      }
+      if (body) {
+        if (pinned) body.classList.add('muse-dock-pinned');
+        else body.classList.remove('muse-dock-pinned');
+      }
+      updateComposerOffset(pinned);
+    } catch {}
+  }
+
   function updateHeaderButtons() {
     if (!dockContainer) return;
     const t = getT();
     const collapseBtn = dockContainer.querySelector('.acct-dock-collapse-btn');
     if (collapseBtn) {
       collapseBtn.title = dockState.collapsed ? t.expandDock : t.collapseDock;
-      collapseBtn.innerHTML = dockState.collapsed ? '▶' : '◀';
+      collapseBtn.innerHTML = dockState.collapsed ? '▲' : '▼';
     }
     const pinBtn = dockContainer.querySelector('.acct-dock-pin-btn');
     if (pinBtn) {
@@ -1220,53 +1369,117 @@ function injectExportButton() {}
     return trimmed.slice(0, 2).toUpperCase();
   }
 
+  function formatDateTime(val) {
+    if (val === null || val === undefined) return '';
+    const s = String(val).trim();
+    if (!s) return '';
+
+    let dateObj = null;
+    if (/^\d{10,13}$/.test(s)) {
+      const num = Number(s);
+      const ms = num < 1e11 ? num * 1000 : num;
+      const d = new Date(ms);
+      if (!isNaN(d.getTime())) {
+        dateObj = d;
+      }
+    } else if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(s)) {
+      const d = new Date(s.replace(/-/g, '/'));
+      if (!isNaN(d.getTime())) {
+        dateObj = d;
+      }
+    } else {
+      const d = new Date(s);
+      if (!isNaN(d.getTime()) && d.getFullYear() >= 2000 && d.getFullYear() <= 2100) {
+        dateObj = d;
+      }
+    }
+
+    if (dateObj) {
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const hours = String(dateObj.getHours()).padStart(2, '0');
+      const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+      const seconds = String(dateObj.getSeconds()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    }
+
+    return s;
+  }
+
   function injectDockStyles() {
+    const target = document.head || document.body;
+    if (!target) return;
     if (document.getElementById('acct-dock-styles')) return;
     const style = document.createElement('style');
     style.id = 'acct-dock-styles';
     style.textContent = `
       #acct-dock {
         position: fixed;
-        left: 10px;
-        bottom: 14px;
-        max-height: calc(100vh - 28px);
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%) translateY(0);
+        max-width: calc(100vw - 32px);
         box-sizing: border-box;
         overflow: visible;
         z-index: 2147483640;
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         align-items: center;
-        background: rgba(18, 18, 22, 0.88);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 24px;
-        padding: 8px 6px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+        background: rgba(18, 18, 22, 0.92);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 28px;
+        padding: 4px 12px;
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
         user-select: none;
         transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
+      #acct-dock::before {
+        content: '';
+        position: absolute;
+        top: -8px;
+        left: 0;
+        right: 0;
+        height: 12px;
+        pointer-events: auto;
+      }
       #acct-dock.collapsed {
-        transform: translateX(-38px);
-        opacity: 0.55;
+        transform: translateX(-50%) translateY(calc(100% - 14px));
+        opacity: 0.85;
       }
       #acct-dock.collapsed:hover {
-        transform: translateX(0);
+        transform: translateX(-50%) translateY(0);
         opacity: 1;
       }
-      .acct-dock-header {
+      #acct-dock.pinned {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+      }
+      /* 当底部多账号栏固定 (Pinned) 时，主界面向上避让 62px，确保输入框与交互区完全不被遮挡 */
+      html.muse-dock-pinned,
+      html.muse-dock-pinned body {
+        height: calc(100vh - 62px) !important;
+        max-height: calc(100vh - 62px) !important;
+        transition: height 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      html.muse-dock-pinned #root,
+      html.muse-dock-pinned [data-reactroot],
+      html.muse-dock-pinned body > div:first-of-type {
+        height: 100% !important;
+        max-height: 100% !important;
+      }
+      .acct-dock-section {
         display: flex;
         align-items: center;
-        justify-content: center;
-        gap: 3px;
-        width: 100%;
-        margin-bottom: 6px;
+        gap: 4px;
         flex-shrink: 0;
       }
       .acct-dock-collapse-btn {
-        width: 17px;
-        height: 17px;
+        width: 20px;
+        height: 20px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1274,7 +1487,7 @@ function injectExportButton() {}
         color: rgba(255, 255, 255, 0.45);
         border-radius: 4px;
         transition: color 0.15s, background 0.15s;
-        font-size: 10px;
+        font-size: 11px;
         flex-shrink: 0;
       }
       .acct-dock-collapse-btn:hover {
@@ -1282,8 +1495,8 @@ function injectExportButton() {}
         background: rgba(255, 255, 255, 0.12);
       }
       .acct-dock-pin-btn {
-        width: 17px;
-        height: 17px;
+        width: 20px;
+        height: 20px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1302,49 +1515,103 @@ function injectExportButton() {}
         color: #60a5fa;
         background: rgba(59, 130, 246, 0.25);
       }
+      .acct-dock-hub-btn {
+        position: relative;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(168, 85, 247, 0.35));
+        border: 1px solid rgba(168, 85, 247, 0.5);
+        color: #e0e7ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+      }
+      .acct-dock-hub-btn:hover {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.6), rgba(168, 85, 247, 0.6));
+        color: #ffffff;
+        border-color: rgba(192, 132, 252, 0.8);
+        transform: scale(1.12);
+        box-shadow: 0 4px 14px rgba(168, 85, 247, 0.45);
+      }
+      .acct-dock-divider {
+        width: 1px;
+        height: 20px;
+        background: rgba(255, 255, 255, 0.15);
+        margin: 0 6px;
+        flex-shrink: 0;
+      }
       .acct-dock-list {
         display: flex;
-        flex-direction: column;
-        gap: 6px;
-        max-height: min(520px, calc(100vh - 210px));
-        overflow-y: auto;
-        overflow-x: hidden;
-        padding: 2px 3px;
-        scrollbar-width: thin;
-        scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
-        flex: 1 1 auto;
-        min-height: 0;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        max-width: calc(100vw - 180px);
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 4px 2px;
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+        flex: 0 1 auto;
+        min-width: 0;
       }
       .acct-dock-list::-webkit-scrollbar {
-        width: 4px;
-        display: block;
-      }
-      .acct-dock-list::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .acct-dock-list::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.22);
-        border-radius: 4px;
-      }
-      .acct-dock-list::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.45);
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
       }
       .acct-dock-item {
         position: relative;
-        width: 34px;
-        height: 34px;
+        width: 36px;
+        height: 36px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: grab;
         color: #fff;
-        font-size: 13px;
-        font-weight: 600;
-        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
+        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
         flex-shrink: 0;
         user-select: none;
         -webkit-user-drag: element;
+      }
+      .acct-dock-ring {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 36px;
+        height: 36px;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .acct-dock-ring-bg {
+        stroke: rgba(255, 255, 255, 0.16);
+      }
+      .acct-dock-ring-progress {
+        transition: stroke-dashoffset 0.4s ease, stroke 0.3s ease;
+      }
+      [data-ui-theme="light"] .acct-dock-ring-bg {
+        stroke: rgba(0, 0, 0, 0.12) !important;
+      }
+      .acct-dock-avatar {
+        position: relative;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 11.5px;
+        font-weight: 600;
+        z-index: 2;
+        transition: box-shadow 0.2s ease;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
       }
       .acct-dock-item:active {
         cursor: grabbing;
@@ -1356,9 +1623,9 @@ function injectExportButton() {}
       }
       .acct-dock-drop-indicator {
         position: absolute;
-        left: -3px;
-        right: -3px;
-        height: 3px;
+        top: 0;
+        bottom: 0;
+        width: 3px;
         background: #3b82f6;
         border-radius: 2px;
         box-shadow: 0 0 8px rgba(59, 130, 246, 0.9);
@@ -1366,40 +1633,62 @@ function injectExportButton() {}
         pointer-events: none;
         z-index: 2147483646;
       }
-      .acct-dock-drop-indicator.top {
-        top: -5px;
+      .acct-dock-drop-indicator.left {
+        left: -4px;
       }
-      .acct-dock-drop-indicator.bottom {
-        bottom: -5px;
+      .acct-dock-drop-indicator.right {
+        right: -4px;
       }
-      .acct-dock-item.drop-target-before > .acct-dock-drop-indicator.top {
+      .acct-dock-item.drop-target-before > .acct-dock-drop-indicator.left {
         display: block;
       }
-      .acct-dock-item.drop-target-after > .acct-dock-drop-indicator.bottom {
+      .acct-dock-item.drop-target-after > .acct-dock-drop-indicator.right {
         display: block;
       }
       .acct-dock-item:hover {
-        transform: scale(1.1);
+        transform: scale(1.15) translateY(-2px);
       }
-      .acct-dock-item.active {
-        box-shadow: 0 0 0 2.5px #fff, 0 4px 12px rgba(0, 0, 0, 0.4);
+      .acct-dock-item.active .acct-dock-avatar {
+        box-shadow: 0 0 0 1.5px #fff, 0 2px 8px rgba(0, 0, 0, 0.5);
+      }
+      .acct-dock-item.switching {
+        animation: acctItemPulse 0.8s ease-in-out infinite alternate !important;
+      }
+      .acct-dock-item.switching .acct-dock-avatar {
+        filter: brightness(1.25) !important;
+        box-shadow: 0 0 14px rgba(99, 102, 241, 0.9) !important;
+      }
+      .acct-dock-item.switching .acct-dock-ring-progress {
+        animation: acctRingRotate 1s linear infinite !important;
+        transform-origin: 18px 18px !important;
+        stroke: #818cf8 !important;
+        stroke-dasharray: 40, 60 !important;
+      }
+      @keyframes acctRingRotate {
+        0% { transform: rotate(-90deg); }
+        100% { transform: rotate(270deg); }
+      }
+      @keyframes acctItemPulse {
+        0% { transform: scale(1); }
+        100% { transform: scale(1.12); }
       }
       .acct-dock-item.active::after {
         content: '';
         position: absolute;
-        right: -2px;
-        bottom: -2px;
+        right: 0px;
+        bottom: 0px;
         width: 8px;
         height: 8px;
         background: #10b981;
         border: 2px solid #141416;
         border-radius: 50%;
+        z-index: 3;
       }
       .acct-dock-tooltip {
         position: absolute;
-        left: calc(100% + 10px);
-        top: 50%;
-        transform: translateY(-50%) translateX(-4px);
+        bottom: calc(100% + 10px);
+        left: 50%;
+        transform: translateX(-50%) translateY(4px);
         background: rgba(24, 24, 28, 0.95);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
@@ -1419,10 +1708,11 @@ function injectExportButton() {}
         gap: 6px;
         z-index: 2147483645;
       }
-      .acct-dock-item:hover .acct-dock-tooltip {
+      .acct-dock-item:hover .acct-dock-tooltip,
+      .acct-dock-hub-btn:hover .acct-dock-tooltip {
         opacity: 1;
         visibility: visible;
-        transform: translateY(-50%) translateX(0);
+        transform: translateX(-50%) translateY(0);
       }
       .acct-dock-tooltip-badge {
         font-size: 10px;
@@ -1437,8 +1727,8 @@ function injectExportButton() {}
         color: rgba(255, 255, 255, 0.4);
       }
       .acct-dock-add-btn {
-        width: 32px;
-        height: 32px;
+        width: 28px;
+        height: 28px;
         border-radius: 50%;
         border: 1px dashed rgba(255, 255, 255, 0.28);
         background: rgba(255, 255, 255, 0.05);
@@ -1446,14 +1736,17 @@ function injectExportButton() {}
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 18px;
+        font-size: 15px;
         cursor: pointer;
-        margin-top: 6px;
         transition: all 0.2s;
         flex-shrink: 0;
       }
       .acct-dock-add-btn:hover {
         background: rgba(255, 255, 255, 0.15);
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.5);
+        transform: scale(1.08);
+      }
         color: #fff;
         border-color: rgba(255, 255, 255, 0.5);
         transform: scale(1.08);
@@ -1566,8 +1859,412 @@ function injectExportButton() {}
       .acct-modal-btn.confirm:hover {
         background: #2563eb;
       }
+
+      /* Account Hub 全屏/居中看板弹层 */
+      #acct-hub-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483646;
+        background: rgba(0, 0, 0, 0.68);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        animation: hubFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #f1f5f9;
+        user-select: none;
+      }
+      @keyframes hubFadeIn {
+        from { opacity: 0; transform: scale(0.98); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      .acct-hub-modal {
+        width: 1040px;
+        max-width: 95vw;
+        height: 720px;
+        max-height: 90vh;
+        background: rgba(22, 23, 29, 0.96);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 18px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .hub-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-shrink: 0;
+      }
+      .hub-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .hub-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #f8fafc;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .hub-count-badge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #94a3b8;
+        font-weight: 500;
+      }
+      .hub-search-input {
+        width: 240px;
+        padding: 7px 12px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #f8fafc;
+        font-size: 12.5px;
+        outline: none;
+        transition: all 0.2s;
+      }
+      .hub-search-input:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+        width: 270px;
+      }
+      .hub-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .hub-btn {
+        padding: 7px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.15s;
+        border: 1px solid transparent;
+      }
+      .hub-btn-default {
+        background: rgba(255, 255, 255, 0.08);
+        color: #e2e8f0;
+        border-color: rgba(255, 255, 255, 0.1);
+      }
+      .hub-btn-default:hover {
+        background: rgba(255, 255, 255, 0.15);
+        color: #fff;
+      }
+      .hub-btn-primary {
+        background: #2563eb;
+        color: #fff;
+      }
+      .hub-btn-primary:hover {
+        background: #1d4ed8;
+      }
+      .hub-btn-feishu {
+        background: rgba(16, 185, 129, 0.15);
+        color: #34d399;
+        border-color: rgba(16, 185, 129, 0.3);
+      }
+      .hub-btn-feishu:hover {
+        background: rgba(16, 185, 129, 0.25);
+        color: #6ee7b7;
+      }
+      .hub-close-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: #94a3b8;
+        font-size: 16px;
+        transition: all 0.15s;
+      }
+      .hub-close-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+      }
+      .hub-group-tabs {
+        padding: 10px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        overflow-x: auto;
+        flex-shrink: 0;
+      }
+      .hub-group-tabs::-webkit-scrollbar { height: 4px; }
+      .hub-group-tabs::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 2px; }
+      .hub-tab-item {
+        padding: 5px 12px;
+        border-radius: 16px;
+        font-size: 12px;
+        cursor: pointer;
+        color: #94a3b8;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid transparent;
+        white-space: nowrap;
+        transition: all 0.15s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .hub-tab-item:hover {
+        color: #f1f5f9;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .hub-tab-item.active {
+        color: #fff;
+        background: #3b82f6;
+        font-weight: 600;
+        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+      }
+      .hub-tab-badge {
+        font-size: 10px;
+        opacity: 0.8;
+      }
+      .hub-grid-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 16px;
+        align-content: start;
+      }
+      .hub-grid-body::-webkit-scrollbar { width: 6px; }
+      .hub-grid-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 3px; }
+      .hub-card {
+        background: rgba(255, 255, 255, 0.035);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        cursor: pointer;
+        position: relative;
+      }
+      .hub-card:hover {
+        background: rgba(255, 255, 255, 0.06);
+        border-color: rgba(255, 255, 255, 0.18);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+      }
+      .hub-card.active {
+        border-color: #3b82f6;
+        background: rgba(59, 130, 246, 0.08);
+        box-shadow: 0 0 0 1px #3b82f6, 0 8px 24px rgba(59, 130, 246, 0.2);
+      }
+      .hub-card-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .hub-card-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-weight: 700;
+        font-size: 14px;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+      .hub-card-info {
+        flex: 1;
+        min-width: 0;
+      }
+      .hub-card-title-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .hub-card-name {
+        font-size: 14px;
+        font-weight: 700;
+        color: #f8fafc;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .hub-card-group-tag {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #94a3b8;
+        flex-shrink: 0;
+      }
+      .hub-card-active-pill {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+      .hub-card-meta {
+        background: rgba(0, 0, 0, 0.25);
+        border-radius: 8px;
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 11.5px;
+      }
+      .hub-meta-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        color: #cbd5e1;
+        line-height: 1.4;
+      }
+      .hub-meta-label {
+        color: #64748b;
+        flex-shrink: 0;
+      }
+      .hub-meta-val {
+        color: #e2e8f0;
+        word-break: break-all;
+      }
+      .hub-usage-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .hub-usage-head {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+      }
+      .hub-usage-title { color: #64748b; }
+      .hub-usage-stat { font-weight: 600; color: #cbd5e1; }
+      .hub-progress-track {
+        height: 6px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .hub-progress-bar {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.3s ease;
+      }
+      .hub-progress-bar.normal { background: #10b981; }
+      .hub-progress-bar.warning { background: #f59e0b; }
+      .hub-progress-bar.exhausted { background: #ef4444; }
+      .hub-card-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: auto;
+        padding-top: 4px;
+      }
+      .hub-card-switch-btn {
+        flex: 1;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: #2563eb;
+        color: #fff;
+        font-size: 11.5px;
+        font-weight: 600;
+        text-align: center;
+        border: none;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .hub-card-switch-btn:hover { background: #1d4ed8; }
+      .hub-card-switch-btn.active {
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+        cursor: default;
+      }
+      .hub-card-icon-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #94a3b8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.15s;
+      }
+      .hub-card-icon-btn:hover {
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+      }
+      .hub-card-icon-btn.danger:hover {
+        background: rgba(239, 68, 68, 0.2);
+        color: #f87171;
+        border-color: rgba(239, 68, 68, 0.3);
+      }
+      .hub-empty-state {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 60px 20px;
+        color: #64748b;
+        font-size: 14px;
+      }
+
+      /* 详情编辑表单 */
+      .hub-form-row {
+        margin-bottom: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        text-align: left;
+      }
+      .hub-form-label {
+        font-size: 12px;
+        color: #94a3b8;
+        font-weight: 500;
+      }
+      .hub-form-input, .hub-form-select, .hub-form-textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #f8fafc;
+        font-size: 13px;
+        outline: none;
+      }
+      .hub-form-input:focus, .hub-form-select:focus, .hub-form-textarea:focus {
+        border-color: #3b82f6;
+      }
+      .hub-form-textarea {
+        resize: vertical;
+        min-height: 54px;
+      }
     `;
-    (document.head || document.documentElement).appendChild(style);
+    target.appendChild(style);
   }
 
   function showPromptModal(title, initialValue, onConfirm) {
@@ -1625,6 +2322,1295 @@ function injectExportButton() {}
     }, 50);
   }
 
+  function showToast(msg) {
+    let tEl = document.getElementById('hub-toast');
+    if (!tEl) {
+      tEl = document.createElement('div');
+      tEl.id = 'hub-toast';
+      Object.assign(tEl.style, {
+        position: 'fixed',
+        top: '24px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: '2147483647',
+        backgroundColor: 'rgba(24, 28, 38, 0.95)',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        color: '#f8fafc',
+        padding: '10px 18px',
+        borderRadius: '10px',
+        fontSize: '13px',
+        fontWeight: '500',
+        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)',
+        transition: 'all 0.2s',
+        pointerEvents: 'none',
+      });
+      document.body.appendChild(tEl);
+    }
+    tEl.textContent = msg;
+    tEl.style.opacity = '1';
+    tEl.style.transform = 'translateX(-50%) translateY(0)';
+    setTimeout(() => {
+      if (tEl) {
+        tEl.style.opacity = '0';
+        tEl.style.transform = 'translateX(-50%) translateY(-8px)';
+      }
+    }, 2800);
+  }
+
+  // ---- 九宫格/多宫格账号管理看板 (Account Hub) -------------------------------
+  function closeAccountHub() {
+    dockState.hubOpen = false;
+    if (hubOverlay && hubOverlay.parentNode) {
+      hubOverlay.parentNode.removeChild(hubOverlay);
+    }
+    hubOverlay = null;
+    if (!dockState.pinned) {
+      scheduleAutoCollapse(350);
+    }
+  }
+
+  function openAccountHub() {
+    closeContextMenu();
+    closeModal();
+    dockState.hubOpen = true;
+    cancelAutoCollapse();
+    if (!dockState.pinned) {
+      dockState.collapsed = false;
+      if (dockContainer) dockContainer.classList.remove('collapsed');
+      updateHeaderButtons();
+    }
+    renderAccountHub();
+  }
+
+  function renderAccountHub() {
+    const t = getT();
+    if (!hubOverlay) {
+      hubOverlay = document.createElement('div');
+      hubOverlay.id = 'acct-hub-overlay';
+      hubOverlay.onclick = (e) => {
+        if (e.target === hubOverlay) closeAccountHub();
+      };
+      document.body.appendChild(hubOverlay);
+    }
+    hubOverlay.innerHTML = '';
+
+    const modal = document.createElement('div');
+    modal.className = 'acct-hub-modal';
+    modal.onclick = (e) => e.stopPropagation();
+
+    // 1. Header
+    const header = document.createElement('div');
+    header.className = 'hub-header';
+
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'hub-title-wrap';
+
+    const title = document.createElement('div');
+    title.className = 'hub-title';
+    title.innerHTML = `<span>⊞</span><span>${t.accountHubTitle}</span>`;
+
+    const countBadge = document.createElement('span');
+    countBadge.className = 'hub-count-badge';
+    countBadge.textContent = `${dockState.profiles.length} 账号 · ${(dockState.accountGroups || []).length} 群组`;
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(countBadge);
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'hub-search-input';
+    searchInput.placeholder = t.searchAccountPlaceholder;
+    searchInput.value = dockState.searchKeyword || '';
+    searchInput.oninput = (e) => {
+      dockState.searchKeyword = e.target.value.trim().toLowerCase();
+      renderHubGridCards();
+    };
+
+    const actions = document.createElement('div');
+    actions.className = 'hub-actions';
+
+    // 导出配置备份按钮
+    const exportConfigBtn = document.createElement('button');
+    exportConfigBtn.className = 'hub-btn hub-btn-default';
+    exportConfigBtn.type = 'button';
+    exportConfigBtn.title = t.exportConfigTooltip;
+    exportConfigBtn.innerHTML = `<span>📤</span><span>${t.exportConfigBtn}</span>`;
+    exportConfigBtn.onclick = async () => {
+      exportConfigBtn.disabled = true;
+      try {
+        const res = await ipcRenderer.invoke('config:export');
+        if (res && res.ok) {
+          showToast(`已成功导出 ${res.profileCount} 个账号与代理配置！`);
+        } else if (res && !res.canceled) {
+          showToast(`导出失败: ${res.error || '未知错误'}`);
+        }
+      } catch (err) {
+        showToast(`导出失败: ${err.message}`);
+      } finally {
+        exportConfigBtn.disabled = false;
+      }
+    };
+
+    // 导入配置备份按钮
+    const importConfigBtn = document.createElement('button');
+    importConfigBtn.className = 'hub-btn hub-btn-default';
+    importConfigBtn.type = 'button';
+    importConfigBtn.title = t.importConfigTooltip;
+    importConfigBtn.innerHTML = `<span>📥</span><span>${t.importConfigBtn}</span>`;
+    importConfigBtn.onclick = async () => {
+      importConfigBtn.disabled = true;
+      try {
+        const res = await ipcRenderer.invoke('config:import');
+        if (res && res.ok) {
+          showToast(`成功恢复 ${res.profileCount} 个账号与代理配置！`);
+          renderAccountHub();
+        } else if (res && !res.canceled) {
+          showToast(`导入失败: ${res.error || '未知错误'}`);
+        }
+      } catch (err) {
+        showToast(`导入失败: ${err.message}`);
+      } finally {
+        importConfigBtn.disabled = false;
+      }
+    };
+
+    // 打开本地数据目录按钮
+    const openDirBtn = document.createElement('button');
+    openDirBtn.className = 'hub-btn hub-btn-default';
+    openDirBtn.type = 'button';
+    openDirBtn.title = t.openDataDirTooltip;
+    openDirBtn.innerHTML = `<span>📁</span><span>${t.openDataDirBtn}</span>`;
+    openDirBtn.onclick = () => {
+      ipcRenderer.invoke('config:open-data-dir').catch(() => {});
+    };
+
+    // 飞书同步按钮
+    const feishuSyncBtn = document.createElement('button');
+    feishuSyncBtn.className = 'hub-btn hub-btn-feishu';
+    feishuSyncBtn.type = 'button';
+    feishuSyncBtn.innerHTML = `<span>🔄</span><span>${t.feishuSyncBtn}</span>`;
+    feishuSyncBtn.title = t.feishuSyncNow;
+    feishuSyncBtn.onclick = async () => {
+      feishuSyncBtn.disabled = true;
+      feishuSyncBtn.innerHTML = `<span>⏳</span><span>${t.feishuSyncing}</span>`;
+      try {
+        const res = await ipcRenderer.invoke('feishu:sync-now');
+        if (res && res.ok) {
+          showToast(`飞书同步成功：匹配更新 ${res.updatedProfiles} 个账号`);
+        } else {
+          showToast(`飞书同步提示：${(res && res.error) || '未知错误'}`);
+        }
+      } catch (err) {
+        showToast(`飞书同步失败: ${err.message}`);
+      } finally {
+        feishuSyncBtn.disabled = false;
+        feishuSyncBtn.innerHTML = `<span>🔄</span><span>${t.feishuSyncBtn}</span>`;
+      }
+    };
+
+    // 飞书配置按钮
+    const feishuConfigBtn = document.createElement('button');
+    feishuConfigBtn.className = 'hub-btn hub-btn-default';
+    feishuConfigBtn.type = 'button';
+    feishuConfigBtn.title = t.feishuSyncSettings;
+    feishuConfigBtn.innerHTML = '<span>⚙️ 飞书配置</span>';
+    feishuConfigBtn.onclick = () => openFeishuSettingsModal();
+
+    // 新增账号按钮
+    const addBtn = document.createElement('button');
+    addBtn.className = 'hub-btn hub-btn-primary';
+    addBtn.type = 'button';
+    addBtn.innerHTML = `<span>➕</span><span>${t.addAccountPromptTitle}</span>`;
+    addBtn.onclick = () => {
+      showPromptModal(t.addAccountPromptTitle, t.addAccountDefaultName(dockState.profiles.length + 1), (name) => {
+        ipcRenderer.invoke('account:add', { name }).catch(() => {});
+      });
+    };
+
+    // 关闭按钮
+    const closeBtn = document.createElement('div');
+    closeBtn.className = 'hub-close-btn';
+    closeBtn.innerHTML = '✕';
+    closeBtn.onclick = closeAccountHub;
+
+    actions.appendChild(exportConfigBtn);
+    actions.appendChild(importConfigBtn);
+    actions.appendChild(openDirBtn);
+    actions.appendChild(feishuSyncBtn);
+    actions.appendChild(feishuConfigBtn);
+    actions.appendChild(addBtn);
+    actions.appendChild(closeBtn);
+
+    header.appendChild(titleWrap);
+    header.appendChild(searchInput);
+    header.appendChild(actions);
+    modal.appendChild(header);
+
+    // Grid 卡片网格容器 (全景卡片直观陈列，无需分组层级)
+    const gridBody = document.createElement('div');
+    gridBody.className = 'hub-grid-body';
+    modal.appendChild(gridBody);
+
+    function renderHubGridCards() {
+      gridBody.innerHTML = '';
+      const kw = (dockState.searchKeyword || '').toLowerCase();
+
+      const filtered = (dockState.profiles || []).filter((p) => {
+        if (!kw) return true;
+        const matchName = (p.name || '').toLowerCase().includes(kw);
+        const matchPurpose = (p.purpose || '').toLowerCase().includes(kw);
+        return matchName || matchPurpose;
+      });
+
+      if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'hub-empty-state';
+        empty.innerHTML = `<div>🔍 没有找到匹配的账号记录</div><div style="font-size:12px;margin-top:6px;opacity:0.7;">可尝试更换搜索词或选择其他群组标签</div>`;
+        gridBody.appendChild(empty);
+        return;
+      }
+
+      filtered.forEach((p) => {
+        const card = document.createElement('div');
+        const isActive = p.id === dockState.activeProfileId;
+        card.className = 'hub-card' + (isActive ? ' active' : '');
+
+        // 点击卡片主体快捷切号并关闭
+        card.onclick = (e) => {
+          if (p.id !== dockState.activeProfileId) {
+            ipcRenderer.invoke('account:switch', { id: p.id }).catch(() => {});
+            closeAccountHub();
+          }
+        };
+
+        // 卡片头部
+        const cardHeader = document.createElement('div');
+        cardHeader.className = 'hub-card-header';
+
+        const avatar = document.createElement('div');
+        avatar.className = 'hub-card-avatar';
+        avatar.style.backgroundColor = p.color || '#3b82f6';
+        avatar.textContent = getInitials(p.name);
+
+        const cardInfo = document.createElement('div');
+        cardInfo.className = 'hub-card-info';
+
+        const titleRow = document.createElement('div');
+        titleRow.className = 'hub-card-title-row';
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'hub-card-name';
+        nameEl.textContent = p.name;
+        titleRow.appendChild(nameEl);
+
+        if (isActive) {
+          const activePill = document.createElement('span');
+          activePill.className = 'hub-card-active-pill';
+          activePill.textContent = t.currentActive;
+          titleRow.appendChild(activePill);
+        }
+
+        cardInfo.appendChild(titleRow);
+        cardHeader.appendChild(avatar);
+        cardHeader.appendChild(cardInfo);
+        card.appendChild(cardHeader);
+
+        // 卡片内容：主要用途与 Token 重置
+        const metaBox = document.createElement('div');
+        metaBox.className = 'hub-card-meta';
+
+        // 主要用途
+        const purposeRow = document.createElement('div');
+        purposeRow.className = 'hub-meta-row';
+        purposeRow.innerHTML = `<span class="hub-meta-label">📌 ${t.purposeLabel}:</span><span class="hub-meta-val">${p.purpose ? p.purpose : `<span style="color:#64748b;font-style:italic;">${t.noPurpose}</span>`}</span>`;
+        metaBox.appendChild(purposeRow);
+
+        // 重置倒计时
+        const resetRow = document.createElement('div');
+        resetRow.className = 'hub-meta-row';
+        const displayReset = p.tokenResetAt ? formatDateTime(p.tokenResetAt) : '';
+        resetRow.innerHTML = `<span class="hub-meta-label">⏳ ${t.tokenResetLabel}:</span><span class="hub-meta-val">${displayReset ? displayReset : `<span style="color:#64748b;font-style:italic;">${t.noResetInfo}</span>`}</span>`;
+        metaBox.appendChild(resetRow);
+
+        // 代理模式与出口队列
+        const proxyRow = document.createElement('div');
+        proxyRow.className = 'hub-meta-row';
+
+        const proxyLabel = document.createElement('span');
+        proxyLabel.className = 'hub-meta-label';
+        proxyLabel.textContent = '🛡️ 代理模式:';
+
+        const proxyVal = document.createElement('span');
+        proxyVal.className = 'hub-meta-val';
+
+        const acctMode = p.proxyMode || 'inherit';
+        let queueText = '';
+        let queueTitle = '';
+        let queueColor = '#818cf8';
+
+        if (acctMode === 'system') {
+          queueText = '🖥️ 走系统代理 / TUN';
+          queueTitle = '强制独立使用 Windows 系统网络代理与 TUN 虚拟网卡';
+          queueColor = '#38bdf8';
+        } else if (acctMode === 'direct') {
+          queueText = '⚡ 直接连接 (Direct)';
+          queueTitle = '绕过任何代理，直连互联网';
+          queueColor = '#fbbf24';
+        } else if (acctMode === 'custom') {
+          const cPort = (p.proxyCustom && p.proxyCustom.port) || 7897;
+          queueText = `⚙️ 自定义代理 (: ${cPort})`;
+          queueTitle = `独立自定义代理: ${(p.proxyCustom && p.proxyCustom.type) || 'HTTP'}://${(p.proxyCustom && p.proxyCustom.host) || '127.0.0.1'}:${cPort}`;
+          queueColor = '#c084fc';
+        } else {
+          // inherit or mihomo
+          const queue = Array.isArray(p.proxyQueue) && p.proxyQueue.length > 0 ? p.proxyQueue : null;
+          if (queue) {
+            queueText = queue.length === 1 ? `🛡️ ${queue[0]}` : `🛡️ ${queue[0]} (备用+${queue.length - 1})`;
+            queueTitle = queue.join(' ➔ ');
+            queueColor = '#818cf8';
+          } else {
+            queueText = acctMode === 'mihomo' ? '🛡️ 全部可用节点' : '🌐 跟随全局设置';
+            queueTitle = '跟随客户端全局网络与代理设置';
+            queueColor = '#64748b';
+          }
+        }
+
+        proxyVal.title = queueTitle;
+        const proxyInner = document.createElement('span');
+        proxyInner.style.cssText = `color:${queueColor}; font-weight:600;`;
+        proxyInner.textContent = queueText;
+
+        proxyVal.appendChild(proxyInner);
+        proxyRow.appendChild(proxyLabel);
+        proxyRow.appendChild(proxyVal);
+        metaBox.appendChild(proxyRow);
+
+        card.appendChild(metaBox);
+
+        // 用量进度条
+        const usageWrap = document.createElement('div');
+        usageWrap.className = 'hub-usage-wrap';
+
+        const usagePercent = typeof p.usagePercent === 'number' ? p.usagePercent : 0;
+        const usageHead = document.createElement('div');
+        usageHead.className = 'hub-usage-head';
+        usageHead.innerHTML = `<span class="hub-usage-title">📊 ${t.usageLabel}</span><span class="hub-usage-stat">${p.usageText ? p.usageText : `${usagePercent}%`}</span>`;
+
+        const track = document.createElement('div');
+        track.className = 'hub-progress-track';
+
+        const bar = document.createElement('div');
+        let statusClass = 'normal';
+        if (usagePercent >= 90 || p.status === 'exhausted') statusClass = 'exhausted';
+        else if (usagePercent >= 70 || p.status === 'warning') statusClass = 'warning';
+        bar.className = `hub-progress-bar ${statusClass}`;
+        bar.style.width = `${Math.min(100, Math.max(0, usagePercent))}%`;
+
+        track.appendChild(bar);
+        usageWrap.appendChild(usageHead);
+        usageWrap.appendChild(track);
+        card.appendChild(usageWrap);
+
+        // 卡片底部操作按钮栏
+        const cardActions = document.createElement('div');
+        cardActions.className = 'hub-card-actions';
+
+        const switchBtn = document.createElement('button');
+        switchBtn.className = 'hub-card-switch-btn' + (isActive ? ' active' : '');
+        switchBtn.type = 'button';
+        switchBtn.textContent = isActive ? `✓ ${t.currentActive}` : t.switchToAccount;
+        switchBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (!isActive) {
+            ipcRenderer.invoke('account:switch', { id: p.id }).catch(() => {});
+            closeAccountHub();
+          }
+        };
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'hub-card-icon-btn';
+        editBtn.type = 'button';
+        editBtn.title = t.editMeta;
+        editBtn.innerHTML = '✏️';
+        editBtn.onclick = (e) => {
+          e.stopPropagation();
+          openEditProfileModal(p);
+        };
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'hub-card-icon-btn danger';
+        delBtn.type = 'button';
+        delBtn.title = t.deleteAccount;
+        delBtn.innerHTML = '🗑';
+        delBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (dockState.profiles.length <= 1) {
+            showToast('至少保留一个账号');
+            return;
+          }
+          if (confirm(t.deleteConfirm(p.name))) {
+            ipcRenderer.invoke('account:delete', { id: p.id }).catch(() => {});
+          }
+        };
+
+        cardActions.appendChild(switchBtn);
+        cardActions.appendChild(editBtn);
+        if (!isActive && dockState.profiles.length > 1) {
+          cardActions.appendChild(delBtn);
+        }
+
+        card.appendChild(cardActions);
+        gridBody.appendChild(card);
+      });
+    }
+
+    renderHubGridCards();
+    hubOverlay.appendChild(modal);
+  }
+
+  // 编辑账号元数据模态框
+  // 批量多选代理节点模态框 (嵌套浮层)
+  function openBatchNodeSelectModal({ allNodes, currentQueue, onAddBatch }) {
+    const batchOverlay = document.createElement('div');
+    batchOverlay.className = 'acct-modal-overlay';
+    batchOverlay.style.zIndex = '2147483647';
+
+    const bCard = document.createElement('div');
+    bCard.className = 'acct-modal-card';
+    bCard.style.cssText = 'width:500px; max-height:86vh; display:flex; flex-direction:column; padding:16px; background:#1b1e25; border:1px solid #333948; border-radius:8px; box-shadow:0 12px 36px rgba(0,0,0,0.6);';
+
+    // 头部标题
+    const bHeader = document.createElement('div');
+    bHeader.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;';
+    bHeader.innerHTML = `
+      <div style="font-size:14px; font-weight:600; color:#e8eaf0; display:flex; align-items:center; gap:8px;">
+        <span>📦 批量选择代理节点</span>
+        <span style="font-size:11.5px; color:#818cf8; font-weight:normal;">(共 ${allNodes.length} 个可用)</span>
+      </div>
+    `;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'acct-modal-btn';
+    closeBtn.style.cssText = 'padding:2px 8px; font-size:12px; height:24px; color:#94a3b8;';
+    closeBtn.textContent = '✕';
+    closeBtn.onclick = () => batchOverlay.remove();
+    bHeader.appendChild(closeBtn);
+    bCard.appendChild(bHeader);
+
+    // 实时搜索框
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.placeholder = '🔍 输入关键词实时搜索 (如: us, 香港, 0.1, 专线, 节点名)...';
+    searchInput.style.cssText = 'width:100%; box-sizing:border-box; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:6px 10px; border-radius:6px; font-size:12px; margin-bottom:8px;';
+    bCard.appendChild(searchInput);
+
+    // 快捷地区筛选标签
+    const filterChipsWrap = document.createElement('div');
+    filterChipsWrap.style.cssText = 'display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px;';
+    const filterOptions = [
+      { id: 'all', label: '全部' },
+      { id: 'us', label: '美国 (US)' },
+      { id: 'hk', label: '香港 (HK)' },
+      { id: 'jp', label: '日本 (JP)' },
+      { id: 'sg', label: '新加坡 (SG)' },
+      { id: 'unadded', label: '未在队列' },
+    ];
+    let activeFilter = 'all';
+
+    const selectedSet = new Set();
+
+    const matchesFilter = (node, filterId, query) => {
+      if (!node || !node.name) return false;
+      const name = String(node.name).toLowerCase();
+      if (filterId === 'us') {
+        const isUS = /us|美国|united states|america|洛杉矶|圣何塞|西雅图|硅谷|纽约|芝加哥|凤凰城/.test(name);
+        if (!isUS) return false;
+      } else if (filterId === 'hk') {
+        const isHK = /hk|香港|hong kong/.test(name);
+        if (!isHK) return false;
+      } else if (filterId === 'jp') {
+        const isJP = /jp|日本|japan|东京|大阪/.test(name);
+        if (!isJP) return false;
+      } else if (filterId === 'sg') {
+        const isSG = /sg|新加坡|singapore/.test(name);
+        if (!isSG) return false;
+      } else if (filterId === 'unadded') {
+        if (currentQueue.includes(node.name)) return false;
+      }
+      if (query) {
+        const q = query.trim().toLowerCase();
+        const srcName = String(node._sourceName || '').toLowerCase();
+        if (!name.includes(q) && !srcName.includes(q) && !(node.type || '').toLowerCase().includes(q)) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    // 操作工具条 (全选当前筛选, 反选, 清空勾选)
+    const actionRow = document.createElement('div');
+    actionRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:11px;';
+    
+    const actionLeft = document.createElement('div');
+    actionLeft.style.cssText = 'display:flex; gap:6px;';
+
+    const btnSelectAllFiltered = document.createElement('button');
+    btnSelectAllFiltered.type = 'button';
+    btnSelectAllFiltered.className = 'acct-modal-btn';
+    btnSelectAllFiltered.style.cssText = 'padding:2px 8px; font-size:11px; height:24px;';
+    btnSelectAllFiltered.textContent = '全选筛选';
+
+    const btnInvertFiltered = document.createElement('button');
+    btnInvertFiltered.type = 'button';
+    btnInvertFiltered.className = 'acct-modal-btn';
+    btnInvertFiltered.style.cssText = 'padding:2px 8px; font-size:11px; height:24px;';
+    btnInvertFiltered.textContent = '反选';
+
+    const btnClearSelected = document.createElement('button');
+    btnClearSelected.type = 'button';
+    btnClearSelected.className = 'acct-modal-btn';
+    btnClearSelected.style.cssText = 'padding:2px 8px; font-size:11px; height:24px; color:#94a3b8;';
+    btnClearSelected.textContent = '清空选择';
+
+    actionLeft.appendChild(btnSelectAllFiltered);
+    actionLeft.appendChild(btnInvertFiltered);
+    actionLeft.appendChild(btnClearSelected);
+
+    const selectionSummary = document.createElement('span');
+    selectionSummary.style.cssText = 'color:#a5b4fc; font-weight:600; font-size:11px;';
+    selectionSummary.textContent = '已勾选 0 个节点';
+
+    actionRow.appendChild(actionLeft);
+    actionRow.appendChild(selectionSummary);
+    bCard.appendChild(actionRow);
+
+    // 节点列表可滚动区域
+    const listWrap = document.createElement('div');
+    listWrap.style.cssText = 'flex:1; max-height:260px; overflow-y:auto; background:#16181d; border:1px solid #2d323e; border-radius:6px; padding:4px 6px; margin-bottom:12px;';
+    bCard.appendChild(listWrap);
+
+    let currentFilteredList = [];
+
+    const updateSummary = () => {
+      selectionSummary.textContent = `已勾选 ${selectedSet.size} 个节点`;
+      confirmBatchBtn.textContent = `确认加入队列 (+ 添加 ${selectedSet.size} 个)`;
+      confirmBatchBtn.disabled = selectedSet.size === 0;
+    };
+
+    const renderList = () => {
+      listWrap.innerHTML = '';
+      const q = searchInput.value;
+      currentFilteredList = allNodes.filter(n => matchesFilter(n, activeFilter, q));
+
+      if (currentFilteredList.length === 0) {
+        listWrap.innerHTML = '<div style="color:#64748b; font-size:11.5px; text-align:center; padding:20px;">没有匹配的代理节点</div>';
+        return;
+      }
+
+      currentFilteredList.forEach((node) => {
+        const item = document.createElement('label');
+        item.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:5px 8px; border-bottom:1px solid #23262e; cursor:pointer; user-select:none; font-size:11.5px;';
+        
+        const leftBox = document.createElement('div');
+        leftBox.style.cssText = 'display:flex; align-items:center; gap:8px; min-width:0; flex:1;';
+
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.style.cssText = 'accent-color:#6366f1; cursor:pointer; flex-shrink:0;';
+        chk.checked = selectedSet.has(node.name);
+        chk.onchange = () => {
+          if (chk.checked) selectedSet.add(node.name);
+          else selectedSet.delete(node.name);
+          updateSummary();
+        };
+
+        const typeBadge = document.createElement('span');
+        typeBadge.style.cssText = 'font-size:10px; color:#818cf8; font-weight:600; flex-shrink:0;';
+        typeBadge.textContent = `[${String(node.type || '').toUpperCase()}]`;
+
+        const nameSpan = document.createElement('span');
+        nameSpan.style.cssText = 'color:#cfd3dc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        nameSpan.textContent = node.name;
+        nameSpan.title = node.name;
+
+        leftBox.appendChild(chk);
+        leftBox.appendChild(typeBadge);
+        leftBox.appendChild(nameSpan);
+
+        const rightBox = document.createElement('div');
+        rightBox.style.cssText = 'display:flex; align-items:center; gap:6px; flex-shrink:0;';
+
+        if (node._sourceName) {
+          const srcBadge = document.createElement('span');
+          srcBadge.style.cssText = 'font-size:10px; color:#64748b; background:#1e2128; padding:1px 4px; border-radius:3px;';
+          srcBadge.textContent = node._sourceName;
+          rightBox.appendChild(srcBadge);
+        }
+
+        if (currentQueue.includes(node.name)) {
+          const inQueueBadge = document.createElement('span');
+          inQueueBadge.style.cssText = 'font-size:10px; color:#818cf8; background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.3); padding:1px 5px; border-radius:3px;';
+          inQueueBadge.textContent = '已在队列';
+          rightBox.appendChild(inQueueBadge);
+        }
+
+        item.appendChild(leftBox);
+        item.appendChild(rightBox);
+        listWrap.appendChild(item);
+      });
+    };
+
+    filterOptions.forEach(opt => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'acct-modal-btn';
+      chip.style.cssText = 'padding:2px 8px; font-size:11px; height:22px; border-radius:11px;';
+      chip.textContent = opt.label;
+      const updateChipStyle = () => {
+        if (activeFilter === opt.id) {
+          chip.style.background = '#4f46e5';
+          chip.style.color = '#fff';
+          chip.style.borderColor = '#6366f1';
+        } else {
+          chip.style.background = '#23262e';
+          chip.style.color = '#94a3b8';
+          chip.style.borderColor = '#3a3f4b';
+        }
+      };
+      updateChipStyle();
+      chip.onclick = () => {
+        activeFilter = opt.id;
+        Array.from(filterChipsWrap.children).forEach((c, idx) => {
+          c.style.background = (filterOptions[idx].id === activeFilter) ? '#4f46e5' : '#23262e';
+          c.style.color = (filterOptions[idx].id === activeFilter) ? '#fff' : '#94a3b8';
+          c.style.borderColor = (filterOptions[idx].id === activeFilter) ? '#6366f1' : '#3a3f4b';
+        });
+        renderList();
+      };
+      filterChipsWrap.appendChild(chip);
+    });
+    bCard.insertBefore(filterChipsWrap, actionRow);
+
+    btnSelectAllFiltered.onclick = () => {
+      currentFilteredList.forEach(n => selectedSet.add(n.name));
+      renderList();
+      updateSummary();
+    };
+
+    btnInvertFiltered.onclick = () => {
+      currentFilteredList.forEach(n => {
+        if (selectedSet.has(n.name)) selectedSet.delete(n.name);
+        else selectedSet.add(n.name);
+      });
+      renderList();
+      updateSummary();
+    };
+
+    btnClearSelected.onclick = () => {
+      selectedSet.clear();
+      renderList();
+      updateSummary();
+    };
+
+    searchInput.oninput = () => renderList();
+
+    // 底部操作按钮
+    const bFooter = document.createElement('div');
+    bFooter.style.cssText = 'display:flex; justify-content:flex-end; gap:8px;';
+
+    const cancelBatchBtn = document.createElement('button');
+    cancelBatchBtn.type = 'button';
+    cancelBatchBtn.className = 'acct-modal-btn cancel';
+    cancelBatchBtn.textContent = '取消';
+    cancelBatchBtn.onclick = () => batchOverlay.remove();
+
+    const confirmBatchBtn = document.createElement('button');
+    confirmBatchBtn.type = 'button';
+    confirmBatchBtn.className = 'acct-modal-btn confirm';
+    confirmBatchBtn.textContent = '确认加入队列 (+ 添加 0 个)';
+    confirmBatchBtn.disabled = true;
+    confirmBatchBtn.onclick = () => {
+      const addedList = Array.from(selectedSet);
+      batchOverlay.remove();
+      if (typeof onAddBatch === 'function') {
+        onAddBatch(addedList);
+      }
+    };
+
+    bFooter.appendChild(cancelBatchBtn);
+    bFooter.appendChild(confirmBatchBtn);
+    bCard.appendChild(bFooter);
+
+    batchOverlay.appendChild(bCard);
+    document.body.appendChild(batchOverlay);
+
+    renderList();
+    updateSummary();
+  }
+
+  // 编辑账号信息模态框
+  function openEditProfileModal(p) {
+    closeModal();
+    const t = getT();
+    const overlay = document.createElement('div');
+    overlay.className = 'acct-modal-overlay';
+
+    const card = document.createElement('div');
+    card.className = 'acct-modal-card';
+    card.style.cssText = 'width:460px; max-height:92vh; overflow-y:auto;';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'acct-modal-title';
+    titleEl.textContent = t.editProfileTitle(p.name);
+
+    // 1. 昵称
+    const nameRow = document.createElement('div');
+    nameRow.className = 'hub-form-row';
+    nameRow.innerHTML = `<label class="hub-form-label">${t.renameAccount}</label>`;
+    const nameInput = document.createElement('input');
+    nameInput.className = 'hub-form-input';
+    nameInput.value = p.name || '';
+    nameRow.appendChild(nameInput);
+
+    // 2. 主要用途
+    const purposeRow = document.createElement('div');
+    purposeRow.className = 'hub-form-row';
+    purposeRow.innerHTML = `<label class="hub-form-label">${t.purposeLabel}</label>`;
+    const purposeInput = document.createElement('textarea');
+    purposeInput.className = 'hub-form-textarea';
+    purposeInput.value = p.purpose || '';
+    purposeInput.placeholder = '例如：竞品技术调研、生产环境自动化测试、客服会话...';
+    purposeRow.appendChild(purposeInput);
+
+    // 3. 用量占比与明细
+    const usageRow = document.createElement('div');
+    usageRow.className = 'hub-form-row';
+    usageRow.innerHTML = `<label class="hub-form-label">${t.usagePercentLabel}</label>`;
+    const usageInput = document.createElement('input');
+    usageInput.type = 'number';
+    usageInput.className = 'hub-form-input';
+    usageInput.min = '0';
+    usageInput.max = '100';
+    usageInput.value = typeof p.usagePercent === 'number' ? p.usagePercent : 0;
+    usageRow.appendChild(usageInput);
+
+    // 4. Token 重置时间
+    const resetRow = document.createElement('div');
+    resetRow.className = 'hub-form-row';
+    resetRow.innerHTML = `<label class="hub-form-label">${t.tokenResetLabel}</label>`;
+    const resetInput = document.createElement('input');
+    resetInput.type = 'text';
+    resetInput.className = 'hub-form-input';
+    resetInput.placeholder = '例如：2026-11-05 00:00:00 或 还有 12 小时';
+    resetInput.value = p.tokenResetAt ? formatDateTime(p.tokenResetAt) : '';
+    resetRow.appendChild(resetInput);
+
+    // 5. 账号独立网络代理模式选择
+    let currentProxyMode = p.proxyMode || 'inherit';
+    let currentCustom = (p.proxyCustom && typeof p.proxyCustom === 'object') ? { ...p.proxyCustom } : { type: 'http', host: '127.0.0.1', port: 7897 };
+
+    const proxyModeRow = document.createElement('div');
+    proxyModeRow.className = 'hub-form-row';
+    proxyModeRow.style.marginTop = '10px';
+    proxyModeRow.innerHTML = `<label class="hub-form-label">🌐 账号独立代理模式 (Connection Mode)</label>`;
+
+    const modeSelect = document.createElement('select');
+    modeSelect.className = 'hub-form-input';
+    modeSelect.style.cssText = 'padding:5px 8px; font-size:12px;';
+    modeSelect.innerHTML = `
+      <option value="inherit">🌐 跟随全局网络设置 (默认)</option>
+      <option value="system">🖥️ 强制走系统代理 / TUN 虚拟网卡 (System)</option>
+      <option value="mihomo">🛡️ 内置 Mihomo 专属出口队列 (多账号隔离)</option>
+      <option value="direct">⚡ 直接连接 (Direct - 禁用代理)</option>
+      <option value="custom">⚙️ 独立自定义代理 (手动指定 IP/端口)</option>
+    `;
+    modeSelect.value = currentProxyMode;
+    proxyModeRow.appendChild(modeSelect);
+
+    const modeTipEl = document.createElement('div');
+    modeTipEl.style.cssText = 'font-size:10.5px; color:#8a909d; margin-top:4px; line-height:1.4;';
+    proxyModeRow.appendChild(modeTipEl);
+
+    // 自定义代理配置行 (仅在选 custom 时显示)
+    const customConfigWrap = document.createElement('div');
+    customConfigWrap.style.cssText = 'display:none; background:#1b1e25; border:1px solid #3a3f4b; border-radius:6px; padding:8px; margin-top:6px; font-size:11.5px;';
+    customConfigWrap.innerHTML = `
+      <div style="font-size:11px; color:#a5b4fc; margin-bottom:4px; font-weight:600;">独立代理服务器地址:</div>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <select id="acct-custom-type" style="background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 6px; border-radius:4px; font-size:11px;">
+          <option value="http"${(currentCustom.type === 'http') ? ' selected' : ''}>HTTP</option>
+          <option value="socks5"${(currentCustom.type === 'socks5') ? ' selected' : ''}>SOCKS5</option>
+        </select>
+        <input type="text" id="acct-custom-host" value="${currentCustom.host || '127.0.0.1'}" placeholder="127.0.0.1" style="flex:1; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 6px; border-radius:4px; font-size:11px;">
+        <input type="number" id="acct-custom-port" value="${currentCustom.port || 7897}" placeholder="7897" style="width:70px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 6px; border-radius:4px; font-size:11px;">
+      </div>
+    `;
+    proxyModeRow.appendChild(customConfigWrap);
+
+    // 6. 专属代理出口队列 (Mihomo)
+    const proxyRow = document.createElement('div');
+    proxyRow.className = 'hub-form-row';
+    proxyRow.style.marginTop = '10px';
+    proxyRow.innerHTML = `<label class="hub-form-label">🛡️ 专属代理出口队列 (Mihomo 故障转移)</label>`;
+
+    const queueWrap = document.createElement('div');
+    queueWrap.style.cssText = 'background:#1e2128; border:1px solid #2d323e; border-radius:6px; padding:8px; font-size:11.5px;';
+
+    const queueNotice = document.createElement('div');
+    queueNotice.style.cssText = 'font-size:11px; padding:4px 8px; background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.25); border-radius:4px; margin-bottom:8px; display:none;';
+    queueWrap.appendChild(queueNotice);
+
+    const queueSummaryEl = document.createElement('div');
+    queueSummaryEl.style.cssText = 'font-size:10.5px; color:#8a909d; margin-bottom:6px;';
+    queueWrap.appendChild(queueSummaryEl);
+
+    let currentQueue = Array.isArray(p.proxyQueue) ? [...p.proxyQueue] : [];
+    let currentStrategy = p.proxyStrategy || 'fallback';
+    let allAvailableNodes = [];
+
+    const tagsBox = document.createElement('div');
+    tagsBox.style.cssText = 'max-height:120px; overflow-y:auto; min-height:28px; display:flex; flex-wrap:wrap; align-items:center; margin-bottom:8px; gap:4px;';
+
+    const renderQueueTags = () => {
+      tagsBox.innerHTML = '';
+      queueSummaryEl.textContent = `已配置 ${currentQueue.length} 个出口节点 (首节点为主出口，失败自动故障转移)`;
+      if (currentQueue.length === 0) {
+        tagsBox.innerHTML = '<span style="color:#64748b;font-style:italic;">未分配专属队列 (将跟随系统/全部可用节点)</span>';
+        return;
+      }
+      currentQueue.forEach((nodeName, idx) => {
+        const tag = document.createElement('span');
+        tag.style.cssText = 'display:inline-flex; align-items:center; background:rgba(99,102,241,0.18); color:#a5b4fc; border:1px solid rgba(99,102,241,0.35); border-radius:4px; padding:2px 6px; font-size:11px;';
+        
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = `${idx === 0 ? '👑 ' : `${idx + 1}. `}${nodeName}`;
+
+        const delSpan = document.createElement('span');
+        delSpan.style.cssText = 'margin-left:5px; cursor:pointer; color:#f87171; font-weight:bold;';
+        delSpan.textContent = '×';
+        delSpan.onclick = () => {
+          currentQueue.splice(idx, 1);
+          renderQueueTags();
+        };
+
+        tag.appendChild(titleSpan);
+        tag.appendChild(delSpan);
+        tagsBox.appendChild(tag);
+      });
+    };
+    renderQueueTags();
+    queueWrap.appendChild(tagsBox);
+
+    // 节点选择工具栏 (单选下拉 + 批量选择模态框 + 清空)
+    const addWrap = document.createElement('div');
+    addWrap.style.cssText = 'display:flex; gap:6px; align-items:center; flex-wrap:wrap;';
+
+    const nodeSelect = document.createElement('select');
+    nodeSelect.className = 'hub-form-input';
+    nodeSelect.style.cssText = 'flex:1; min-width:160px; padding:4px 8px; font-size:11.5px; height:28px;';
+    nodeSelect.innerHTML = '<option value="">-- 选择要加入队列的节点 --</option>';
+
+    ipcRenderer.invoke('mihomo:get-nodes').then((nodes) => {
+      allAvailableNodes = Array.isArray(nodes) ? nodes : [];
+      if (allAvailableNodes.length > 0) {
+        allAvailableNodes.forEach((n) => {
+          const opt = document.createElement('option');
+          opt.value = n.name;
+          opt.textContent = `[${String(n.type || '').toUpperCase()}] ${n.name}`;
+          nodeSelect.appendChild(opt);
+        });
+      } else {
+        nodeSelect.innerHTML = '<option value="">(尚未拉取机场订阅，请先在网络设置中同步)</option>';
+      }
+    }).catch(() => {});
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'acct-modal-btn';
+    addBtn.style.cssText = 'padding:4px 8px; font-size:11px; height:28px; flex-shrink:0;';
+    addBtn.textContent = '+ 添加';
+    addBtn.onclick = () => {
+      const val = nodeSelect.value;
+      if (val && !currentQueue.includes(val)) {
+        currentQueue.push(val);
+        renderQueueTags();
+      }
+    };
+
+    const btnBatchSelectModal = document.createElement('button');
+    btnBatchSelectModal.type = 'button';
+    btnBatchSelectModal.className = 'acct-modal-btn';
+    btnBatchSelectModal.style.cssText = 'padding:4px 10px; font-size:11px; height:28px; flex-shrink:0; background:#4f46e5; color:#fff; border-color:#6366f1;';
+    btnBatchSelectModal.textContent = '📦 批量选择节点...';
+    btnBatchSelectModal.onclick = () => {
+      openBatchNodeSelectModal({
+        allNodes: allAvailableNodes,
+        currentQueue,
+        onAddBatch: (addedList) => {
+          let newlyAdded = 0;
+          addedList.forEach(name => {
+            if (!currentQueue.includes(name)) {
+              currentQueue.push(name);
+              newlyAdded++;
+            }
+          });
+          renderQueueTags();
+          if (newlyAdded > 0) {
+            queueSummaryEl.textContent = `已成功批量加入 ${newlyAdded} 个节点！当前共 ${currentQueue.length} 个`;
+          }
+        }
+      });
+    };
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'acct-modal-btn';
+    clearBtn.style.cssText = 'padding:4px 8px; font-size:11px; height:28px; flex-shrink:0; color:#94a3b8;';
+    clearBtn.textContent = '清空';
+    clearBtn.onclick = () => {
+      currentQueue = [];
+      renderQueueTags();
+    };
+
+    addWrap.appendChild(nodeSelect);
+    addWrap.appendChild(addBtn);
+    addWrap.appendChild(btnBatchSelectModal);
+    addWrap.appendChild(clearBtn);
+    queueWrap.appendChild(addWrap);
+
+    // 快捷批量添加快捷标签栏
+    const quickWrap = document.createElement('div');
+    quickWrap.style.cssText = 'display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-top:8px; padding-top:6px; border-top:1px dashed #2d323e;';
+    
+    const quickLabel = document.createElement('span');
+    quickLabel.style.cssText = 'font-size:10.5px; color:#8a909d; flex-shrink:0;';
+    quickLabel.textContent = '快捷批量:';
+    quickWrap.appendChild(quickLabel);
+
+    const makeQuickBtn = (label, filterFn) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.style.cssText = 'background:#1a1d24; border:1px solid #333948; color:#a5b4fc; border-radius:4px; padding:2px 6px; font-size:10.5px; cursor:pointer;';
+      btn.textContent = label;
+      btn.onmouseenter = () => btn.style.borderColor = '#6366f1';
+      btn.onmouseleave = () => btn.style.borderColor = '#333948';
+      btn.onclick = () => {
+        if (!allAvailableNodes || allAvailableNodes.length === 0) return;
+        const matching = allAvailableNodes.filter(filterFn).map(n => n.name);
+        let addedCount = 0;
+        matching.forEach(name => {
+          if (!currentQueue.includes(name)) {
+            currentQueue.push(name);
+            addedCount++;
+          }
+        });
+        renderQueueTags();
+        if (addedCount > 0) {
+          queueSummaryEl.textContent = `已快捷添加 ${addedCount} 个新节点！当前共 ${currentQueue.length} 个`;
+        }
+      };
+      return btn;
+    };
+
+    quickWrap.appendChild(makeQuickBtn('+ 全部可用', () => true));
+    quickWrap.appendChild(makeQuickBtn('+ 全部美国', n => /us|美国|united states|america|洛杉矶|圣何塞|西雅图|硅谷|纽约|芝加哥|凤凰城/i.test(n.name)));
+    quickWrap.appendChild(makeQuickBtn('+ 全部香港', n => /hk|香港|hong kong/i.test(n.name)));
+    quickWrap.appendChild(makeQuickBtn('+ 全部日本', n => /jp|日本|japan|东京|大阪/i.test(n.name)));
+    quickWrap.appendChild(makeQuickBtn('+ 全部新加坡', n => /sg|新加坡|singapore/i.test(n.name)));
+
+    const customMatchBtn = document.createElement('button');
+    customMatchBtn.type = 'button';
+    customMatchBtn.style.cssText = 'background:#1a1d24; border:1px dashed #4b5563; color:#94a3b8; border-radius:4px; padding:2px 6px; font-size:10.5px; cursor:pointer;';
+    customMatchBtn.textContent = '+ 按关键字...';
+    customMatchBtn.onclick = () => {
+      const kw = prompt('请输入要批量匹配并添加的关键字 (如: 0.1、专线、洛杉矶、IEPL):');
+      if (!kw || !kw.trim()) return;
+      const cleanKw = kw.trim().toLowerCase();
+      let addedCount = 0;
+      allAvailableNodes.forEach(n => {
+        if (n && n.name && n.name.toLowerCase().includes(cleanKw)) {
+          if (!currentQueue.includes(n.name)) {
+            currentQueue.push(n.name);
+            addedCount++;
+          }
+        }
+      });
+      renderQueueTags();
+      if (addedCount > 0) {
+        queueSummaryEl.textContent = `已根据关键词 [${cleanKw}] 批量加入 ${addedCount} 个节点！当前共 ${currentQueue.length} 个`;
+      } else {
+        alert(`未找到包含 "${cleanKw}" 的新节点`);
+      }
+    };
+    quickWrap.appendChild(customMatchBtn);
+    queueWrap.appendChild(quickWrap);
+
+    // 模式切换联动
+    const updateModeView = (mode) => {
+      currentProxyMode = mode;
+      if (mode === 'system') {
+        modeTipEl.textContent = '此账号将独立走系统网络代理与 TUN 虚拟网卡（绕过内置 Mihomo 内核）。';
+        modeTipEl.style.color = '#38bdf8';
+        customConfigWrap.style.display = 'none';
+        queueNotice.style.display = 'block';
+        queueNotice.textContent = '💡 提示：当前账号已设为独立走系统代理/TUN，实际连接直接使用系统网络，下方队列在切换至 Mihomo 时生效。';
+      } else if (mode === 'direct') {
+        modeTipEl.textContent = '此账号绕过任何系统代理、VPN 或 Mihomo 内核，直接发起原生网络连接。';
+        modeTipEl.style.color = '#fbbf24';
+        customConfigWrap.style.display = 'none';
+        queueNotice.style.display = 'block';
+        queueNotice.textContent = '💡 提示：当前账号已设为直接连接，流量将直连互联网。';
+      } else if (mode === 'custom') {
+        modeTipEl.textContent = '此账号流量将强制转发至下方指定的本地/局域网代理服务器。';
+        modeTipEl.style.color = '#c084fc';
+        customConfigWrap.style.display = 'block';
+        queueNotice.style.display = 'block';
+        queueNotice.textContent = '💡 提示：当前账号已设为独立自定义代理，下方队列在切换至 Mihomo 时生效。';
+      } else if (mode === 'mihomo') {
+        modeTipEl.textContent = '此账号强制由内置 Mihomo 托管并分配独立本地出口端口与专属故障转移队列。';
+        modeTipEl.style.color = '#818cf8';
+        customConfigWrap.style.display = 'none';
+        queueNotice.style.display = 'none';
+      } else {
+        // inherit
+        modeTipEl.textContent = '跟随设置中心全局网络策略（若全局开启 Mihomo 则走专属出口队列，否则走全局自适应/覆盖）。';
+        modeTipEl.style.color = '#8a909d';
+        customConfigWrap.style.display = 'none';
+        queueNotice.style.display = 'none';
+      }
+    };
+
+    modeSelect.onchange = () => updateModeView(modeSelect.value);
+    updateModeView(currentProxyMode);
+
+    proxyRow.appendChild(queueWrap);
+
+    // 底部操作
+    const actions = document.createElement('div');
+    actions.className = 'acct-modal-actions';
+    actions.style.marginTop = '16px';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'acct-modal-btn cancel';
+    cancelBtn.textContent = t.cancel;
+    cancelBtn.onclick = closeModal;
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'acct-modal-btn confirm';
+    confirmBtn.textContent = t.saveChanges;
+    confirmBtn.onclick = async () => {
+      const newName = nameInput.value.trim() || p.name;
+      const newPurpose = purposeInput.value.trim();
+      const newUsage = parseFloat(usageInput.value) || 0;
+      const newReset = resetInput.value.trim();
+
+      const finalCustom = {
+        type: document.getElementById('acct-custom-type')?.value || 'http',
+        host: document.getElementById('acct-custom-host')?.value?.trim() || '127.0.0.1',
+        port: parseInt(document.getElementById('acct-custom-port')?.value, 10) || 7897,
+      };
+
+      closeModal();
+      await ipcRenderer.invoke('account:update-meta', {
+        id: p.id,
+        name: newName,
+        purpose: newPurpose,
+        usagePercent: newUsage,
+        usageText: `${newUsage}%`,
+        tokenResetAt: newReset ? formatDateTime(newReset) : '',
+      }).catch(() => {});
+
+      await ipcRenderer.invoke('account:set-proxy-queue', {
+        profileId: p.id,
+        proxyQueue: currentQueue,
+        proxyStrategy: currentStrategy,
+        proxyMode: currentProxyMode,
+        proxyCustom: finalCustom,
+      }).catch(() => {});
+
+      if (dockState.hubOpen) renderAccountHub();
+    };
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+
+    card.appendChild(titleEl);
+    card.appendChild(nameRow);
+    card.appendChild(purposeRow);
+    card.appendChild(usageRow);
+    card.appendChild(resetRow);
+    card.appendChild(proxyModeRow);
+    card.appendChild(proxyRow);
+    card.appendChild(actions);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    activeModal = overlay;
+  }
+
+  // 飞书多维表格同步配置模态框
+  async function openFeishuSettingsModal() {
+    closeModal();
+    const t = getT();
+    const overlay = document.createElement('div');
+    overlay.className = 'acct-modal-overlay';
+
+    const card = document.createElement('div');
+    card.className = 'acct-modal-card';
+    card.style.width = '480px';
+    card.style.maxHeight = '85vh';
+    card.style.overflowY = 'auto';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'acct-modal-title';
+    titleEl.textContent = t.feishuSyncSettings;
+
+    let cfg = {};
+    try {
+      cfg = (await ipcRenderer.invoke('feishu:get-config')) || {};
+    } catch {}
+
+    const createField = (label, value, placeholder = '', type = 'text') => {
+      const row = document.createElement('div');
+      row.className = 'hub-form-row';
+      row.innerHTML = `<label class="hub-form-label">${label}</label>`;
+      const input = document.createElement('input');
+      input.type = type;
+      input.className = 'hub-form-input';
+      input.value = value || '';
+      input.placeholder = placeholder;
+      row.appendChild(input);
+      return { row, input };
+    };
+
+    // 内置飞书引擎状态条
+    const cliStatusBox = document.createElement('div');
+    cliStatusBox.style.fontSize = '12px';
+    cliStatusBox.style.padding = '8px 12px';
+    cliStatusBox.style.borderRadius = '8px';
+    cliStatusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+    cliStatusBox.style.color = '#34d399';
+    cliStatusBox.style.border = '1px solid rgba(16, 185, 129, 0.25)';
+    cliStatusBox.style.marginBottom = '12px';
+    cliStatusBox.style.display = 'flex';
+    cliStatusBox.style.alignItems = 'center';
+    cliStatusBox.style.gap = '8px';
+    cliStatusBox.innerHTML = '<span>⚡</span><span><strong>飞书 CLI:</strong> 已内置集成 (零系统依赖，免安装任何外部工具)</span>';
+
+    const appIdF = createField(t.feishuAppId, cfg.appId, 'cli_a1b2c3d4e5f6');
+    const secretF = createField(t.feishuAppSecret, cfg.appSecret, '••••••••••••••••', 'password');
+    const tokenF = createField(t.feishuAppToken, cfg.appToken, 'bascnXXXXXXXXXXXX');
+    const tableF = createField(t.feishuTableId, cfg.tableId, 'tblXXXXXXXXXXXX');
+
+    // 自动同步开关
+    const autoRow = document.createElement('div');
+    autoRow.className = 'hub-form-row';
+    autoRow.style.flexDirection = 'row';
+    autoRow.style.alignItems = 'center';
+    autoRow.style.justifyContent = 'space-between';
+    autoRow.innerHTML = `<label class="hub-form-label">${t.feishuAutoSync}</label>`;
+    const autoCheck = document.createElement('input');
+    autoCheck.type = 'checkbox';
+    autoCheck.checked = !!cfg.autoSync;
+    autoRow.appendChild(autoCheck);
+
+    const intervalF = createField(t.feishuInterval, cfg.syncIntervalMinutes || 30, '30', 'number');
+
+    // 字段映射折叠区
+    const fMapTitle = document.createElement('div');
+    fMapTitle.style.fontSize = '12px';
+    fMapTitle.style.fontWeight = '600';
+    fMapTitle.style.marginTop = '12px';
+    fMapTitle.style.color = '#38bdf8';
+    fMapTitle.textContent = `📋 ${t.feishuFieldMap}`;
+
+    const fm = cfg.fieldMap || {};
+    const mapNameF = createField('账号名称列', fm.name || '账号名称');
+    const mapPurposeF = createField('主要用途列', fm.purpose || '主要用途');
+    const mapUsageF = createField('当前用量列', fm.usage || '当前用量');
+    const mapResetF = createField('重置时间列', fm.tokenReset || '重置时间');
+
+    // 状态提示
+    const statusBox = document.createElement('div');
+    statusBox.style.fontSize = '11px';
+    statusBox.style.color = '#94a3b8';
+    statusBox.style.margin = '10px 0';
+    statusBox.style.padding = '8px';
+    statusBox.style.background = 'rgba(0, 0, 0, 0.25)';
+    statusBox.style.borderRadius = '6px';
+    statusBox.textContent = cfg.lastSyncStatus || '尚未同步过多维表格数据';
+
+    // 底部操作
+    const actions = document.createElement('div');
+    actions.className = 'acct-modal-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'acct-modal-btn cancel';
+    cancelBtn.textContent = t.cancel;
+    cancelBtn.onclick = closeModal;
+
+    const saveAndSyncBtn = document.createElement('button');
+    saveAndSyncBtn.className = 'acct-modal-btn confirm';
+    saveAndSyncBtn.textContent = '保存并立即同步';
+    saveAndSyncBtn.onclick = async () => {
+      const newConfig = {
+        enabled: true,
+        syncMode: 'auto',
+        appId: appIdF.input.value.trim(),
+        appSecret: secretF.input.value.trim(),
+        appToken: tokenF.input.value.trim(),
+        tableId: tableF.input.value.trim(),
+        autoSync: autoCheck.checked,
+        syncIntervalMinutes: parseInt(intervalF.input.value, 10) || 30,
+        fieldMap: {
+          name: mapNameF.input.value.trim() || '账号名称',
+          purpose: mapPurposeF.input.value.trim() || '主要用途',
+          usage: mapUsageF.input.value.trim() || '当前用量',
+          tokenReset: mapResetF.input.value.trim() || '重置时间',
+        },
+      };
+
+      saveAndSyncBtn.disabled = true;
+      saveAndSyncBtn.textContent = '同步中...';
+      await ipcRenderer.invoke('feishu:save-config', newConfig).catch(() => {});
+      try {
+        const res = await ipcRenderer.invoke('feishu:sync-now');
+        if (res && res.ok) {
+          showToast(`飞书同步成功：匹配更新 ${res.updatedProfiles} 个账号`);
+        } else {
+          showToast(`飞书同步提示: ${(res && res.error) || '未知错误'}`);
+        }
+      } catch (err) {
+        showToast(`飞书同步失败: ${err.message}`);
+      }
+      closeModal();
+      if (dockState.hubOpen) renderAccountHub();
+    };
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(saveAndSyncBtn);
+
+    card.appendChild(titleEl);
+    card.appendChild(cliStatusBox);
+    card.appendChild(appIdF.row);
+    card.appendChild(secretF.row);
+    card.appendChild(tokenF.row);
+    card.appendChild(tableF.row);
+    card.appendChild(autoRow);
+    card.appendChild(intervalF.row);
+    card.appendChild(fMapTitle);
+    card.appendChild(mapNameF.row);
+    card.appendChild(mapPurposeF.row);
+    card.appendChild(mapUsageF.row);
+    card.appendChild(mapResetF.row);
+    card.appendChild(statusBox);
+    card.appendChild(actions);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    activeModal = overlay;
+  }
+
   function openItemContextMenu(e, profile) {
     e.preventDefault();
     e.stopPropagation();
@@ -1634,7 +3620,27 @@ function injectExportButton() {}
     const menu = document.createElement('div');
     menu.className = 'acct-context-menu';
 
-    // 1. 修改备注
+    // 0. 打开账号九宫格总览看板
+    const hubItem = document.createElement('div');
+    hubItem.className = 'acct-context-item';
+    hubItem.innerHTML = `<span>⊞</span><span>${t.accountHubTitle}</span>`;
+    hubItem.onclick = () => {
+      closeContextMenu();
+      openAccountHub();
+    };
+    menu.appendChild(hubItem);
+
+    // 1. 编辑详情 (含用途、用量与群组)
+    const editItem = document.createElement('div');
+    editItem.className = 'acct-context-item';
+    editItem.innerHTML = `<span>📝</span><span>${t.editMeta}</span>`;
+    editItem.onclick = () => {
+      closeContextMenu();
+      openEditProfileModal(profile);
+    };
+    menu.appendChild(editItem);
+
+    // 2. 修改备注
     const renameItem = document.createElement('div');
     renameItem.className = 'acct-context-item';
     renameItem.innerHTML = `<span>✏️</span><span>${t.renameAccount}</span>`;
@@ -1684,14 +3690,18 @@ function injectExportButton() {}
     };
     menu.appendChild(proxyItem);
 
-    menu.style.left = `${Math.min(e.clientX + 5, window.innerWidth - 160)}px`;
-    menu.style.top = `${Math.min(e.clientY - 20, window.innerHeight - 150)}px`;
+    const menuHeight = 160;
+    const top = (e.clientY + menuHeight > window.innerHeight)
+      ? Math.max(10, e.clientY - menuHeight)
+      : e.clientY + 5;
+    menu.style.top = `${top}px`;
+    menu.style.left = `${Math.min(e.clientX + 5, window.innerWidth - 170)}px`;
     document.body.appendChild(menu);
     activeContextMenu = menu;
   }
 
   function renderDock() {
-    const parent = document.body || document.documentElement;
+    const parent = document.body;
     if (!parent) return;
     const t = getT();
 
@@ -1712,7 +3722,7 @@ function injectExportButton() {}
         }
       });
       parent.appendChild(dockContainer);
-    } else if (!dockContainer.parentNode) {
+    } else if (!dockContainer.parentNode || dockContainer.parentNode !== parent) {
       parent.appendChild(dockContainer);
     }
 
@@ -1730,14 +3740,14 @@ function injectExportButton() {}
 
     dockContainer.innerHTML = '';
 
-    // 顶部操作区 (折叠与固定)
-    const header = document.createElement('div');
-    header.className = 'acct-dock-header';
+    // 左侧区域 (折叠按钮、固定图钉、九宫格总览看板)
+    const leftSection = document.createElement('div');
+    leftSection.className = 'acct-dock-section';
 
     const collapseBtn = document.createElement('div');
     collapseBtn.className = 'acct-dock-collapse-btn';
     collapseBtn.title = dockState.collapsed ? t.expandDock : t.collapseDock;
-    collapseBtn.innerHTML = dockState.collapsed ? '▶' : '◀';
+    collapseBtn.innerHTML = dockState.collapsed ? '▲' : '▼';
     collapseBtn.onclick = (e) => {
       e.stopPropagation();
       if (dockState.collapsed) {
@@ -1750,11 +3760,12 @@ function injectExportButton() {}
           dockState.pinned = false;
           try { localStorage.setItem('acct_dock_pinned', '0'); } catch {}
           ipcRenderer.invoke('dock:set-pinned', { pinned: false }).catch(() => {});
+          applyDockPinnedOffset(false);
         }
       }
       updateHeaderButtons();
     };
-    header.appendChild(collapseBtn);
+    leftSection.appendChild(collapseBtn);
 
     const pinBtn = document.createElement('div');
     pinBtn.className = 'acct-dock-pin-btn' + (dockState.pinned ? ' pinned' : '');
@@ -1774,14 +3785,53 @@ function injectExportButton() {}
         dockContainer.classList.remove('pinned');
         scheduleAutoCollapse(350);
       }
+      applyDockPinnedOffset(dockState.pinned);
       renderDock();
     };
-    header.appendChild(pinBtn);
-    dockContainer.appendChild(header);
+    leftSection.appendChild(pinBtn);
 
-    // 账号列表
+    const hubBtn = document.createElement('div');
+    hubBtn.className = 'acct-dock-hub-btn';
+    hubBtn.innerHTML = '⊞';
+    hubBtn.title = t.openAccountHubTooltip;
+
+    const hubTooltip = document.createElement('div');
+    hubTooltip.className = 'acct-dock-tooltip';
+    const hubSpan = document.createElement('span');
+    hubSpan.textContent = t.accountHubTitle;
+    hubTooltip.appendChild(hubSpan);
+    const hubBadge = document.createElement('span');
+    hubBadge.className = 'acct-dock-tooltip-badge';
+    hubBadge.style.background = 'rgba(99, 102, 241, 0.25)';
+    hubBadge.style.color = '#818cf8';
+    hubBadge.textContent = '九宫格';
+    hubTooltip.appendChild(hubBadge);
+    hubBtn.appendChild(hubTooltip);
+
+    hubBtn.onclick = (e) => {
+      e.stopPropagation();
+      openAccountHub();
+    };
+    leftSection.appendChild(hubBtn);
+
+    dockContainer.appendChild(leftSection);
+
+    // 左侧垂直分割线
+    const dividerLeft = document.createElement('div');
+    dividerLeft.className = 'acct-dock-divider';
+    dockContainer.appendChild(dividerLeft);
+
+    // 中间账号列表
     const list = document.createElement('div');
     list.className = 'acct-dock-list';
+
+    // 鼠标滚轮平滑横向滚动支持
+    list.addEventListener('wheel', (e) => {
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        list.scrollLeft += e.deltaY;
+      }
+    }, { passive: false });
 
     // 保底至少渲染一个当前账号徽章
     const profilesToRender = (dockState.profiles && dockState.profiles.length > 0)
@@ -1799,43 +3849,105 @@ function injectExportButton() {}
     profilesToRender.forEach((p) => {
       const item = document.createElement('div');
       item.className = 'acct-dock-item';
+      item.style.position = 'relative';
+      item.style.width = '36px';
+      item.style.height = '36px';
+      item.style.flexShrink = '0';
+      if (dockState.switchingTargetId === p.id) {
+        item.classList.add('switching');
+      }
       if (p.id === dockState.activeProfileId) {
         item.classList.add('active');
         setTimeout(() => {
-          try { item.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
+          try { item.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); } catch {}
         }, 50);
       }
-      item.style.backgroundColor = p.color || '#3b82f6';
-      item.textContent = getInitials(p.name);
 
-      // 上下拖拽高亮指示线
-      const indTop = document.createElement('div');
-      indTop.className = 'acct-dock-drop-indicator top';
-      item.appendChild(indTop);
+      // 用量外环计算 (SVG 环形进度条，半径 16，周长 100.53)
+      const pct = Math.max(0, Math.min(100, typeof p.usagePercent === 'number' ? p.usagePercent : 0));
+      let ringColor = '#10b981'; // 默认健康翠绿 (<70%)
+      if (pct >= 90) {
+        ringColor = '#ef4444'; // 严重耗尽/用满 (>=90%)
+      } else if (pct >= 70) {
+        ringColor = '#f59e0b'; // 适中偏高告警 (70%~89%)
+      }
+      const circumference = 100.53; // 2 * PI * 16
+      const strokeOffset = +(circumference * (1 - pct / 100)).toFixed(2);
 
-      const indBottom = document.createElement('div');
-      indBottom.className = 'acct-dock-drop-indicator bottom';
-      item.appendChild(indBottom);
+      const ringSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      ringSvg.setAttribute('class', 'acct-dock-ring');
+      ringSvg.setAttribute('viewBox', '0 0 36 36');
+      ringSvg.setAttribute('width', '36');
+      ringSvg.setAttribute('height', '36');
+      ringSvg.style.position = 'absolute';
+      ringSvg.style.top = '0';
+      ringSvg.style.left = '0';
+      ringSvg.style.width = '36px';
+      ringSvg.style.height = '36px';
+      ringSvg.style.pointerEvents = 'none';
+      ringSvg.innerHTML = `
+        <circle class="acct-dock-ring-bg" cx="18" cy="18" r="16" stroke-width="2.2" fill="none" />
+        <circle class="acct-dock-ring-progress" cx="18" cy="18" r="16" stroke-width="2.2" stroke="${ringColor}" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${strokeOffset}" fill="none" transform="rotate(-90 18 18)" />
+      `;
+      item.appendChild(ringSvg);
 
-      // Tooltip
+      // 内层账号圆形头像 (28px 直径，居中陈列)
+      const avatar = document.createElement('div');
+      avatar.className = 'acct-dock-avatar';
+      avatar.style.width = '28px';
+      avatar.style.height = '28px';
+      avatar.style.borderRadius = '50%';
+      avatar.style.backgroundColor = p.color || '#3b82f6';
+      avatar.textContent = getInitials(p.name);
+      item.appendChild(avatar);
+
+      // 左右拖拽高亮指示线
+      const indLeft = document.createElement('div');
+      indLeft.className = 'acct-dock-drop-indicator left';
+      item.appendChild(indLeft);
+
+      const indRight = document.createElement('div');
+      indRight.className = 'acct-dock-drop-indicator right';
+      item.appendChild(indRight);
+
+      // Tooltip 增强 (向上弹出)
       const tooltip = document.createElement('div');
       tooltip.className = 'acct-dock-tooltip';
+      tooltip.style.flexDirection = 'column';
+      tooltip.style.alignItems = 'flex-start';
+      tooltip.style.gap = '3px';
+
+      const tooltipTop = document.createElement('div');
+      tooltipTop.style.display = 'flex';
+      tooltipTop.style.alignItems = 'center';
+      tooltipTop.style.gap = '6px';
 
       const nameSpan = document.createElement('span');
       nameSpan.textContent = p.name;
-      tooltip.appendChild(nameSpan);
+      tooltipTop.appendChild(nameSpan);
 
       if (p.id === dockState.activeProfileId) {
         const badge = document.createElement('span');
         badge.className = 'acct-dock-tooltip-badge';
         badge.textContent = t.currentAccountBadge;
-        tooltip.appendChild(badge);
+        tooltipTop.appendChild(badge);
       } else {
         const hint = document.createElement('span');
         hint.className = 'acct-dock-tooltip-hint';
         hint.textContent = t.clickToSwitch;
-        tooltip.appendChild(hint);
+        tooltipTop.appendChild(hint);
       }
+      tooltip.appendChild(tooltipTop);
+
+      const usageRow = document.createElement('div');
+      usageRow.style.fontSize = '11px';
+      usageRow.style.color = ringColor;
+      usageRow.style.display = 'flex';
+      usageRow.style.alignItems = 'center';
+      usageRow.style.gap = '5px';
+      const displayReset = p.tokenResetAt ? formatDateTime(p.tokenResetAt) : '';
+      usageRow.innerHTML = `<span>用量: ${p.usageText || (pct + '%')}</span>${displayReset ? `<span style="color:rgba(255,255,255,0.45);font-size:10px;">· 重置: ${displayReset}</span>` : ''}`;
+      tooltip.appendChild(usageRow);
 
       item.appendChild(tooltip);
 
@@ -1843,6 +3955,8 @@ function injectExportButton() {}
       item.onclick = () => {
         if (Date.now() - dragJustEndedAt < 250) return;
         if (p.id !== dockState.activeProfileId) {
+          dockState.switchingTargetId = p.id;
+          renderDock();
           ipcRenderer.invoke('account:switch', { id: p.id }).catch(() => {});
         }
       };
@@ -1868,8 +3982,8 @@ function injectExportButton() {}
           if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
 
           const rect = item.getBoundingClientRect();
-          const midY = rect.top + rect.height / 2;
-          if (e.clientY < midY) {
+          const midX = rect.left + rect.width / 2;
+          if (e.clientX < midX) {
             if (!item.classList.contains('drop-target-before')) {
               item.classList.add('drop-target-before');
               item.classList.remove('drop-target-after');
@@ -1944,11 +4058,19 @@ function injectExportButton() {}
 
     dockContainer.appendChild(list);
 
+    // 右侧垂直分割线
+    const dividerRight = document.createElement('div');
+    dividerRight.className = 'acct-dock-divider';
+    dockContainer.appendChild(dividerRight);
+
+    // 右侧功能区 (添加账号、主题切换、控制中心)
+    const rightSection = document.createElement('div');
+    rightSection.className = 'acct-dock-section';
+
     // 新增账号按钮
     const addBtn = document.createElement('button');
     addBtn.className = 'acct-dock-add-btn';
     addBtn.type = 'button';
-    addBtn.style.flexShrink = '0';
     addBtn.title = t.addAccountTooltip;
     addBtn.textContent = '+';
     addBtn.onclick = () => {
@@ -1956,15 +4078,13 @@ function injectExportButton() {}
         ipcRenderer.invoke('account:add', { name }).catch(() => {});
       });
     };
-    dockContainer.appendChild(addBtn);
+    rightSection.appendChild(addBtn);
 
     // 主题切换快捷按钮 (Dark / Light)
     const themeBtn = document.createElement('button');
     themeBtn.id = 'acct-dock-theme-toggle';
     themeBtn.className = 'acct-dock-add-btn';
     themeBtn.type = 'button';
-    themeBtn.style.flexShrink = '0';
-    themeBtn.style.marginTop = '4px';
     themeBtn.style.fontSize = '12px';
     themeBtn.innerHTML = currentTheme === 'light' ? '☀️' : '🌙';
     themeBtn.title = currentTheme === 'light' ? t.themeLightTooltip : t.themeDarkTooltip;
@@ -1972,17 +4092,15 @@ function injectExportButton() {}
       const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
       ipcRenderer.invoke('theme-set', nextTheme).catch(() => {});
     };
-    dockContainer.appendChild(themeBtn);
+    rightSection.appendChild(themeBtn);
 
     // ⚙ 配置与自动化控制中心按钮 (Settings & Auto-Allow Center)
     const settingsBtn = document.createElement('button');
     settingsBtn.id = 'acct-dock-settings-btn';
     settingsBtn.className = 'acct-dock-add-btn';
     settingsBtn.type = 'button';
-    settingsBtn.style.flexShrink = '0';
-    settingsBtn.style.marginTop = '4px';
     settingsBtn.style.position = 'relative';
-    settingsBtn.style.fontSize = '14px';
+    settingsBtn.style.fontSize = '13px';
     settingsBtn.innerHTML = '⚙';
     settingsBtn.title = t.settingsCenterTooltip;
 
@@ -2009,7 +4127,9 @@ function injectExportButton() {}
         window.__museToggleSettingsPopover();
       }
     };
-    dockContainer.appendChild(settingsBtn);
+    rightSection.appendChild(settingsBtn);
+
+    dockContainer.appendChild(rightSection);
   }
 
   window.__museRenderDock = renderDock;
@@ -2024,26 +4144,72 @@ function injectExportButton() {}
 
   // 监听主进程广播的账号变化
   ipcRenderer.on('account:changed', (e, newState) => {
+    dockState.switchingTargetId = null;
     if (newState) {
       dockState.profiles = newState.profiles || [];
       dockState.activeProfileId = newState.activeProfileId || 'default';
+      dockState.accountGroups = newState.accountGroups || ['默认群组'];
+      dockState.feishu = newState.feishu || null;
       if (typeof newState.dockPinned === 'boolean') {
         dockState.pinned = newState.dockPinned;
         if (dockState.pinned) {
           dockState.collapsed = false;
         }
+        applyDockPinnedOffset(dockState.pinned);
       }
+      renderDock();
+      if (dockState.hubOpen) {
+        renderAccountHub();
+      }
+    }
+  });
+
+  // 监听账号切换中状态（呈现平滑脉冲/旋转指示）
+  ipcRenderer.on('account:switching', (e, payload) => {
+    if (payload && payload.targetProfileId) {
+      dockState.switchingTargetId = payload.targetProfileId;
       renderDock();
     }
   });
 
+  ipcRenderer.on('account:open-hub', () => {
+    openAccountHub();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && dockState.hubOpen) {
+      closeAccountHub();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'g' || e.key === 'G')) {
+      e.preventDefault();
+      if (dockState.hubOpen) {
+        closeAccountHub();
+      } else {
+        openAccountHub();
+      }
+    }
+  });
+
   function startDock() {
+    try {
+      const saved = localStorage.getItem('acct_dock_pinned');
+      if (saved !== null) {
+        dockState.pinned = saved === '1';
+        dockState.collapsed = !dockState.pinned;
+      } else {
+        dockState.pinned = true;
+        dockState.collapsed = false;
+      }
+    } catch {}
     injectDockStyles();
     renderDock(); // 先用初始数据渲染，确保绝不空白
+    applyDockPinnedOffset(dockState.pinned);
     ipcRenderer.invoke('account:get-state').then((res) => {
       if (res) {
         dockState.profiles = res.profiles || [];
         dockState.activeProfileId = res.activeProfileId || 'default';
+        dockState.accountGroups = res.accountGroups || ['默认群组'];
+        dockState.feishu = res.feishu || null;
         if (typeof res.dockPinned === 'boolean') {
           dockState.pinned = res.dockPinned;
           if (dockState.pinned) {
@@ -2051,18 +4217,35 @@ function injectExportButton() {}
           }
         }
       }
+      applyDockPinnedOffset(dockState.pinned);
       renderDock();
+      if (dockState.hubOpen) {
+        renderAccountHub();
+      }
     }).catch(() => {
+      applyDockPinnedOffset(dockState.pinned);
       renderDock();
     });
   }
+
+  // 动态监听 DOM 变化以确保 SPA 路由切换时输入框避让生效
+  try {
+    const _dockDomObserver = new MutationObserver(() => {
+      if (dockState.pinned) {
+        updateComposerOffset(true);
+      }
+    });
+    if (document.body || document.documentElement) {
+      _dockDomObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    }
+  } catch {}
 
   if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', startDock);
   } else {
     startDock();
   }
-  // 延时再次检查保底附加
+  window.addEventListener('load', startDock);
   setTimeout(startDock, 500);
   setTimeout(startDock, 2000);
 })();
@@ -2072,14 +4255,19 @@ function injectExportButton() {}
   function extractTargetUrl(rawUrl) {
     if (!rawUrl || typeof rawUrl !== 'string') return null;
     try {
-      const parsed = new URL(rawUrl, window.location.href);
-      // 与主进程一致: 只解包已知跳转站的重定向参数 (v1.5.17 加固)
+      let cleanUrl = rawUrl.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
+      const parsed = new URL(cleanUrl, window.location.href);
+      const host = parsed.hostname.toLowerCase();
+      // 与主进程一致: 解包已知跳转站与内部重定向包装的参数 (含 Meta AI / Facebook / Instagram / Google 等)
       const REDIRECTOR_HOSTS = new Set([
         'www.google.com', 'google.com', 'www.bing.com', 'bing.com',
-        'duckduckgo.com', 'html.duckduckgo.com', 'l.facebook.com',
+        'duckduckgo.com', 'html.duckduckgo.com',
+        'link.meta.com', 'l.facebook.com', 'lm.facebook.com',
+        'l.instagram.com', 'l.messenger.com', 'www.facebook.com', 'facebook.com',
         'out.reddit.com', 'www.youtube.com',
+        'muse.ai', 'meta.ai', 'meta.com',
       ]);
-      if (!REDIRECTOR_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+      if (!REDIRECTOR_HOSTS.has(host) && !REDIRECTOR_HOSTS.has(host.replace(/^www\./, ''))) return null;
       const redirectKeys = ['u', 'url', 'target', 'dest', 'destination', 'link', 'href', 'q'];
       for (const key of redirectKeys) {
         const candidate = parsed.searchParams.get(key);
@@ -2101,35 +4289,43 @@ function injectExportButton() {}
     return null;
   }
 
-  function isInternalUrl(rawUrl) {
+  function isShareOrDocumentUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return false;
     try {
-      if (extractTargetUrl(rawUrl)) return false;
       const parsed = new URL(rawUrl, window.location.href);
-      const host = parsed.hostname.toLowerCase();
-      if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
-      if (host === 'meta.ai' || host.endsWith('.meta.ai')) return true;
-      // 常见认证回调、连接器与页面跳转
-      const authHosts = [
-        'accounts.google.com',
-        'appleid.apple.com',
-        'auth.meta.com',
-        'account.meta.com',
-        'facebook.com',
-        'github.com',
-        'spotify.com',
-        'accounts.spotify.com',
-        'dropbox.com',
-        'zoom.us',
-        'canva.com',
-        'onepeloton.com',
-        'peloton.com',
-        'slack.com',
-        'notion.so',
-        'login.microsoftonline.com',
-        'live.com',
-        'linkedin.com',
+      const pathname = parsed.pathname.toLowerCase();
+      const search = parsed.search.toLowerCase();
+      const sharePaths = [
+        '/share',
+        '/s/',
+        '/doc',
+        '/docs',
+        '/d/',
+        '/file',
+        '/files',
+        '/f/',
+        '/artifact',
+        '/artifacts',
+        '/attachment',
+        '/attachments',
+        '/download',
+        '/export',
+        '/preview',
+        '/view',
+        '/v/',
+        '/p/',
       ];
-      if (authHosts.some((h) => host === h || host.endsWith('.' + h))) {
+      if (sharePaths.some((p) => pathname.includes(p))) {
+        return true;
+      }
+      if (
+        search.includes('share=') ||
+        search.includes('token=') ||
+        search.includes('key=') ||
+        search.includes('expires=') ||
+        search.includes('signature=') ||
+        search.includes('sig=')
+      ) {
         return true;
       }
       return false;
@@ -2138,56 +4334,228 @@ function injectExportButton() {}
     }
   }
 
-  // 使用捕获阶段 (capture: true)，拦截聊天区域中的外部 a 标签点击
+  function isInternalUrl(rawUrl) {
+    try {
+      if (extractTargetUrl(rawUrl)) return false;
+      if (isShareOrDocumentUrl(rawUrl)) return false;
+      const parsed = new URL(rawUrl, window.location.href);
+      const host = parsed.hostname.toLowerCase();
+      if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
+      if (host === 'meta.ai' || host.endsWith('.meta.ai')) return true;
+      if (host === 'meta.com' || host.endsWith('.meta.com')) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  function isAuthOrConnectorUrl(rawUrl) {
+    if (typeof rawUrl !== 'string') return false;
+    const trimmed = rawUrl.trim();
+    if (trimmed === '' || trimmed === 'about:blank' || trimmed.startsWith('about:')) return true;
+    try {
+      const parsed = new URL(trimmed, window.location.href);
+      const host = parsed.hostname.toLowerCase();
+      const pathname = parsed.pathname.toLowerCase();
+      const search = parsed.search.toLowerCase();
+
+      // 0. Meta / Muse 跨域 SSO 与 AYMH ("Accounts You Might Have") 握手链
+      if (pathname.includes('/aymh') || (search.includes('origin=') && host.endsWith('muse.ai'))) {
+        return true;
+      }
+
+      // 1. 专属纯身份认证域名
+      const dedicatedAuthHosts = [
+        'accounts.google.com',
+        'appleid.apple.com',
+        'auth.meta.com',
+        'account.meta.com',
+        'family.meta.com',
+        'work.meta.com',
+        'login.microsoftonline.com',
+        'login.live.com',
+        'accounts.spotify.com',
+      ];
+      if (dedicatedAuthHosts.some((h) => host === h || host.endsWith('.' + h))) {
+        return true;
+      }
+
+      // 2. Meta 家族 (Facebook / Instagram / Messenger) 的认证、授权与 SSO 路径
+      const metaFamilyHosts = ['facebook.com', 'fb.com', 'instagram.com', 'messenger.com'];
+      if (metaFamilyHosts.some((h) => host === h || host.endsWith('.' + h))) {
+        if (
+          pathname.includes('/aymh') ||
+          pathname.includes('/login') ||
+          pathname.includes('/signin') ||
+          pathname.includes('/oauth') ||
+          pathname.includes('/dialog') ||
+          pathname.includes('/checkpoint') ||
+          pathname.includes('/recover') ||
+          search.includes('client_id=') ||
+          search.includes('redirect_uri=')
+        ) {
+          return true;
+        }
+      }
+
+      // 3. 内部站点的连接器中转授权与登录路由
+      const isInternal = host === 'muse.ai' || host.endsWith('.muse.ai') ||
+                         host === 'meta.ai' || host.endsWith('.meta.ai') ||
+                         host === 'meta.com' || host.endsWith('.meta.com');
+      if (isInternal) {
+        if (
+          pathname.includes('/connector') ||
+          pathname.includes('/auth') ||
+          pathname.includes('/oauth') ||
+          pathname.includes('/login') ||
+          pathname.includes('/signin') ||
+          search.includes('connector') ||
+          search.includes('error=') ||
+          search.includes('code=') ||
+          search.includes('state=') ||
+          search.includes('token=')
+        ) {
+          return true;
+        }
+      }
+
+      // 4. 通用 OAuth 特征参数
+      if (
+        (search.includes('client_id=') || search.includes('response_type=')) &&
+        (search.includes('redirect_uri=') || pathname.includes('oauth') || pathname.includes('auth'))
+      ) {
+        return true;
+      }
+
+      // 5. 第三方常用开放平台的特定登录/授权路径（普通仓库、主页、文档绝不属于 Auth）
+      const thirdPartyOAuthHosts = [
+        'github.com',
+        'spotify.com',
+        'dropbox.com',
+        'zoom.us',
+        'canva.com',
+        'onepeloton.com',
+        'peloton.com',
+        'slack.com',
+        'notion.so',
+        'live.com',
+        'linkedin.com',
+        'twitter.com',
+        'x.com',
+        'plaid.com',
+      ];
+      if (thirdPartyOAuthHosts.some((h) => host === h || host.endsWith('.' + h))) {
+        if (
+          pathname.includes('/oauth') ||
+          pathname.startsWith('/login') ||
+          pathname.startsWith('/signin') ||
+          pathname.includes('/authorize') ||
+          search.includes('client_id=') ||
+          search.includes('redirect_uri=')
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  // 使用捕获阶段 (capture: true)，仅拦截用户对真正超链接元素 (a 标签 / role="link" / data-href) 的显式点击
   document.addEventListener(
     'click',
     (e) => {
       try {
-        const anchor = e.target && e.target.closest ? e.target.closest('a') : null;
-        if (!anchor) return;
-
-        // 尊重用户显式打开方式 (v1.5.17, 评审 P2): 带修饰键/中键点击与显式
-        // target 的链接交回页面与主进程的窗口打开逻辑, 不在此劫持
+        // 仅处理常规鼠标左键单点，带修饰键（Ctrl/Alt/Shift）或用户正在选中文本时绝不拦截
         if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-        const targetAttr = (anchor.getAttribute('target') || '').toLowerCase();
-        if (targetAttr && targetAttr !== '_self') return;
+        if (window.getSelection && window.getSelection().toString().trim().length > 0) return;
 
-        // 关键防御：如果点击发生在模态弹窗、设置面板或对话框内部，绝不拦截！交由页面自身逻辑处理
-        if (anchor.closest('[role="dialog"], [aria-modal="true"], [class*="dialog"], [class*="modal"], [class*="settings"]')) {
-          return;
+        // 严禁在输入框、文本编辑区、应用自身注入组件或左侧导航/侧边栏中触发外链跳转
+        if (e.target && e.target.closest) {
+          if (e.target.closest('#acct-dock, #muse-export-btn, [id^="acct-"], input, textarea, select, [contenteditable="true"]')) {
+            return;
+          }
+          // 导航栏、侧边栏、快捷栏及应用全局框架按钮：坚决不拦截，保证原生应用内点击行为
+          if (e.target.closest('nav, aside, [role="navigation"], [class*="sidebar"], [class*="rail"], [class*="navbar"], [class*="nav-"], [id*="sidebar"], [id*="nav"]')) {
+            return;
+          }
         }
 
-        const rawHref = anchor.getAttribute('href') || anchor.href;
+        // 核心守卫：必须确切命中 a 标签、带 data-href/data-url/data-link 的元素或 role="link"
+        const anchor = e.target && e.target.closest
+          ? (e.target.closest('a') || e.target.closest('[data-href], [data-url], [data-link], [data-target], [data-share-url], [role="link"]'))
+          : null;
+
+        // 如果用户点击的不是超链接元素（如普通文本、气泡背景、邮箱、Key 等普通文字），坚决不拦截！
+        if (!anchor) return;
+
+        // 多属性候选提取：支持 href、data-href、data-url、data-link、data-target 等
+        let rawHref = null;
+        const candidateAttrs = ['href', 'data-href', 'data-url', 'data-link', 'data-target', 'data-share-url', 'data-download-url', 'data-raw-url', 'data-to'];
+        for (const attr of candidateAttrs) {
+          const val = anchor.getAttribute && anchor.getAttribute(attr);
+          if (val && val !== '#' && !val.startsWith('#') && !val.startsWith('javascript:')) {
+            rawHref = val;
+            break;
+          }
+        }
+        if (!rawHref && anchor.href && typeof anchor.href === 'string' && !anchor.href.startsWith('#') && !anchor.href.startsWith('javascript:') && !anchor.href.endsWith('#')) {
+          rawHref = anchor.href;
+        }
+        if (!rawHref && anchor.getAttribute) {
+          const titleVal = anchor.getAttribute('title');
+          if (titleVal && /^https?:\/\//i.test(titleVal.trim())) {
+            rawHref = titleVal.trim();
+          }
+        }
+
+        // 若 href 为 "#"、"javascript:..." 或为空（常见于 React/Slate 等前端组件）：
+        // 若该 anchor 自身纯文本内容包含 URL，亦可作为回退提取
+        if (!rawHref) {
+          const anchorText = (anchor.innerText || anchor.textContent || '').trim();
+          const match = anchorText.match(/https?:\/\/[^\s，。；、？！）》」"'\`<>]+/i);
+          if (match) {
+            rawHref = match[0];
+          }
+        }
+
         if (!rawHref) return;
 
-        // 跳过纯锚点与非网络协议
-        if (rawHref.startsWith('#') || rawHref.startsWith('javascript:')) return;
-
-        let fullHref = rawHref;
+        let fullHref = rawHref.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
         try {
-          fullHref = new URL(rawHref, window.location.href).href;
-        } catch {}
+          fullHref = new URL(fullHref, window.location.href).href;
+        } catch {
+          return;
+        }
 
         if (!fullHref.startsWith('http://') && !fullHref.startsWith('https://') && !fullHref.startsWith('mailto:')) {
           return;
         }
 
-        // 关键防御：如果是身份验证或连接器相关 URL，绝不拦截！
+        // 关键防御：如果是身份验证或连接器相关 URL，交由主进程 setWindowOpenHandler 弹窗处理
+        if (isAuthOrConnectorUrl(fullHref)) {
+          return;
+        }
+
+        // 关键防御：内部主站点链接（如 muse.ai / meta.ai）：
+        // 仅当明确属于分享/文档/产物临时资源（isShareOrDocumentUrl）时才调起外部浏览器；
+        // 其余所有常规内部路由（如 /chat, /c/..., /, /settings 等），绝对交由主窗口内部处理，杜绝弹出外部标签页！
         if (isInternalUrl(fullHref)) {
-          return;
+          if (!isShareOrDocumentUrl(fullHref)) {
+            return;
+          }
         }
 
+        // 外部链接、分享/文档链接或聊天内点击的链接：调用系统默认外部浏览器打开，阻止应用内无响应或误拦截
         const externalTarget = extractTargetUrl(fullHref);
-        if (externalTarget) {
-          e.preventDefault();
-          e.stopPropagation();
-          ipcRenderer.send('open-external-url', externalTarget);
-          return;
-        }
+        const finalUrl = (externalTarget || fullHref).trim().replace(/[，。；、？！）》」"',;!]+$/, '');
 
+        console.log('[ExternalLink Preload] Opening external URL in default browser:', finalUrl);
         e.preventDefault();
         e.stopPropagation();
-        ipcRenderer.send('open-external-url', fullHref);
+        ipcRenderer.send('open-external-url', finalUrl);
       } catch (err) {
         console.warn('[Preload] External link intercept error:', err);
       }
