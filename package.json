@@ -113,5 +113,5 @@
     "dist:mac": "electron-builder --mac dmg zip",
     "start": "electron . --no-sandbox"
   },
-  "version": "1.5.25"
+  "version": "1.5.26"
 }

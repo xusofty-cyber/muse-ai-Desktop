@@ -94,10 +94,37 @@ class MihomoManager {
       ? __dirname.replace(/app\.asar([\\/]|$)/, 'app.asar.unpacked$1')
       : null;
 
+    // 便携版实际启动目录 (PORTABLE_EXECUTABLE_DIR) 与可执行文件所在目录 (开发与打包态兼容)
+    const portableDir = process.env.PORTABLE_EXECUTABLE_DIR || null;
+    const execDir = process.execPath ? path.dirname(process.execPath) : null;
+    const cwd = process.cwd();
+
     const searchDirs = [
       ...(unpackedBase ? [path.join(unpackedBase, 'bin', 'mihomo'), path.join(unpackedBase, 'bin')] : []),
+      // 便携版真实工作目录（用户放置 Muse.exe 的目录及其子目录）
+      ...(portableDir ? [
+        path.join(portableDir, 'bin', 'mihomo'),
+        path.join(portableDir, 'mihomo'),
+        path.join(portableDir, 'bin'),
+        portableDir,
+        path.join(portableDir, '..', 'bin', 'mihomo'),
+        path.join(portableDir, '..', 'mihomo'),
+      ] : []),
+      // 主程序 EXE 所在目录（安装版或绿色解压版）
+      ...(execDir ? [
+        path.join(execDir, 'bin', 'mihomo'),
+        path.join(execDir, 'mihomo'),
+        path.join(execDir, 'bin'),
+        execDir,
+        path.join(execDir, '..', 'bin', 'mihomo'),
+        path.join(execDir, '..', 'mihomo'),
+      ] : []),
       path.join(__dirname, 'bin', 'mihomo'),
       path.join(__dirname, 'bin'),
+      path.join(cwd, 'bin', 'mihomo'),
+      path.join(cwd, 'mihomo'),
+      path.join(cwd, 'bin'),
+      cwd,
       this.dataDir,
       path.join(this.dataDir, '..', 'bin', 'mihomo'),
       path.join(this.dataDir, '..', 'bin'),

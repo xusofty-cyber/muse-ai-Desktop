@@ -425,14 +425,16 @@
         <!-- 内核状态卡片 -->
         <div style="margin-top:6px; background:#1e2128; border:1px solid #2d323e; border-radius:6px; padding:10px;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-            <div style="font-size:11.5px; color:#cfd3dc;">
+            <div style="font-size:11.5px; color:#cfd3dc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
               <span>内核状态: </span><span id="mihomo-kernel-status" style="font-weight:600; color:#8a909d;">待检测</span>
             </div>
             <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button type="button" class="action" id="btn-mihomo-choose-bin" style="padding:2px 8px; font-size:11px;" title="手动浏览并指定本地任意路径下的 mihomo.exe 内核">📂 指定内核</button>
               <button type="button" class="action primary" id="btn-mihomo-start" style="padding:2px 10px; font-size:11px; display:none;">▶ 启动内核</button>
               <button type="button" class="action" id="btn-mihomo-test-all" style="padding:2px 8px; font-size:11px;">一键全节点测速</button>
             </div>
           </div>
+          <div id="mihomo-bin-path-info" style="margin-top:5px; font-size:11px; color:#94a3b8; word-break:break-all; display:none;"></div>
           <div id="mihomo-port-map" style="margin-top:6px; font-size:11px; color:#8a909d;"></div>
         </div>
 
@@ -2007,6 +2009,22 @@ if (btnMihomoStart) {
   };
 }
 
+const btnMihomoChooseBin = document.getElementById('btn-mihomo-choose-bin');
+if (btnMihomoChooseBin) {
+  btnMihomoChooseBin.onclick = async () => {
+    if (!mihomoApi || !mihomoApi.chooseCustomBin) return;
+    const res = await mihomoApi.chooseCustomBin();
+    if (res && res.ok) {
+      await loadMihomoState();
+      const curMode = document.querySelector('input[name="proxy-mode"]:checked')?.value;
+      if (curMode === 'mihomo') {
+        await mihomoApi.setConfig({ enabled: true });
+        await loadMihomoState();
+      }
+    }
+  };
+}
+
 document.getElementById('btn-mihomo-test-all').onclick = async () => {
   if (!currentMihomoNodes || currentMihomoNodes.length === 0) return;
   const btn = document.getElementById('btn-mihomo-test-all');
@@ -2114,6 +2132,29 @@ async function loadMihomoState() {
       if (pMapEl && mCfg.portMap) {
         const ports = Object.entries(mCfg.portMap).map(([id, p]) => `${id} → :${p}`).join(' | ');
         pMapEl.textContent = ports ? `当前账号端口映射: ${ports}` : '尚未开启代理端口映射 (启动内核后自动分配)';
+      }
+
+      const binInfoEl = document.getElementById('mihomo-bin-path-info');
+      if (binInfoEl) {
+        if (mCfg.executablePath) {
+          binInfoEl.style.display = 'block';
+          const isCustom = Boolean(mCfg.customBinPath);
+          binInfoEl.innerHTML = `已探测内核: <span style="color:#7ee2a8; font-family:Consolas, monospace;">${escapeHtml(mCfg.executablePath)}</span>` +
+            (isCustom ? ` <a href="#" id="btn-clear-custom-bin" style="color:#ff9a9a; margin-left:6px; font-size:11px; text-decoration:none;">[恢复自动搜索]</a>` : '');
+          const clearBtn = document.getElementById('btn-clear-custom-bin');
+          if (clearBtn) {
+            clearBtn.onclick = async (ev) => {
+              ev.preventDefault();
+              if (mihomoApi && mihomoApi.clearCustomBin) {
+                await mihomoApi.clearCustomBin();
+                await loadMihomoState();
+              }
+            };
+          }
+        } else {
+          binInfoEl.style.display = 'block';
+          binInfoEl.innerHTML = `<span style="color:#ff9a9a;">未在默认目录探测到内核。可点击上方【📂 指定内核】手动选择已有的 mihomo.exe</span>`;
+        }
       }
 
       const nodes = await mihomoApi.getNodes();

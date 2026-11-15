@@ -3055,6 +3055,40 @@ ipcMain.handle('mihomo:choose-local-yaml', async (e) => {
   return { canceled: false, filePath, defaultName };
 });
 
+ipcMain.handle('mihomo:choose-custom-bin', async (e) => {
+  if (denyUntrusted(e)) return { canceled: true };
+  const senderWin = BrowserWindow.fromWebContents(e.sender);
+  const isWin = process.platform === 'win32';
+  const res = await dialog.showOpenDialog(senderWin || hotkeyWindow || mainWindow, {
+    title: '选择 Mihomo 二进制内核可执行文件',
+    filters: [
+      { name: 'Mihomo 可执行程序', extensions: isWin ? ['exe'] : ['*'] },
+      { name: '所有文件 (*.*)', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  });
+  if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
+    return { canceled: true };
+  }
+  const chosenPath = res.filePaths[0];
+  state.mihomo = state.mihomo || defaultMihomoConfig();
+  state.mihomo.customBinPath = chosenPath;
+  saveState();
+  const mm = getMihomoManager();
+  mm.binPath = chosenPath;
+  return { ok: true, path: chosenPath };
+});
+
+ipcMain.handle('mihomo:clear-custom-bin', async (e) => {
+  if (denyUntrusted(e)) return { ok: false };
+  state.mihomo = state.mihomo || defaultMihomoConfig();
+  state.mihomo.customBinPath = '';
+  saveState();
+  const mm = getMihomoManager();
+  mm.binPath = '';
+  return { ok: true };
+});
+
 ipcMain.handle('mihomo:add-source', async (e, payload) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   const { type, name, target } = payload || {};
