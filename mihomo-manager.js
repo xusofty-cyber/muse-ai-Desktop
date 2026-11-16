@@ -481,6 +481,7 @@ class MihomoManager {
       'log-level': 'info',
       'external-controller': `127.0.0.1:${this.controllerPort}`,
       secret: this.secret,
+      'geo-auto-update': false,
       dns: {
         enable: true,
         listen: '127.0.0.1:0',
@@ -489,12 +490,9 @@ class MihomoManager {
         nameserver: [
           '223.5.5.5',
           '119.29.29.29',
-          'https://doh.pub/dns-query'
-        ],
-        fallback: [
+          'https://doh.pub/dns-query',
           'https://1.1.1.1/dns-query',
-          'https://dns.google/dns-query',
-          '8.8.8.8'
+          'https://dns.google/dns-query'
         ]
       },
       listeners,
@@ -533,6 +531,10 @@ class MihomoManager {
         if (process.platform === 'win32') {
           const exeName = path.basename(exe);
           execSync(`taskkill /F /IM "${exeName}"`, { stdio: 'ignore' });
+        } else {
+          try {
+            execSync(`pkill -9 -f "${this.dataDir}"`, { stdio: 'ignore' });
+          } catch (_) {}
         }
         await new Promise((r) => setTimeout(r, 400));
         ctrlBusy = await this._isPortInUse(this.controllerPort);
@@ -586,8 +588,8 @@ class MihomoManager {
         this.process = null;
       });
 
-      // 轮询等待 External Controller 就绪 (最多等 5 秒)
-      const ready = await this._waitForController(5000);
+      // 轮询等待 External Controller 就绪 (最多等 8 秒)
+      const ready = await this._waitForController(8000);
       if (!ready) {
         this.stop();
         return { ok: false, error: 'Mihomo 启动超时或 External Controller 端口连接失败' };

@@ -2771,6 +2771,9 @@ if (btnImportConfig) {
         if (typeof loadMihomoTabState === 'function') {
           await loadMihomoTabState();
         }
+        if (typeof loadThemeAndUI === 'function') {
+          await loadThemeAndUI();
+        }
       } else if (res && !res.canceled) {
         if (backupMsg) {
           backupMsg.style.color = '#ff9a9a';

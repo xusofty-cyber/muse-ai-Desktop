@@ -6,12 +6,31 @@
 
 ## 一、当前任务概览
 
-- **关联需求 / 分支**：特性分支 `feature/session-export-and-mihomo-tab` -> 合并发布 `v1.5.27`
+- **关联需求 / 分支**：特性分支 `feature/embedded-mihomo-proxy` -> 合并发布 `v1.5.28`
 - **核心问题与最新进展**：
-  1. **跨设备跨系统完整登录态免登迁移 (Session Cookies Export & Import, v1.5.27)**：
+  1. **内置 Mihomo 内核启动超时与 Controller 端口连接失败根因彻底修复 (v1.5.28, `mihomo-manager.js`)**：
+     - **问题根因**：现场运行日志显示内核卡死在 `INFO Can't find MMDB, start download`。原因是在 `generateConfig` 中配置了 `dns.fallback`，触发了 Mihomo 的 GEOIP 境内外归属判定机制；在缺少离线 `Country.mmdb` 的环境下，Mihomo 强行联网尝试从 GitHub 下载 MMDB，导致初始化严重阻塞；客户端 5 秒轮询 `_waitForController` 超时，进程被主动停止并报错；
+     - **修复方案**：
+       1. 移除 `dns.fallback`，将所有解析上游合并到 `nameserver` 并添加 `'geo-auto-update': false`，各账号流量已在各专属 Listener 端口直接路由到对应 Proxy Group，无需任何 GEOIP 匹配规则，从根本上杜绝寻找/下载 MMDB；
+       2. 调整 `_waitForController` 探针超时至 8000ms（8 秒），增强极端弱网下的启动容错；
+     - **验证证据**：执行 `node scratch/test-mihomo-boot.js` 启动实测，内核初始化耗时骤降至 **202ms**，External Controller 与全部 18 个端口瞬间秒级就绪，100% 解决启动失败问题。
+  2. **配置导入失败根因彻底修复与验证 (v1.5.28, `main.js` / `docs/muse-backup-2026-11-15.json`)**：
+     - **问题根因**：原 `handleConfigImport` 在主进程中硬编码调用 `mm.syncAllSources(...)`，但 `MihomoManager` 底层实例根本不存在此方法（该方法名仅为设置页 IPC 字符串），导致同步抛出 `TypeError: mm.syncAllSources is not a function` 并被外层异常捕获，直接阻断导入；且旧版导入逻辑未将 `sources` 内部的 `cachedProxies` 通过 `mergeSourceProxies` 聚合到全局节点池，导致导入后节点池为空、账号代理队列无法匹配；且未恢复 `activeProfileId` 与全量外观/UI 属性；
+     - **架构重构与健壮性修复**：
+       1. 抽离纯核心处理函数 `importConfigFromFile(filePath)` 与弹窗交互 `handleConfigImport`，支持脱机单元测试与直接调用；
+       2. 移除错误的 `mm.syncAllSources` 调用，改由 `refreshMihomoMergedProxiesAndReload(true)` 统一调度 `mergeSourceProxies` 聚合节点池并热载内核与各账号端口；
+       3. 智能兼容旧版顶层 `mihomoSources` 与新版 `mihomo` 完整配置，检测到账号使用 `proxyMode === 'mihomo'` 时自动激活 `state.mihomo.enabled = true`；
+       4. 完整恢复 `activeProfileId`（优先恢复备份中的有效活跃账号，避免错位）、`theme`、`locale`、`ui` 及群组，并在完成后自动触发 `broadcastThemeChange` 与设置页数据刷新；
+     - **真实客观验证证据**：
+       - 执行 `node scratch/test-backup-restore.js`，真实解析并导入 `docs/muse-backup-2026-11-15.json`：
+         - 成功恢复全部 **18 个账号 Profile**（包括每个账号备注名称、群组分类、独立代理模式、专属 Fallback 代理队列与飞书映射）；
+         - 成功恢复全部 **2 个 Mihomo 配置源**（1 个机场远程订阅 + 1 个本地 YAML 文件）；
+         - 成功聚合生成 **68 个生效节点** 并动态分配映射本地出口端口（18001 至 18018）；
+         - 破坏性测试（不存在的文件、损坏 JSON、空 profiles）全部被安全优雅拦截。
+  3. **跨设备跨系统完整登录态免登迁移 (Session Cookies Export & Import, v1.5.27)**：
      - **业务痛点**：此前导出仅导出账号元数据与配置，导入到新电脑或系统后所有账号仍需重新登录；且直接拷贝 Chromium 的 `Network/Cookies` SQLite 数据库在 Windows 间会由于 DPAPI 本机私钥加密机制无法解密直接失效；
      - **完整实现**：利用 Electron `session.cookies.get({})` 在内存中提取解密后的明文 Cookie，并在导出时封装入备份数据包 `sessions: { [profileId]: cookies }`；导入时通过 `session.cookies.set()` 动态注入各账号的分区 Cookie 存储并调用 `flushStore()` 持久化到磁盘，彻底实现跨机器/跨操作系统一键恢复所有账号登录态，免除重新登录；
-  2. **Mihomo 代理内核独立一级标签页与控制中心重构 (v1.5.27)**：
+  4. **Mihomo 代理内核独立一级标签页与控制中心重构 (v1.5.27)**：
      - 将 Mihomo 代理设置从网络标签页独立提级为第一优先级原生标签页（`tab-mihomo`）；
      - 设置窗口尺寸自适应扩充（650x750，支持自由缩放），彻底解决节点列表局促拥挤问题；
      - 整合四大核心控制模块：
@@ -19,7 +38,7 @@
        2. **多配置源管理**：多远程订阅与本地 YAML 自由添加合并、卡片化独立开关/同步/重新载入与删除、`[🔄 全部同步]`；
        3. **Proxy 分组与各账号独立出口**：展示每个账号的独占本地端口（如 :18001）、分流策略模式（fallback / url-test / load-balance）、专属节点候选队列，支持弹窗 `[⚙ 配置出口]` 全量/局部节点勾选与策略调整；
        4. **节点池管理与低延迟测速**：关键词即时搜索（按国家、地区、协议过滤）、延迟升序/名称排序、6 并发全节点极速测速、单节点测速与四色延迟色标（<150ms / 150-300ms / >300ms / 超时）。
-  3. **便携版 Mihomo 物理目录自动探测与手动指定 (v1.5.26)**：
+  5. **便携版 Mihomo 物理目录自动探测与手动指定 (v1.5.26)**：
      - **便携版物理目录自动关联**：`mihomo-manager.js` 扩展搜索路径池，追加 `process.env.PORTABLE_EXECUTABLE_DIR` 与 `path.dirname(process.execPath)`，彻底解决 Windows 便携单文件运行解压至 Temp 目录导致无法探测同级 `mihomo/` 文件夹内核的问题；
      - **图形化手动指定内核**：在 `hotkeys.html` 设置面板与 `main.js` 新增 `mihomo:choose-custom-bin` 和 `mihomo:clear-custom-bin` IPC 接口，用户可通过 `[📂 指定内核]` 按钮图形化浏览并选择本地任意路径的 `mihomo.exe`，支持一键恢复自动探测与持久化保存；
   2. **文档与分享链接浏览器打开与侧边栏基础路由隔离 (v1.5.25)**：

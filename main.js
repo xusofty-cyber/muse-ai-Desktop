@@ -3541,9 +3541,11 @@ async function handleConfigExport(parentWin, opts = {}) {
       sessionProfileCount: sessionProfileCount,
     },
     profiles: state.profiles || [],
+    activeProfileId: state.activeProfileId,
     sessions: profileSessions,
     accountGroups: state.accountGroups || ['默认群组'],
     mihomoSources: (state.mihomo && state.mihomo.sources) || [],
+    mihomo: state.mihomo || defaultMihomoConfig(),
     proxy: state.proxy || defaultProxy(),
     feishu: state.feishu || defaultFeishuConfig(),
     theme: state.theme || 'dark',
@@ -3562,26 +3564,12 @@ async function handleConfigExport(parentWin, opts = {}) {
   };
 }
 
-async function handleConfigImport(parentWin) {
-  const targetWin = (parentWin && !parentWin.isDestroyed()) ? parentWin : (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
-  const openOpts = {
-    title: '导入账号与代理配置备份',
-    filters: [
-      { name: 'JSON 配置文件 (*.json)', extensions: ['json'] },
-      { name: '所有文件 (*.*)', extensions: ['*'] },
-    ],
-    properties: ['openFile'],
-  };
-  const res = targetWin
-    ? await dialog.showOpenDialog(targetWin, openOpts)
-    : await dialog.showOpenDialog(openOpts);
-
-  if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
-    return { canceled: true };
-  }
-
-  const filePath = res.filePaths[0];
+async function importConfigFromFile(filePath) {
   try {
+    if (!filePath || typeof filePath !== 'string' || !fs.existsSync(filePath)) {
+      return { ok: false, error: '指定备份文件不存在' };
+    }
+
     const content = fs.readFileSync(filePath, 'utf8');
     const parsed = JSON.parse(content);
     if (!parsed || typeof parsed !== 'object') {
@@ -3611,13 +3599,27 @@ async function handleConfigImport(parentWin) {
       state.accountGroups = parsed.accountGroups;
     }
 
-    // 3. 恢复 mihomo sources (兼容 mihomoSources 与 mihomo.sources)
+    // 3. 恢复 mihomo 配置与 sources (兼容 mihomoSources 与 mihomo)
     const importedSources = Array.isArray(parsed.mihomoSources)
       ? parsed.mihomoSources
       : (parsed.mihomo && Array.isArray(parsed.mihomo.sources) ? parsed.mihomo.sources : null);
 
-    if (importedSources && state.mihomo) {
+    if (parsed.mihomo && typeof parsed.mihomo === 'object') {
+      state.mihomo = {
+        ...defaultMihomoConfig(),
+        ...state.mihomo,
+        ...parsed.mihomo,
+        sources: importedSources || (state.mihomo && state.mihomo.sources) || [],
+      };
+    } else if (importedSources) {
+      if (!state.mihomo) state.mihomo = defaultMihomoConfig();
       state.mihomo.sources = importedSources;
+    }
+
+    // 若 profiles 包含使用 mihomo 代理模式的账号或包含 sources，自动确保 mihomo 开关就绪
+    const hasMihomoProfile = importedProfiles.some((p) => p && p.proxyMode === 'mihomo');
+    if ((hasMihomoProfile || (importedSources && importedSources.length > 0)) && state.mihomo) {
+      state.mihomo.enabled = true;
     }
 
     // 4. 恢复全局 proxy
@@ -3640,8 +3642,21 @@ async function handleConfigImport(parentWin) {
       }
     }
 
-    // 6. 校验 activeProfileId
-    if (!state.profiles.some((p) => p && p.id === state.activeProfileId)) {
+    // 6. 恢复外观与语言偏好（若存在）
+    if (typeof parsed.theme === 'string' && ['dark', 'light'].includes(parsed.theme)) {
+      state.theme = parsed.theme;
+    }
+    if (typeof parsed.locale === 'string' && ['zh-CN', 'en'].includes(parsed.locale)) {
+      state.locale = parsed.locale;
+    }
+    if (parsed.ui && typeof parsed.ui === 'object') {
+      state.ui = { ...(state.ui || {}), ...parsed.ui };
+    }
+
+    // 7. 恢复或校验 activeProfileId
+    if (parsed.activeProfileId && state.profiles.some((p) => p && p.id === parsed.activeProfileId)) {
+      state.activeProfileId = parsed.activeProfileId;
+    } else if (!state.profiles.some((p) => p && p.id === state.activeProfileId)) {
       state.activeProfileId = state.profiles[0] ? state.profiles[0].id : 'default';
     }
 
@@ -3685,18 +3700,13 @@ async function handleConfigImport(parentWin) {
       }
     }
 
-    // 8. 重新同步并热载 Mihomo 内核
-    const mm = getMihomoManager();
-    if (state.mihomo && state.mihomo.sources && state.mihomo.sources.length > 0 && mm) {
-      mm.syncAllSources(state.mihomo.sources).then(async (syncRes) => {
-        if (syncRes && syncRes.ok) {
-          state.mihomo.cachedProxies = syncRes.cachedProxies;
-          saveState();
-          if (mm.isRunning) {
-            await mm.reload(state.profiles, state.mihomo.cachedProxies);
-          }
-        }
-      }).catch((e) => console.warn('[Config] Error resyncing mihomo sources after import:', e));
+    // 8. 重新聚合节点池并热载 Mihomo 内核 (合并各订阅源及本地 YAML 节点)
+    try {
+      if (state.mihomo && Array.isArray(state.mihomo.sources) && state.mihomo.sources.length > 0) {
+        await refreshMihomoMergedProxiesAndReload(true);
+      }
+    } catch (reloadErr) {
+      console.warn('[Config] Error refreshing mihomo proxies after import:', reloadErr);
     }
 
     // 9. 重新应用各账号代理
@@ -3709,6 +3719,7 @@ async function handleConfigImport(parentWin) {
 
     buildTrayMenu();
     broadcastAccountChange();
+    broadcastThemeChange();
 
     // 如果恢复了登录凭据且主窗口已打开，重新加载主窗口使登录态直接呈现
     if (restoredSessionCount > 0 && mainWindow && !mainWindow.isDestroyed()) {
@@ -3725,11 +3736,33 @@ async function handleConfigImport(parentWin) {
       restoredSessionCount,
       totalCookiesInjected,
       sourceCount: (state.mihomo && state.mihomo.sources && state.mihomo.sources.length) || 0,
+      nodeCount: (state.mihomo && state.mihomo.cachedProxies && state.mihomo.cachedProxies.length) || 0,
     };
   } catch (err) {
     console.error('[Config] Import failed:', err);
     return { ok: false, error: '导入失败: ' + (err.message || String(err)) };
   }
+}
+
+async function handleConfigImport(parentWin) {
+  const targetWin = (parentWin && !parentWin.isDestroyed()) ? parentWin : (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
+  const openOpts = {
+    title: '导入账号与代理配置备份',
+    filters: [
+      { name: 'JSON 配置文件 (*.json)', extensions: ['json'] },
+      { name: '所有文件 (*.*)', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  };
+  const res = targetWin
+    ? await dialog.showOpenDialog(targetWin, openOpts)
+    : await dialog.showOpenDialog(openOpts);
+
+  if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
+    return { canceled: true };
+  }
+
+  return await importConfigFromFile(res.filePaths[0]);
 }
 
 ipcMain.handle('config:export', async (e, opts) => {
@@ -4856,4 +4889,4 @@ process.on('exit', () => {
 });
 
 // 仅供本地冒烟测试引用内部纯函数; Electron 运行时忽略该导出。
-try { module.exports = { sanitizeWindowBounds, ensureBoundsVisible, isValidHostname, isTrustedIpcSender, isPortableWindowsBuild, childWindowsByProfile, pendingWindowNav, MAX_RESIDENT_PROFILE_WINDOWS, sanitizeAndMergeState, defaultLock, hashPassword, verifyPassword, unlockScreen, lockScreen, isScreenLocked: () => isScreenLocked, getInternalState: () => state }; } catch {}
+try { module.exports = { sanitizeWindowBounds, ensureBoundsVisible, isValidHostname, isTrustedIpcSender, isPortableWindowsBuild, childWindowsByProfile, pendingWindowNav, MAX_RESIDENT_PROFILE_WINDOWS, sanitizeAndMergeState, defaultLock, hashPassword, verifyPassword, unlockScreen, lockScreen, isScreenLocked: () => isScreenLocked, getInternalState: () => state, importConfigFromFile, handleConfigExport }; } catch {}

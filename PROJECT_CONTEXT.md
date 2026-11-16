@@ -13,10 +13,11 @@
   2. **快速对话浮窗 (Quick Chat Popup)**：全局快捷键 (Ctrl+Shift+Space) 在任意界面唤起轻量快捷聊天窗口，失去焦点时自动隐藏。
   3. **多 Profile 与账号会话隔离 (Profiles & Account Switcher)**：基于 Electron Session Partition 实现多用户 Profile 独立登录与隔离；在 Meta AI 模式下提供多账号快速切换 (Ctrl+Shift+N) 与“添加 Meta AI 账号”能力。支持侧边栏头像 SVG 用量进度外环与悬浮重置倒计时提示。
   4. **账号宫格看板与飞书多维表格同步 (Account Hub & Feishu Sync)**：独立入口看板 (⊞ / Ctrl+Shift+G) 提供大图卡片看板、多维状态与搜索过滤；内置纯 Node 实现的 `bin/feishu-cli.js` 同步引擎，支持多维表格字段智能映射与定时轮询。
-  5. **内置 Mihomo 智能分流与多账号独立出口队列 (Embedded Mihomo Proxy Engine)**：内置轻量 Mihomo (Clash.Meta) 内核，支持机场 Clash 订阅链接一键同步与全节点延迟测速；为每个 Muse 账号分配独立本地端口（18001+），通过 Session 分立代理与专属 Fallback 故障转移队列，实现账号间物理级出口 IP 隔离与防风控关联。
-  6. **系统级原生集成与控制 (System & Audio Controls)**：系统托盘驻留与菜单、开机自启、麦克风与扬声器全局静音切换、快捷键自定义配置页面 (`hotkeys.html`)、剪贴板超长文本导出为文件 (`Documents/Muse clips/`) 以及原生下载管理。
-  7. **自动化控制与安全放行 (Automation / Auto-Allow Controls)**：显式 Opt-in 的自动化主开关、屏幕悬浮小部件、细粒度连接器/动作分类放行规则。
-  8. **自动更新与跨端分发 (Auto-Update & Distribution)**：集成 GitHub Releases 自动检测与静默下载更新；支持构建 Windows NSIS 安装包 (`dist/Muse Setup 1.1.0.exe`) 及免安装便携版 (`dist/Muse-Portable-1.1.0.exe`)。
+  5. **内置 Mihomo 智能分流与多配置源聚合管理 (Embedded Mihomo Proxy Engine)**：内置轻量 Mihomo (Clash.Meta) 内核，支持机场 Clash 订阅链接与本地 YAML/YML 文件多源同时开启与智能合并；为每个 Muse 账号分配独立本地端口（18001+），支持账号级 5 种代理模式（`inherit`/`system`/`mihomo`/`direct`/`custom`）与专属 Fallback 故障转移队列，实现账号间物理级出口 IP 隔离。
+  6. **多账号与代理配置一键导出导入 (Config Backup & Migration)**：支持将所有账号备注、群组分类、专属代理出口队列、独立代理模式及 Mihomo 配置源完整备份为标准 `.json`，支持一键跨机迁移并自动创建防灾快照。
+  7. **系统级原生集成与控制 (System & Audio Controls)**：系统托盘驻留与菜单、开机自启、麦克风与扬声器全局静音切换、快捷键自定义配置页面 (`hotkeys.html`)、剪贴板超长文本导出为文件 (`Documents/Muse clips/`) 以及原生下载管理。
+  8. **自动化控制与安全放行 (Automation / Auto-Allow Controls)**：显式 Opt-in 的自动化主开关、屏幕悬浮小部件、细粒度连接器/动作分类放行规则。
+  9. **自动更新与跨端分发 (Auto-Update & Distribution)**：集成 GitHub Releases 自动检测与静默下载更新；支持构建 Windows NSIS 安装包 (`dist/Muse Setup 1.1.0.exe`) 及免安装便携版 (`dist/Muse-Portable-1.1.0.exe`)。
 
 ---
 
@@ -95,4 +96,23 @@
     2. **持久化与热重载**：保存代理设置时写入 `userData/app-state.json`，下次启动直接在 `app.whenReady()` 阶段读取生效；保存时广播热重载所有存活的账号窗口（`profileWindows`）；
     3. **异常主动引导**：当遇到连接阻断（`-130`、`-100`、`-7`、`-105` 等）时，主进程除展示离线诊断页外，主动唤起设置窗口并聚焦至“网络与代理设置”选项卡。
   - **影响**：网络配置与多账号彻底解耦，统一配置全应用生效，断网或代理失效时实现零门槛可视化修复。
+- **2026-11-14**：[多订阅源与本地 YAML 节点合并智能管理]
+  - **背景**：单一订阅源无法满足多机场容灾与本地定制规则节点需求，需要多源同时启用且节点名自动去重防冲突。
+  - **决策**：
+    1. 在 `mihomo-manager.js` 中新增本地 YAML 解析（`parseLocalYaml`）与多源冲突规避合并引擎（`mergeSourceProxies`）；
+    2. 设置面板与 Preload 新增 `mihomo:add-source`、`mihomo:sync-all-sources` 等全套多源管理能力。
+  - **影响**：实现机场订阅与本地 YAML 节点混合生效与一键聚合。
+- **2026-11-15**：[全量配置与多账号一键导入导出（热迁移与容灾备份）]
+  - **背景**：拥有 17+ 账号与复杂代理队列的用户在跨设备迁移或系统重装时配置成本高昂。
+  - **决策**：
+    1. 主进程实现 `config:export` 与 `config:import`，在保存前自动生成带时间戳的 `app-state.pre-import-*.bak` 防灾快照；
+    2. 严格脱敏隔离，禁止导出锁屏密码 Hash/Salt 等敏感凭证。
+  - **影响**：实现全量账号与网络代理配置秒级跨机迁移。
+- **2026-11-16**：[修复配置导入时不存在方法引发崩溃及节点池丢失缺陷]
+  - **背景**：导入 `docs/muse-backup-2026-11-15.json` 时因调用不存在的 `mm.syncAllSources` 触发 TypeError 导致导入完全失败，且旧备份未持久化 `mihomo.cachedProxies` 与激活状态。
+  - **决策**：
+    1. 抽离独立的业务处理核心 `importConfigFromFile`，移除错误的 `mm.syncAllSources` 调用，改由 `refreshMihomoMergedProxiesAndReload(true)` 统一调度 `mergeSourceProxies` 聚合节点池并热载内核；
+    2. 自动检测 profile 中使用 `mihomo` 模式的账号并激活 `state.mihomo.enabled`；
+    3. 完整恢复 `activeProfileId`、`accountGroups`、`theme`、`locale` 与 `ui` 属性。
+  - **影响**：`docs/muse-backup-2026-11-15.json` 成功 100% 完整导入恢复 18 个账号与 68 个代理节点。
 

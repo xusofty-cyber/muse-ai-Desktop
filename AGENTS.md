@@ -8,7 +8,7 @@
 ## 项目概览
 
 - **项目名称**：`muse-windows` (产品名称: Muse)
-- **业务定位**：Windows 桌面原生封装客户端，将 Muse (muse.ai) 与 Meta AI (meta.ai) 封装于原生桌面窗口，提供托盘驻留、全局快捷键、多 Profile 会话隔离与自动化安全控制
+- **业务定位**：Windows 桌面原生封装客户端，将 Muse (muse.ai) 与 Meta AI (meta.ai) 封装于原生桌面窗口，提供托盘驻留、全局快捷键、多 Profile 会话隔离、内置 Mihomo 智能分流（多源订阅/本地 YAML 合并、独立代理模式与专属出口队列）、配置导入导出热迁移与自动化安全控制
 - **核心维护者**：`Gc` / `xusofty-cyber`
 - **代码仓库与默认分支**：`git@github.com:xusofty-cyber/muse-windows.git`；默认分支 `main`（以远端 `origin/HEAD` 为准）
 
@@ -25,8 +25,10 @@ npm start                          # 启动本地 Electron 桌面客户端进行
 npm run dist                       # 构建 Windows 安装包 (NSIS installer 及 Portable 便携单文件，需 Windows 环境)
 
 # 3. 精准单测与验证（改动后必须运行，输出须精简）
-# 本项目当前未配置独立自动化测试脚本，改动后主要依赖本地启动与交互验证：
-npm start                          # 本地启动并验证窗口、托盘与快捷键行为
+node scratch/test-backup-restore.js         # 配置备份导入导出与容灾快照验证 (覆盖多账号与 Mihomo 节点池)
+node scratch/test-external-links.js         # 外部链接与卡片跳转拦截全面测试
+node scratch/test-account-hub-and-feishu.js # 账号中心与飞书同步单元测试
+npm start                                  # 本地启动并验证窗口、托盘与快捷键行为
 
 # 4. 代码质量、Lint 与静态检查
 node -c main.js preload-settings.js preload-chat-export.js # 核心脚本语法与编译检查
