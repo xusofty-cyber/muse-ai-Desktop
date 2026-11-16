@@ -6,8 +6,23 @@
 
 ## 一、当前任务概览
 
-- **关联需求 / 分支**：特性分支 `feature/embedded-mihomo-proxy` -> 合并发布 `v1.5.28`
+- **关联需求 / 分支**：特性分支 `feature/feishu-reset-time-sort` -> 合并发布 `v1.5.29`
 - **核心问题与最新进展**：
+  1. **飞书同步后自动按重置时间升序排序 (v1.5.29, `feishu-sync.js` / `main.js`)**：
+     - **业务需求**：在集成了飞书多维表格同步的前提下，账号从左到右能够按“重置时间从小到大（从早到晚）”排列，方便用户挑选即将重置满血的账号；
+     - **实现机制**：
+       1. `feishu-sync.js` 增加 `parseResetTimestamp(val)` 与 `sortProfilesByResetTime(profiles)` 函数；
+       2. 在 `executeFeishuSync` 匹配更新后，自动按时间戳将账号升序排列（最早重置的在最左侧，无重置时间的在最右侧，时间相同按名称稳定排序）；
+       3. 飞书设置面板增加 `sortByResetTime` 配置项（默认开启）；
+       4. `main.js` 新增 `account:sort-by-reset-time` IPC 接口，并在账号中心（Account Hub）增加 `⏱️ 按重置排序` 按钮支持随时一键手动重排；
+     - **验证证据**：`scratch/test-feishu-sort.js` 专项单测全 PASS。
+  2. **切换框 (头像) 光标悬停显示重置时间与倒计时 (v1.5.29, `preload-chat-export.js`)**：
+     - 在底部多账号 Dock 的头像切换框上，强化悬停 Tooltip 交互：
+       1. 新增独立的重置时间展示行，亮青天蓝高亮显示 `⏱️ 重置: 2026-11-17 09:42:00 (16小时后)`；
+       2. 自动根据时间差计算人性化倒计时（几小时后、几分钟后、已到重置时间）；
+       3. 未设置或未同步时友好提示 `⏱️ 重置: 未同步`；
+       4. 注入原生 DOM `title` 属性作为双重保障提示；
+       5. 适配浅色模式（Light mode）下的 Tooltip 文字清晰度。
   1. **内置 Mihomo 内核启动超时与 Controller 端口连接失败根因彻底修复 (v1.5.28, `mihomo-manager.js`)**：
      - **问题根因**：现场运行日志显示内核卡死在 `INFO Can't find MMDB, start download`。原因是在 `generateConfig` 中配置了 `dns.fallback`，触发了 Mihomo 的 GEOIP 境内外归属判定机制；在缺少离线 `Country.mmdb` 的环境下，Mihomo 强行联网尝试从 GitHub 下载 MMDB，导致初始化严重阻塞；客户端 5 秒轮询 `_waitForController` 超时，进程被主动停止并报错；
      - **修复方案**：

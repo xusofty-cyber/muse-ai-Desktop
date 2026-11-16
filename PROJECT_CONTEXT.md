@@ -12,7 +12,7 @@
   1. **主窗口与双站点切换 (Main Window & Site Toggle)**：原生窗口封装 muse.ai 与 meta.ai，支持快捷键 (Ctrl+Shift+M) 或托盘菜单在两站点间快速切换并复用窗口，记忆窗口尺寸和位置，启用 GPU 光栅化以保证平滑滚动。
   2. **快速对话浮窗 (Quick Chat Popup)**：全局快捷键 (Ctrl+Shift+Space) 在任意界面唤起轻量快捷聊天窗口，失去焦点时自动隐藏。
   3. **多 Profile 与账号会话隔离 (Profiles & Account Switcher)**：基于 Electron Session Partition 实现多用户 Profile 独立登录与隔离；在 Meta AI 模式下提供多账号快速切换 (Ctrl+Shift+N) 与“添加 Meta AI 账号”能力。支持侧边栏头像 SVG 用量进度外环与悬浮重置倒计时提示。
-  4. **账号宫格看板与飞书多维表格同步 (Account Hub & Feishu Sync)**：独立入口看板 (⊞ / Ctrl+Shift+G) 提供大图卡片看板、多维状态与搜索过滤；内置纯 Node 实现的 `bin/feishu-cli.js` 同步引擎，支持多维表格字段智能映射与定时轮询。
+  4. **账号宫格看板与飞书多维表格同步 (Account Hub & Feishu Sync)**：独立入口看板 (⊞ / Ctrl+Shift+G) 提供大图卡片看板、多维状态与搜索过滤；内置纯 Node 实现的 `bin/feishu-cli.js` 同步引擎，支持多维表格字段智能映射与定时轮询；支持同步后自动按重置时间从小到大升序排序（Dock 从左到右展示最早重置账号），且鼠标悬停在切换头像框时清晰展示精确重置时间与倒计时。
   5. **内置 Mihomo 智能分流与多配置源聚合管理 (Embedded Mihomo Proxy Engine)**：内置轻量 Mihomo (Clash.Meta) 内核，支持机场 Clash 订阅链接与本地 YAML/YML 文件多源同时开启与智能合并；为每个 Muse 账号分配独立本地端口（18001+），支持账号级 5 种代理模式（`inherit`/`system`/`mihomo`/`direct`/`custom`）与专属 Fallback 故障转移队列，实现账号间物理级出口 IP 隔离。
   6. **多账号与代理配置一键导出导入 (Config Backup & Migration)**：支持将所有账号备注、群组分类、专属代理出口队列、独立代理模式及 Mihomo 配置源完整备份为标准 `.json`，支持一键跨机迁移并自动创建防灾快照。
   7. **系统级原生集成与控制 (System & Audio Controls)**：系统托盘驻留与菜单、开机自启、麦克风与扬声器全局静音切换、快捷键自定义配置页面 (`hotkeys.html`)、剪贴板超长文本导出为文件 (`Documents/Muse clips/`) 以及原生下载管理。

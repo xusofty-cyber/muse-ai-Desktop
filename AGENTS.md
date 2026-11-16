@@ -28,6 +28,7 @@ npm run dist                       # 构建 Windows 安装包 (NSIS installer �
 node scratch/test-backup-restore.js         # 配置备份导入导出与容灾快照验证 (覆盖多账号与 Mihomo 节点池)
 node scratch/test-external-links.js         # 外部链接与卡片跳转拦截全面测试
 node scratch/test-account-hub-and-feishu.js # 账号中心与飞书同步单元测试
+node scratch/test-feishu-sort.js            # 飞书同步重置时间升序排序与悬停提示测试
 npm start                                  # 本地启动并验证窗口、托盘与快捷键行为
 
 # 4. 代码质量、Lint 与静态检查

@@ -21,6 +21,7 @@ function defaultFeishuConfig() {
     appToken: '',
     tableId: '',
     autoSync: false,
+    sortByResetTime: true, // 同步后自动按重置时间从早到晚升序排序 (Dock从左到右)
     syncIntervalMinutes: 30, // 默认 30 分钟同步一次
     lastSyncTime: null,
     lastSyncStatus: '',
@@ -411,6 +412,11 @@ async function executeFeishuSync(feishuConfig, currentProfiles, saveCallback) {
     }
   }
 
+  // 若启用了按重置时间排序 (默认开启)，对 profiles 按照重置时间从小到大进行原地升序排序 (从左到右显示)
+  if (feishuConfig && feishuConfig.sortByResetTime !== false) {
+    sortProfilesByResetTime(currentProfiles);
+  }
+
   feishuConfig.lastSyncTime = new Date().toISOString();
   feishuConfig.lastSyncStatus = `成功通过 [${usedEngine === 'cli' ? '飞书 CLI' : '飞书 OpenAPI'}] 同步：共 ${records.length} 条记录，更新了 ${updatedCount} 个匹配账号`;
 
@@ -456,6 +462,40 @@ function setupFeishuAutoSync(feishuConfig, getProfilesFn, onSaveAndBroadcast) {
   }, intervalMs);
 }
 
+/**
+ * 解析重置时间字符串为有效时间戳 (用于升序排序)
+ * @param {string|number} val 时间字符串或数字
+ * @returns {number} 毫秒时间戳，无效或空值返回 Infinity (排在最后)
+ */
+function parseResetTimestamp(val) {
+  if (!val) return Infinity;
+  if (typeof val === 'number') return isNaN(val) ? Infinity : val;
+  if (typeof val !== 'string') return Infinity;
+  const trimmed = val.trim();
+  if (!trimmed) return Infinity;
+  // 支持 "2026-11-17 09:42:00"、"2026/11/17 09:42:00"、ISO 格式
+  const normalized = trimmed.replace(/-/g, '/');
+  const ts = Date.parse(normalized);
+  return isNaN(ts) ? Infinity : ts;
+}
+
+/**
+ * 按照重置时间从小到大 (升序) 排序 profiles (原地修改)
+ * 最早重置的排在前面 (Dock 最左侧)，无重置时间的排在最后
+ * @param {Array<Object>} profiles 账号列表
+ * @returns {Array<Object>} 排序后的数组
+ */
+function sortProfilesByResetTime(profiles) {
+  if (!Array.isArray(profiles)) return profiles;
+  return profiles.sort((a, b) => {
+    const tA = parseResetTimestamp(a && a.tokenResetAt);
+    const tB = parseResetTimestamp(b && b.tokenResetAt);
+    if (tA !== tB) return tA - tB;
+    // 重置时间相同时，按名称稳定排序
+    return String((a && a.name) || '').localeCompare(String((b && b.name) || ''));
+  });
+}
+
 module.exports = {
   defaultFeishuConfig,
   detectFeishuCli,
@@ -466,4 +506,6 @@ module.exports = {
   executeFeishuSync,
   setupFeishuAutoSync,
   formatDateTime,
+  parseResetTimestamp,
+  sortProfilesByResetTime,
 };

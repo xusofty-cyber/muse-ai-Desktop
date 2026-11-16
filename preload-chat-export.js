@@ -441,6 +441,12 @@ function injectThemeStyles() {
       background: rgba(0, 0, 0, 0.1) !important;
       color: #0f172a !important;
     }
+    [data-ui-theme="light"] .acct-dock-tooltip {
+      background: rgba(255, 255, 255, 0.96) !important;
+      border-color: rgba(0, 0, 0, 0.12) !important;
+      color: #0f172a !important;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
+    }
     [data-ui-theme="light"] .acct-context-menu {
       background: #ffffff !important;
       border-color: #e2e8f0 !important;
@@ -1405,6 +1411,24 @@ function injectExportButton() {}
     }
 
     return s;
+  }
+
+  function formatResetCountdown(val) {
+    if (!val) return '';
+    const formatted = formatDateTime(val);
+    if (!formatted) return '';
+    const target = Date.parse(formatted.replace(/-/g, '/'));
+    if (isNaN(target)) return '';
+    const diffMs = target - Date.now();
+    if (diffMs <= 0) return '已到重置时间';
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 60) return `${diffMins}分钟后`;
+    const diffHours = Math.floor(diffMins / 60);
+    const remMins = diffMins % 60;
+    if (diffHours < 24) return remMins > 0 ? `${diffHours}小时${remMins}分后` : `${diffHours}小时后`;
+    const diffDays = Math.floor(diffHours / 24);
+    const remHours = diffHours % 24;
+    return remHours > 0 ? `${diffDays}天${remHours}小时后` : `${diffDays}天后`;
   }
 
   function injectDockStyles() {
@@ -2516,6 +2540,26 @@ function injectExportButton() {}
     feishuConfigBtn.innerHTML = '<span>⚙️ 飞书配置</span>';
     feishuConfigBtn.onclick = () => openFeishuSettingsModal();
 
+    // 按重置时间升序排序按钮 (从早到晚，Dock 从左到右)
+    const sortByResetBtn = document.createElement('button');
+    sortByResetBtn.className = 'hub-btn hub-btn-default';
+    sortByResetBtn.type = 'button';
+    sortByResetBtn.title = '按账号重置时间从小到大排序 (最早重置的排在最左侧)';
+    sortByResetBtn.innerHTML = '<span>⏱️ 按重置排序</span>';
+    sortByResetBtn.onclick = async () => {
+      try {
+        const res = await ipcRenderer.invoke('account:sort-by-reset-time');
+        if (res && res.ok) {
+          dockState.profiles = res.profiles || dockState.profiles;
+          renderAccountHub();
+          renderDock();
+          showToast('已按重置时间从早到晚重新排序 (Dock 从左到右)');
+        }
+      } catch (err) {
+        showToast(`排序失败: ${err.message}`);
+      }
+    };
+
     // 新增账号按钮
     const addBtn = document.createElement('button');
     addBtn.className = 'hub-btn hub-btn-primary';
@@ -2538,6 +2582,7 @@ function injectExportButton() {}
     actions.appendChild(openDirBtn);
     actions.appendChild(feishuSyncBtn);
     actions.appendChild(feishuConfigBtn);
+    actions.appendChild(sortByResetBtn);
     actions.appendChild(addBtn);
     actions.appendChild(closeBtn);
 
@@ -3514,6 +3559,18 @@ function injectExportButton() {}
     autoCheck.checked = !!cfg.autoSync;
     autoRow.appendChild(autoCheck);
 
+    // 自动按重置时间从早到晚排序开关 (Dock 从左到右)
+    const sortRow = document.createElement('div');
+    sortRow.className = 'hub-form-row';
+    sortRow.style.flexDirection = 'row';
+    sortRow.style.alignItems = 'center';
+    sortRow.style.justifyContent = 'space-between';
+    sortRow.innerHTML = '<label class="hub-form-label">同步后按重置时间升序排序 (Dock从左到右)</label>';
+    const sortCheck = document.createElement('input');
+    sortCheck.type = 'checkbox';
+    sortCheck.checked = cfg.sortByResetTime !== false;
+    sortRow.appendChild(sortCheck);
+
     const intervalF = createField(t.feishuInterval, cfg.syncIntervalMinutes || 30, '30', 'number');
 
     // 字段映射折叠区
@@ -3561,6 +3618,7 @@ function injectExportButton() {}
         appToken: tokenF.input.value.trim(),
         tableId: tableF.input.value.trim(),
         autoSync: autoCheck.checked,
+        sortByResetTime: sortCheck.checked,
         syncIntervalMinutes: parseInt(intervalF.input.value, 10) || 30,
         fieldMap: {
           name: mapNameF.input.value.trim() || '账号名称',
@@ -3945,11 +4003,32 @@ function injectExportButton() {}
       usageRow.style.display = 'flex';
       usageRow.style.alignItems = 'center';
       usageRow.style.gap = '5px';
-      const displayReset = p.tokenResetAt ? formatDateTime(p.tokenResetAt) : '';
-      usageRow.innerHTML = `<span>用量: ${p.usageText || (pct + '%')}</span>${displayReset ? `<span style="color:rgba(255,255,255,0.45);font-size:10px;">· 重置: ${displayReset}</span>` : ''}`;
+      usageRow.innerHTML = `<span>用量: ${p.usageText || (pct + '%')}</span>`;
       tooltip.appendChild(usageRow);
 
+      // 独立重置时间行 (光标悬停在切换框时高亮突出显示)
+      const resetRow = document.createElement('div');
+      resetRow.style.fontSize = '11px';
+      resetRow.style.display = 'flex';
+      resetRow.style.alignItems = 'center';
+      resetRow.style.gap = '4px';
+      resetRow.style.marginTop = '1px';
+      const displayReset = p.tokenResetAt ? formatDateTime(p.tokenResetAt) : '';
+      const countdown = p.tokenResetAt ? formatResetCountdown(p.tokenResetAt) : '';
+      if (displayReset) {
+        resetRow.style.color = '#38bdf8';
+        resetRow.innerHTML = `<span>⏱️</span><span>重置: ${displayReset}</span>${countdown ? `<span style="opacity:0.8;font-size:10px;margin-left:2px;">(${countdown})</span>` : ''}`;
+      } else {
+        resetRow.style.color = 'rgba(255, 255, 255, 0.4)';
+        resetRow.innerHTML = `<span>⏱️</span><span>重置: 未同步</span>`;
+      }
+      tooltip.appendChild(resetRow);
+
       item.appendChild(tooltip);
+
+      // 原生 title 属性保底提示
+      const titleCountdown = countdown ? ` (${countdown})` : '';
+      item.title = `${p.name} · 用量: ${p.usageText || (pct + '%')} · 重置: ${displayReset || '未同步'}${titleCountdown}`;
 
       // 点击切换 (防拖拽结束误触)
       item.onclick = () => {

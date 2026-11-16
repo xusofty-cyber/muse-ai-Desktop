@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
-const { defaultFeishuConfig, detectFeishuCli, executeFeishuSync, setupFeishuAutoSync, formatDateTime } = require('./feishu-sync');
+const { defaultFeishuConfig, detectFeishuCli, executeFeishuSync, setupFeishuAutoSync, formatDateTime, sortProfilesByResetTime } = require('./feishu-sync');
 const { MihomoManager, DEFAULT_CONTROLLER_PORT, DEFAULT_BASE_PROXY_PORT } = require('./mihomo-manager');
 
 // ---- 核心加固 1 & 2: 先定身份/UserData 再拿单例锁 + 统一 UserData 目录 -------------
@@ -2890,6 +2890,28 @@ ipcMain.handle('account:reorder', (e, { orderedIds }) => {
   }
 
   return { ok: true };
+});
+
+ipcMain.handle('account:sort-by-reset-time', (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!Array.isArray(state.profiles) || state.profiles.length === 0) {
+    return { ok: false, error: 'No profiles' };
+  }
+  sortProfilesByResetTime(state.profiles);
+  saveState();
+  buildTrayMenu();
+  broadcastAccountChange();
+
+  if (state.mihomo && state.mihomo.enabled) {
+    const mm = getMihomoManager();
+    if (mm && mm.isRunning) {
+      mm.reload(state.profiles, state.mihomo.cachedProxies)
+        .then(() => applyProxySettings())
+        .catch((err) => console.warn('[Mihomo] Reload on reset-time sort failed:', err));
+    }
+  }
+
+  return { ok: true, profiles: state.profiles };
 });
 
 ipcMain.handle('account:sign-out', async (e, { id }) => {
