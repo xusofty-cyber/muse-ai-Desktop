@@ -3963,9 +3963,6 @@ function injectExportButton() {}
       }
       if (p.id === dockState.activeProfileId) {
         item.classList.add('active');
-        setTimeout(() => {
-          try { item.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); } catch {}
-        }, 50);
       }
 
       // 用量外环计算 (SVG 环形进度条，半径 15.2，周长 95.50，描边 2.6)
@@ -4190,6 +4187,27 @@ function injectExportButton() {}
     });
 
     dockContainer.appendChild(list);
+
+    // 账号列表横向位置保护：杜绝 scrollIntoView 导致整条 dock 偏移或左侧账号隐藏
+    requestAnimationFrame(() => {
+      if (!list || !list.isConnected) return;
+      if (list.scrollWidth <= list.clientWidth) {
+        list.scrollLeft = 0;
+        return;
+      }
+      const activeEl = list.querySelector('.acct-dock-item.active');
+      if (activeEl) {
+        const itemLeft = activeEl.offsetLeft;
+        const itemRight = itemLeft + activeEl.offsetWidth;
+        const visibleLeft = list.scrollLeft;
+        const visibleRight = list.scrollLeft + list.clientWidth;
+        if (itemLeft < visibleLeft) {
+          list.scrollLeft = itemLeft;
+        } else if (itemRight > visibleRight) {
+          list.scrollLeft = itemRight - list.clientWidth;
+        }
+      }
+    });
 
     // 右侧垂直分割线
     const dividerRight = document.createElement('div');

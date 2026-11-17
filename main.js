@@ -304,9 +304,9 @@ function sanitizeWindowBounds(raw) {
   return out;
 }
 
-// 确保 bounds 与至少一块显示器的可用区有足够交叠; 否则居中到主屏。
-// displays 可注入 (display.bounds/workArea), 缺省实时读取 screen。
-function ensureBoundsVisible(bounds, displays) {
+// 确保 bounds 与至少一块显示器的可用区有足够交叠; 否则居中兜底。
+// displays 可注入 (display.bounds/workArea), preferredDisplay 可指定优先显示器 (如多屏下当前正在操作的副屏)。
+function ensureBoundsVisible(bounds, displays, preferredDisplay) {
   const b = sanitizeWindowBounds(bounds);
   let list = displays;
   if (!list) {
@@ -314,8 +314,9 @@ function ensureBoundsVisible(bounds, displays) {
       const scr = require('electron').screen;
       const all = scr.getAllDisplays();
       const primary = scr.getPrimaryDisplay();
-      // getAllDisplays()[0] 不保证是主屏; 居中兜底必须以主屏为基准并排在首位
-      list = primary ? [primary, ...all.filter((d) => d.id !== primary.id)] : all;
+      const pref = preferredDisplay || (scr.getDisplayMatching ? scr.getDisplayMatching(b) : primary);
+      const prefId = pref && pref.id;
+      list = pref ? [pref, ...all.filter((d) => d.id !== prefId)] : (primary ? [primary, ...all.filter((d) => d.id !== primary.id)] : all);
     } catch { list = []; }
   }
   if (!list || !list.length) return b;
@@ -1668,10 +1669,55 @@ function setUIAutoHide(enabled) {
   broadcastUISettingsChange();
 }
 
-function getOrCreateProfileWindow(profileId, targetBounds) {
+// 同步多屏与最大化状态，杜绝跨屏溢出与位置跳跃
+function syncWindowStateAndBounds(targetWin, normalBounds, wasMaximized, targetDisplay) {
+  if (!targetWin || targetWin.isDestroyed()) return;
+  let disp = targetDisplay;
+  if (!disp) {
+    try {
+      const scr = require('electron').screen;
+      disp = (normalBounds && scr.getDisplayMatching ? scr.getDisplayMatching(normalBounds) : scr.getPrimaryDisplay());
+    } catch { disp = null; }
+  }
+  const wa = (disp && (disp.workArea || disp.bounds)) || { x: 0, y: 0, width: 1920, height: 1080 };
+
+  if (wasMaximized) {
+    // 若原窗口最大化，确保目标窗口先定位在当前屏幕的工作区再最大化，防止多屏下最大化错屏或被设为超出边界的伪尺寸
+    if (!targetWin.isMaximized()) {
+      try {
+        targetWin.setBounds({
+          x: wa.x + Math.max(0, Math.round((wa.width - 1200) / 2)),
+          y: wa.y + Math.max(0, Math.round((wa.height - 800) / 2)),
+          width: Math.min(1200, wa.width),
+          height: Math.min(800, wa.height),
+        });
+      } catch {}
+      targetWin.maximize();
+    }
+  } else {
+    // 若原窗口是普通窗口，目标窗口若是最大化先解除最大化
+    if (targetWin.isMaximized()) {
+      targetWin.unmaximize();
+    }
+    if (normalBounds) {
+      // 严格限制在当前显示器的工作区内，杜绝多屏边界溢出
+      const w = Math.min(normalBounds.width || 1200, wa.width);
+      const h = Math.min(normalBounds.height || 800, wa.height);
+      const x = Math.max(wa.x, Math.min(typeof normalBounds.x === 'number' ? normalBounds.x : wa.x, wa.x + wa.width - w));
+      const y = Math.max(wa.y, Math.min(typeof normalBounds.y === 'number' ? normalBounds.y : wa.y, wa.y + wa.height - h));
+      try { targetWin.setBounds({ x, y, width: w, height: h }); } catch {}
+    }
+  }
+}
+
+function getOrCreateProfileWindow(profileId, targetBounds, wasMaximized, targetDisplay) {
   let win = profileWindows.get(profileId);
   if (win && !win.isDestroyed()) {
-    if (targetBounds) win.setBounds(ensureBoundsVisible(targetBounds));
+    if (wasMaximized !== undefined) {
+      syncWindowStateAndBounds(win, targetBounds, wasMaximized, targetDisplay);
+    } else if (targetBounds) {
+      win.setBounds(ensureBoundsVisible(targetBounds, null, targetDisplay));
+    }
     return win;
   }
 
@@ -1680,7 +1726,9 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
   applyProxyToSession(ses, profileId);
 
   const saved = ensureBoundsVisible(
-    targetBounds || (state.windowByProfile && state.windowByProfile[profileId]) || state.window || {}
+    targetBounds || (state.windowByProfile && state.windowByProfile[profileId]) || state.window || {},
+    null,
+    targetDisplay
   );
   win = new BrowserWindow({
     width: saved.width || 1200,
@@ -1697,6 +1745,9 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
       partition: partitionFor(profileId),
     },
   });
+  if (wasMaximized) {
+    win.maximize();
+  }
   if (process.platform !== 'darwin' && fs.existsSync(APP_ICON_PATH)) {
     win.setIcon(APP_ICON_PATH);
   }
@@ -1799,13 +1850,20 @@ function getOrCreateProfileWindow(profileId, targetBounds) {
   return win;
 }
 
-// 统一的窗口唤回动作: 先修几何 -> 恢复最小化 -> show -> 置顶聚焦,
-// 并返回 show 后是否真的可见, 供调用方在楔死时走重建兜底。
-function showWindowSafely(win) {
+// 统一的窗口唤回动作: 同步几何/最大化 -> 恢复最小化 -> show -> 置顶聚焦
+function showWindowSafely(win, shouldMaximize, targetDisplay) {
   if (!win || win.isDestroyed()) return false;
   if (isScreenLocked) return false;
-  try { win.setBounds(ensureBoundsVisible(win.getBounds())); } catch {}
-  if (win.isMinimized()) win.restore();
+
+  // 核心多屏保护：若窗口为最大化状态，严禁调用 setBounds 引入系统边框负坐标！
+  if (shouldMaximize || win.isMaximized()) {
+    if (win.isMinimized()) win.restore();
+    if (!win.isMaximized()) win.maximize();
+  } else {
+    try { win.setBounds(ensureBoundsVisible(win.getBounds(), null, targetDisplay)); } catch {}
+    if (win.isMinimized()) win.restore();
+  }
+
   win.show();
   try { win.moveTop(); } catch {}
   win.focus();
@@ -2125,17 +2183,27 @@ function switchAccount(id) {
   if (id === state.activeProfileId && mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) return;
 
   const prevWin = mainWindow;
-  let currentBounds = null;
+  let wasMaximized = false;
+  let targetDisplay = null;
+  let normalBounds = null;
+
   if (prevWin && !prevWin.isDestroyed()) {
-    currentBounds = prevWin.getBounds();
+    wasMaximized = prevWin.isMaximized();
+    try {
+      const scr = require('electron').screen;
+      targetDisplay = scr.getDisplayMatching(prevWin.getBounds());
+    } catch {}
+    if (!wasMaximized) {
+      normalBounds = prevWin.getBounds();
+    }
   }
 
   currentSwitchTargetId = id;
   state.activeProfileId = id;
   saveState();
 
-  // 获取或复用目标账号的常驻窗口（零重载瞬切）
-  const targetWin = getOrCreateProfileWindow(id, currentBounds);
+  // 获取或复用目标账号的常驻窗口（零重载瞬切，同步多屏与最大化状态）
+  const targetWin = getOrCreateProfileWindow(id, normalBounds, wasMaximized, targetDisplay);
   mainWindow = targetWin;
 
   // 快捷窗的 partition 在创建时绑定, 切账号后必须销毁, 否则它会继续以
@@ -2147,7 +2215,7 @@ function switchAccount(id) {
 
   const applySwitchDone = () => {
     if (targetWin.isDestroyed()) return;
-    showWindowSafely(targetWin);
+    showWindowSafely(targetWin, wasMaximized, targetDisplay);
     targetWin.focus();
 
     // 隐藏前一个窗口并强制落盘会话 Cookie; 其子弹窗一并隐藏 (防串号感知)
