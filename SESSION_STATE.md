@@ -6,23 +6,47 @@
 
 ## 一、当前任务概览
 
-- **关联需求 / 分支**：特性分支 `feature/feishu-reset-time-sort` -> 合并发布 `v1.5.29`
+- **关联需求 / 分支**：`main` 分支（临时修复分支 `fix/feishu-auto-sync-and-dock-ring` 已完成验证并 Fast-forward 合并）
+- **最新发版状态**：
+  - 本地 `main` 包含最新修复提交 Commit `3a7bc2b`
+  - 待用户确认后可推送到远端 `origin/main` 并打标签发布新版
 - **核心问题与最新进展**：
-  1. **飞书同步后自动按重置时间升序排序 (v1.5.29, `feishu-sync.js` / `main.js`)**：
-     - **业务需求**：在集成了飞书多维表格同步的前提下，账号从左到右能够按“重置时间从小到大（从早到晚）”排列，方便用户挑选即将重置满血的账号；
-     - **实现机制**：
-       1. `feishu-sync.js` 增加 `parseResetTimestamp(val)` 与 `sortProfilesByResetTime(profiles)` 函数；
-       2. 在 `executeFeishuSync` 匹配更新后，自动按时间戳将账号升序排列（最早重置的在最左侧，无重置时间的在最右侧，时间相同按名称稳定排序）；
-       3. 飞书设置面板增加 `sortByResetTime` 配置项（默认开启）；
-       4. `main.js` 新增 `account:sort-by-reset-time` IPC 接口，并在账号中心（Account Hub）增加 `⏱️ 按重置排序` 按钮支持随时一键手动重排；
-     - **验证证据**：`scratch/test-feishu-sort.js` 专项单测全 PASS。
-  2. **切换框 (头像) 光标悬停显示重置时间与倒计时 (v1.5.29, `preload-chat-export.js`)**：
-     - 在底部多账号 Dock 的头像切换框上，强化悬停 Tooltip 交互：
-       1. 新增独立的重置时间展示行，亮青天蓝高亮显示 `⏱️ 重置: 2026-11-17 09:42:00 (16小时后)`；
-       2. 自动根据时间差计算人性化倒计时（几小时后、几分钟后、已到重置时间）；
-       3. 未设置或未同步时友好提示 `⏱️ 重置: 未同步`；
-       4. 注入原生 DOM `title` 属性作为双重保障提示；
-       5. 适配浅色模式（Light mode）下的 Tooltip 文字清晰度。
+  1. **飞书后台定时自动轮询未更新根因彻底修复 (`feishu-sync.js` / `main.js`)**：
+     - **问题根因**：
+       1. 以前 `setupFeishuAutoSync` 硬编码了 `Math.max(5, syncIntervalMinutes || 30)`，如果用户未明确修改则默认 30 分钟，且限制了最小 5 分钟，导致配置 1~3 分钟失效；
+       2. `setInterval` 启动时只在未来 `intervalMs` 后首次触发，启动/保存后需干等整整一个周期，用户修改为 5 分钟后盯着屏幕看不到更新；
+       3. 缺少系统睡眠/休眠唤醒补偿，Windows 睡眠后 `setInterval` 停滞或延迟；
+       4. 飞书多维表格中的用量数值（如 `0.62`、`1`、`0`）在 `parseUsageValue` 中虽然计算了百分比，但 `text` 字段保留了原字符串 `'0.62'`、`'1'`、`'0'`，导致前端直接显示为 `0.62`、`0`，造成没有更新的严重错觉；
+       5. 缺少防并发锁，手动同步与定时轮询可能存在竞态。
+     - **修复方案**：
+       1. 支持下限 1 分钟周期 `Math.max(1, parseInt(feishuConfig.syncIntervalMinutes, 10) || 5)`；
+       2. 引入后台静默预热触发机制：若距离上次同步已超过周期（或首次开启），1.5 秒后在后台静默发起一次同步，用户保存后秒级看到最新数据；
+       3. 在 `feishuConfig` 中精确维护 `nextSyncTimestamp` 与 `nextSyncTime`；
+       4. 增加 `isSyncInProgress` 模块级防并发重入锁；
+       5. 在 `main.js` 增加 `powerMonitor.on('resume')` 系统唤醒检测，睡眠唤醒后自动补偿执行超期同步；
+       6. 彻底规范 `parseUsageValue`：小数（如 `0.62`）和数字（如 `1`、`0`）统一规整输出为规范百分比文本（`62%`、`100%`、`0%`）。
+  2. **底部 Dock（docker）账号使用环（用量环）与悬停 Tooltip 视觉彻底重构 (`preload-chat-export.js`)**：
+     - **问题根因**：
+       1. 容器为 36px，内层头像为 28px（半径 14px），圆环半径为 16px。头像边缘与圆环紧贴，且头像自身的 `box-shadow` 和 `active` 状态的白色外框直接遮盖在圆环上；
+       2. 圆环 `z-index: 1` 低于头像 `z-index: 2`，导致圆环完全被头像阴影遮挡；
+       3. 底轨 `acct-dock-ring-bg` 透明度过高，0% 时没有进度线且底轨不可见，导致 0% 账号完全没有环；
+       4. 6% 等低用量只有微小噪点，缺乏圆润线帽与清晰外框。
+     - **修复方案**：
+       1. 头像直径精细调整为 25px（半径 12.5px），圆环半径微调为 15.2px（外径 16.5px，内径 13.9px），与头像之间形成 1.4px 纯净留白，形成像 Apple Watch 健身环一样的悬浮活动环；
+       2. 圆环 `z-index` 调整为 2，永不被头像阴影遮盖；
+       3. 强化底轨轨道 `rgba(255, 255, 255, 0.22)`，0% 账号底轨完整优雅可见，Tooltip 提示 `🟢 用量: 0% (额度充沛)`；
+       4. 高用量（>=95%）进度环带红色呼吸微光发光滤镜；
+       5. 激活（active）状态下改用圆环高亮发光与头像 1px 晶体亮边，彻底去除遮挡圆环的粗白边；
+       6. Tooltip 增加红/黄/绿状态指示灯（🔴/🟡/🟢）与百分比格式化展示。
+  3. **飞书配置模态框交互优化 (`preload-chat-export.js`)**：
+     - 将卡片布局改为 Flex 列布局，表单区域独立滚动，底部的【取消】与【保存并立即同步】按钮**永久常驻吸底**，解决表单过长导致用户填完 5 分钟后漏点“保存并立即同步”的问题；
+     - 在 Account Hub 顶部的【⚙️ 飞书配置】按钮上增加自动轮询运行中状态小圆点与悬停提示。
+  - **验证证据**：
+    - `scratch/test-feishu-auto-sync-and-ring.js`：专用单测全部 PASS；
+    - `scratch/test-account-hub-and-feishu.js`：7 组单测全部 PASS；
+    - `scratch/test-feishu-sort.js`：全部 PASS；
+    - `scratch/test-backup-restore.js`：全部 PASS；
+    - 静态语法检查 `node -c main.js preload-chat-export.js feishu-sync.js` 0 错误。
   1. **内置 Mihomo 内核启动超时与 Controller 端口连接失败根因彻底修复 (v1.5.28, `mihomo-manager.js`)**：
      - **问题根因**：现场运行日志显示内核卡死在 `INFO Can't find MMDB, start download`。原因是在 `generateConfig` 中配置了 `dns.fallback`，触发了 Mihomo 的 GEOIP 境内外归属判定机制；在缺少离线 `Country.mmdb` 的环境下，Mihomo 强行联网尝试从 GitHub 下载 MMDB，导致初始化严重阻塞；客户端 5 秒轮询 `_waitForController` 超时，进程被主动停止并报错；
      - **修复方案**：
