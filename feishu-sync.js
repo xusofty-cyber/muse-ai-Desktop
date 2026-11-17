@@ -240,7 +240,7 @@ function extractFieldValue(raw) {
   return String(raw);
 }
 
-// 辅助：智能解析用量百分比与明细文本
+// 辅助：智能解析用量百分比与明细文本 (规范输出百分比数字与可读文本，如 62%、100%、0%)
 function parseUsageValue(raw) {
   if (raw === null || raw === undefined) return { percent: 0, text: '0%' };
   if (typeof raw === 'number') {
@@ -250,13 +250,7 @@ function parseUsageValue(raw) {
   const str = String(raw).trim();
   if (!str) return { percent: 0, text: '0%' };
 
-  // 1. 优先匹配明确的百分比，如 "75%"、"(75%)"
-  const pctMatch = str.match(/(\d+(?:\.\d+)?)\s*%/);
-  if (pctMatch) {
-    const pct = Math.max(0, Math.min(100, Math.round(parseFloat(pctMatch[1]))));
-    return { percent: pct, text: str };
-  }
-  // 2. 匹配分数/比例，如 "7500 / 10000"、"7,500/10,000"
+  // 1. 匹配分数/比例，如 "7500 / 10000"、"7,500/10,000"
   const ratioMatch = str.replace(/,/g, '').match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
   if (ratioMatch) {
     const num = parseFloat(ratioMatch[1]);
@@ -266,14 +260,29 @@ function parseUsageValue(raw) {
       return { percent: pct, text: str };
     }
   }
-  // 3. 普通单一数值，如 "85" 或 "0.85"
-  const singleMatch = str.replace(/,/g, '').match(/(\d+(?:\.\d+)?)/);
+
+  // 2. 匹配明确的百分比，如 "75%"、"(75%)"
+  const pctMatch = str.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (pctMatch) {
+    const pct = Math.max(0, Math.min(100, Math.round(parseFloat(pctMatch[1]))));
+    return { percent: pct, text: `${pct}%` };
+  }
+
+  // 3. 普通单一数值，如 "85" 或 "0.85" 或 "1" 或 "0"
+  const singleMatch = str.replace(/,/g, '').match(/^(\d+(?:\.\d+)?)$/);
   if (singleMatch) {
     const val = parseFloat(singleMatch[1]);
     const pct = Math.max(0, Math.min(100, Math.round(val <= 1 ? val * 100 : val)));
-    return { percent: pct, text: str };
+    return { percent: pct, text: `${pct}%` };
   }
-  return { percent: 0, text: str };
+  // 4. 其他包含数字的文本
+  const anyMatch = str.replace(/,/g, '').match(/(\d+(?:\.\d+)?)/);
+  if (anyMatch) {
+    const val = parseFloat(anyMatch[1]);
+    const pct = Math.max(0, Math.min(100, Math.round(val <= 1 ? val * 100 : val)));
+    return { percent: pct, text: `${pct}%` };
+  }
+  return { percent: 0, text: '0%' };
 }
 
 // 辅助：智能解析并规整时间字段为 YYYY-MM-DD HH:mm:ss
@@ -319,122 +328,141 @@ function formatDateTime(val) {
   return s;
 }
 
+// 飞书定时轮询器与防并发锁
+let syncTimer = null;
+let isSyncInProgress = false;
+
 // 3. 执行单次同步，将飞书记录匹配更新至本地 profiles
 async function executeFeishuSync(feishuConfig, currentProfiles, saveCallback) {
   if (!feishuConfig || !feishuConfig.appToken || !feishuConfig.tableId) {
     return { ok: false, error: '缺少飞书多维表格 Base Token 或 Table ID' };
   }
 
-  const syncMode = feishuConfig.syncMode || 'auto';
-  let records = [];
-  let usedEngine = 'openapi';
+  if (isSyncInProgress) {
+    console.log('[FeishuSync] 同步正在进行中，跳过并发调用');
+    return { ok: false, error: '同步正在进行中，请稍候' };
+  }
+  isSyncInProgress = true;
 
-  // 1. 如果配置了 CLI 模式或 auto / embedded 模式，优先使用内置集成或系统 CLI
-  if (syncMode === 'cli' || syncMode === 'auto' || syncMode === 'embedded') {
-    const cliCheck = await detectFeishuCli(feishuConfig.customCliPath);
-    if (cliCheck.available) {
-      try {
-        console.log(`[FeishuSync] Using Feishu CLI at ${cliCheck.path} (${cliCheck.version})`);
-        records = await fetchRecordsViaCli(cliCheck.path, feishuConfig.appToken, feishuConfig.tableId, {
-          appId: feishuConfig.appId,
-          appSecret: feishuConfig.appSecret,
-        });
-        usedEngine = cliCheck.isEmbedded ? 'embedded_cli' : 'cli';
-      } catch (cliErr) {
-        console.warn(`[FeishuSync] CLI execution failed: ${cliErr.message}`);
-        if (syncMode === 'cli') {
-          return { ok: false, error: `飞书 CLI 执行失败: ${cliErr.message}` };
+  try {
+    const syncMode = feishuConfig.syncMode || 'auto';
+    let records = [];
+    let usedEngine = 'openapi';
+
+    // 1. 如果配置了 CLI 模式或 auto / embedded 模式，优先使用内置集成或系统 CLI
+    if (syncMode === 'cli' || syncMode === 'auto' || syncMode === 'embedded') {
+      const cliCheck = await detectFeishuCli(feishuConfig.customCliPath);
+      if (cliCheck.available) {
+        try {
+          console.log(`[FeishuSync] Using Feishu CLI at ${cliCheck.path} (${cliCheck.version})`);
+          records = await fetchRecordsViaCli(cliCheck.path, feishuConfig.appToken, feishuConfig.tableId, {
+            appId: feishuConfig.appId,
+            appSecret: feishuConfig.appSecret,
+          });
+          usedEngine = cliCheck.isEmbedded ? 'embedded_cli' : 'cli';
+        } catch (cliErr) {
+          console.warn(`[FeishuSync] CLI execution failed: ${cliErr.message}`);
+          if (syncMode === 'cli') {
+            return { ok: false, error: `飞书 CLI 执行失败: ${cliErr.message}` };
+          }
         }
+      } else if (syncMode === 'cli') {
+        return { ok: false, error: `未找到飞书 CLI 命令，请先安装飞书开发者工具或切换为内置引擎模式` };
       }
-    } else if (syncMode === 'cli') {
-      return { ok: false, error: `未找到飞书 CLI 命令，请先安装飞书开发者工具或切换为内置引擎模式` };
     }
-  }
 
-  // 2. 如果 CLI 未获取到记录，且允许 API 模式，则走标准 OpenAPI
-  if (records.length === 0 && (syncMode === 'api' || syncMode === 'auto')) {
-    if (!feishuConfig.appId || !feishuConfig.appSecret) {
-      return { ok: false, error: '飞书配置不完整，缺少自建应用的 App ID 或 App Secret' };
-    }
-    const token = await fetchTenantAccessToken(feishuConfig.appId, feishuConfig.appSecret);
-    records = await fetchBitableRecords(token, feishuConfig.appToken, feishuConfig.tableId);
-    usedEngine = 'openapi';
-  }
-
-  const fieldMap = {
-    name: (feishuConfig.fieldMap && feishuConfig.fieldMap.name) || '账号名称',
-    purpose: (feishuConfig.fieldMap && feishuConfig.fieldMap.purpose) || '主要用途',
-    usage: (feishuConfig.fieldMap && feishuConfig.fieldMap.usage) || '当前用量',
-    tokenReset: (feishuConfig.fieldMap && feishuConfig.fieldMap.tokenReset) || '重置时间',
-  };
-
-  let updatedCount = 0;
-  const nameToRecordMap = new Map();
-
-  for (const rec of records) {
-    const fields = rec.fields || {};
-    const rawName = extractFieldValue(fields[fieldMap.name]);
-    const cleanName = String(rawName).trim();
-    if (cleanName) {
-      nameToRecordMap.set(cleanName.toLowerCase(), {
-        recordId: rec.record_id,
-        purpose: String(extractFieldValue(fields[fieldMap.purpose]) || '').trim(),
-        usage: extractFieldValue(fields[fieldMap.usage]),
-        tokenReset: formatDateTime(extractFieldValue(fields[fieldMap.tokenReset])),
-      });
-    }
-  }
-
-  // 匹配并更新本地 profiles
-  for (const prof of currentProfiles) {
-    const targetKey = String(prof.name || '').trim().toLowerCase();
-    const match = nameToRecordMap.get(targetKey);
-    if (match) {
-      updatedCount++;
-      prof.feishuRecordId = match.recordId;
-      if (match.purpose) prof.purpose = match.purpose;
-      if (match.tokenReset) prof.tokenResetAt = match.tokenReset;
-
-      // 智能解析用量百分比与明细文本
-      const parsedUsage = parseUsageValue(match.usage);
-      prof.usagePercent = parsedUsage.percent;
-      prof.usageText = parsedUsage.text;
-
-      // 根据用量判定状态
-      if (prof.usagePercent >= 95) {
-        prof.status = 'exhausted';
-      } else if (prof.usagePercent >= 75) {
-        prof.status = 'warning';
-      } else {
-        prof.status = 'normal';
+    // 2. 如果 CLI 未获取到记录，且允许 API 模式，则走标准 OpenAPI
+    if (records.length === 0 && (syncMode === 'api' || syncMode === 'auto')) {
+      if (!feishuConfig.appId || !feishuConfig.appSecret) {
+        return { ok: false, error: '飞书配置不完整，缺少自建应用的 App ID 或 App Secret' };
       }
-      prof.updatedAt = Date.now();
+      const token = await fetchTenantAccessToken(feishuConfig.appId, feishuConfig.appSecret);
+      records = await fetchBitableRecords(token, feishuConfig.appToken, feishuConfig.tableId);
+      usedEngine = 'openapi';
     }
+
+    const fieldMap = {
+      name: (feishuConfig.fieldMap && feishuConfig.fieldMap.name) || '账号名称',
+      purpose: (feishuConfig.fieldMap && feishuConfig.fieldMap.purpose) || '主要用途',
+      usage: (feishuConfig.fieldMap && feishuConfig.fieldMap.usage) || '当前用量',
+      tokenReset: (feishuConfig.fieldMap && feishuConfig.fieldMap.tokenReset) || '重置时间',
+    };
+
+    let updatedCount = 0;
+    const nameToRecordMap = new Map();
+
+    for (const rec of records) {
+      const fields = rec.fields || {};
+      const rawName = extractFieldValue(fields[fieldMap.name]);
+      const cleanName = String(rawName).trim();
+      if (cleanName) {
+        nameToRecordMap.set(cleanName.toLowerCase(), {
+          recordId: rec.record_id,
+          purpose: String(extractFieldValue(fields[fieldMap.purpose]) || '').trim(),
+          usage: extractFieldValue(fields[fieldMap.usage]),
+          tokenReset: formatDateTime(extractFieldValue(fields[fieldMap.tokenReset])),
+        });
+      }
+    }
+
+    // 匹配并更新本地 profiles
+    for (const prof of currentProfiles) {
+      const targetKey = String(prof.name || '').trim().toLowerCase();
+      const match = nameToRecordMap.get(targetKey);
+      if (match) {
+        updatedCount++;
+        prof.feishuRecordId = match.recordId;
+        if (match.purpose) prof.purpose = match.purpose;
+        if (match.tokenReset) prof.tokenResetAt = match.tokenReset;
+
+        // 智能解析用量百分比与明细文本
+        const parsedUsage = parseUsageValue(match.usage);
+        prof.usagePercent = parsedUsage.percent;
+        prof.usageText = parsedUsage.text;
+
+        // 根据用量判定状态
+        if (prof.usagePercent >= 95) {
+          prof.status = 'exhausted';
+        } else if (prof.usagePercent >= 75) {
+          prof.status = 'warning';
+        } else {
+          prof.status = 'normal';
+        }
+        prof.updatedAt = Date.now();
+      }
+    }
+
+    // 若启用了按重置时间排序 (默认开启)，对 profiles 按照重置时间从小到大进行原地升序排序 (从左到右显示)
+    if (feishuConfig && feishuConfig.sortByResetTime !== false) {
+      sortProfilesByResetTime(currentProfiles);
+    }
+
+    feishuConfig.lastSyncTime = new Date().toISOString();
+    feishuConfig.lastSyncStatus = `成功通过 [${usedEngine === 'cli' ? '飞书 CLI' : '飞书 OpenAPI'}] 同步：共 ${records.length} 条记录，更新了 ${updatedCount} 个匹配账号`;
+
+    // 若配置了自动轮询，同步推算下次预计同步时间点
+    if (feishuConfig.autoSync) {
+      const mins = Math.max(1, parseInt(feishuConfig.syncIntervalMinutes, 10) || 5);
+      feishuConfig.nextSyncTimestamp = Date.now() + mins * 60 * 1000;
+      feishuConfig.nextSyncTime = new Date(feishuConfig.nextSyncTimestamp).toISOString();
+    }
+
+    if (typeof saveCallback === 'function') {
+      saveCallback();
+    }
+
+    return {
+      ok: true,
+      engine: usedEngine,
+      totalRecords: records.length,
+      updatedProfiles: updatedCount,
+      lastSyncTime: feishuConfig.lastSyncTime,
+      nextSyncTime: feishuConfig.nextSyncTime,
+    };
+  } finally {
+    isSyncInProgress = false;
   }
-
-  // 若启用了按重置时间排序 (默认开启)，对 profiles 按照重置时间从小到大进行原地升序排序 (从左到右显示)
-  if (feishuConfig && feishuConfig.sortByResetTime !== false) {
-    sortProfilesByResetTime(currentProfiles);
-  }
-
-  feishuConfig.lastSyncTime = new Date().toISOString();
-  feishuConfig.lastSyncStatus = `成功通过 [${usedEngine === 'cli' ? '飞书 CLI' : '飞书 OpenAPI'}] 同步：共 ${records.length} 条记录，更新了 ${updatedCount} 个匹配账号`;
-
-  if (typeof saveCallback === 'function') {
-    saveCallback();
-  }
-
-  return {
-    ok: true,
-    engine: usedEngine,
-    totalRecords: records.length,
-    updatedProfiles: updatedCount,
-    lastSyncTime: feishuConfig.lastSyncTime,
-  };
 }
-
-// 飞书定时轮询器
-let syncTimer = null;
 
 function setupFeishuAutoSync(feishuConfig, getProfilesFn, onSaveAndBroadcast) {
   if (syncTimer) {
@@ -446,13 +474,33 @@ function setupFeishuAutoSync(feishuConfig, getProfilesFn, onSaveAndBroadcast) {
     return;
   }
 
-  const minutes = Math.max(5, feishuConfig.syncIntervalMinutes || 30);
+  const minutes = Math.max(1, parseInt(feishuConfig.syncIntervalMinutes, 10) || 5);
   const intervalMs = minutes * 60 * 1000;
 
-  console.log(`[FeishuSync] Auto sync scheduled every ${minutes} minutes.`);
+  feishuConfig.nextSyncTimestamp = Date.now() + intervalMs;
+  feishuConfig.nextSyncTime = new Date(feishuConfig.nextSyncTimestamp).toISOString();
+
+  console.log(`[FeishuSync] Auto sync scheduled every ${minutes} minutes. Next run around ${new Date(feishuConfig.nextSyncTimestamp).toLocaleTimeString()}`);
+
+  // 如果距离上次同步已经超过了设定周期（或从未同步过），启动后静默先跑一次
+  const lastTime = feishuConfig.lastSyncTime ? new Date(feishuConfig.lastSyncTime).getTime() : 0;
+  if (!lastTime || (Date.now() - lastTime >= intervalMs)) {
+    setTimeout(async () => {
+      try {
+        const profiles = typeof getProfilesFn === 'function' ? getProfilesFn() : [];
+        console.log(`[FeishuSync] Auto sync initial trigger (interval elapsed or fresh start)...`);
+        await executeFeishuSync(feishuConfig, profiles, onSaveAndBroadcast);
+      } catch (e) {
+        console.warn(`[FeishuSync] Initial auto sync error:`, e.message);
+      }
+    }, 1500);
+  }
+
   syncTimer = setInterval(async () => {
     try {
-      const profiles = getProfilesFn();
+      feishuConfig.nextSyncTimestamp = Date.now() + intervalMs;
+      feishuConfig.nextSyncTime = new Date(feishuConfig.nextSyncTimestamp).toISOString();
+      const profiles = typeof getProfilesFn === 'function' ? getProfilesFn() : [];
       const res = await executeFeishuSync(feishuConfig, profiles, onSaveAndBroadcast);
       console.log(`[FeishuSync] Auto sync finished:`, res);
     } catch (err) {

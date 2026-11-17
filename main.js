@@ -3660,7 +3660,11 @@ async function importConfigFromFile(filePath) {
         },
       };
       if (state.feishu.autoSync) {
-        setupFeishuAutoSync(state.feishu, () => state.profiles, () => saveState());
+        setupFeishuAutoSync(state.feishu, () => state.profiles, () => {
+          saveState();
+          buildTrayMenu();
+          broadcastAccountChange();
+        });
       }
     }
 
@@ -4862,6 +4866,23 @@ app.whenReady().then(async () => {
       saveState();
       buildTrayMenu();
       broadcastAccountChange();
+    });
+  }
+  if (powerMonitor && typeof powerMonitor.on === 'function') {
+    powerMonitor.on('resume', () => {
+      console.log('[System] Power resumed, checking Feishu auto sync status...');
+      if (state.feishu && state.feishu.enabled && state.feishu.autoSync) {
+        const lastSync = state.feishu.lastSyncTime ? new Date(state.feishu.lastSyncTime).getTime() : 0;
+        const intervalMs = Math.max(1, parseInt(state.feishu.syncIntervalMinutes, 10) || 5) * 60 * 1000;
+        if (!lastSync || (Date.now() - lastSync >= intervalMs)) {
+          console.log('[FeishuSync] Interval elapsed during sleep, triggering catch-up sync.');
+          executeFeishuSync(state.feishu, state.profiles, () => {
+            saveState();
+            buildTrayMenu();
+            broadcastAccountChange();
+          }).catch((e) => console.warn('[FeishuSync] Resume sync failed:', e.message));
+        }
+      }
     });
   }
   app.on('browser-window-focus', () => recordUserActivity());

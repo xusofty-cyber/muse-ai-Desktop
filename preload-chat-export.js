@@ -1611,31 +1611,32 @@ function injectExportButton() {}
         width: 36px;
         height: 36px;
         pointer-events: none;
-        z-index: 1;
+        z-index: 2;
+        overflow: visible;
       }
       .acct-dock-ring-bg {
-        stroke: rgba(255, 255, 255, 0.16);
+        stroke: rgba(255, 255, 255, 0.22);
       }
       .acct-dock-ring-progress {
         transition: stroke-dashoffset 0.4s ease, stroke 0.3s ease;
       }
       [data-ui-theme="light"] .acct-dock-ring-bg {
-        stroke: rgba(0, 0, 0, 0.12) !important;
+        stroke: rgba(0, 0, 0, 0.16) !important;
       }
       .acct-dock-avatar {
         position: relative;
-        width: 28px;
-        height: 28px;
+        width: 25px;
+        height: 25px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         color: #fff;
-        font-size: 11.5px;
+        font-size: 11px;
         font-weight: 600;
-        z-index: 2;
-        transition: box-shadow 0.2s ease;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+        z-index: 1;
+        transition: box-shadow 0.2s ease, transform 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
       }
       .acct-dock-item:active {
         cursor: grabbing;
@@ -1673,7 +1674,16 @@ function injectExportButton() {}
         transform: scale(1.15) translateY(-2px);
       }
       .acct-dock-item.active .acct-dock-avatar {
-        box-shadow: 0 0 0 1.5px #fff, 0 2px 8px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9), 0 2px 6px rgba(0, 0, 0, 0.5);
+      }
+      .acct-dock-item.active .acct-dock-ring {
+        filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.55));
+      }
+      .acct-dock-item.active .acct-dock-ring-bg {
+        stroke: rgba(255, 255, 255, 0.38) !important;
+      }
+      [data-ui-theme="light"] .acct-dock-item.active .acct-dock-ring-bg {
+        stroke: rgba(0, 0, 0, 0.28) !important;
       }
       .acct-dock-item.switching {
         animation: acctItemPulse 0.8s ease-in-out infinite alternate !important;
@@ -2536,8 +2546,14 @@ function injectExportButton() {}
     const feishuConfigBtn = document.createElement('button');
     feishuConfigBtn.className = 'hub-btn hub-btn-default';
     feishuConfigBtn.type = 'button';
-    feishuConfigBtn.title = t.feishuSyncSettings;
-    feishuConfigBtn.innerHTML = '<span>⚙️ 飞书配置</span>';
+    const isAutoSyncOn = dockState.feishu && dockState.feishu.enabled && dockState.feishu.autoSync;
+    const intervalMins = (dockState.feishu && dockState.feishu.syncIntervalMinutes) || 5;
+    feishuConfigBtn.title = isAutoSyncOn
+      ? `${t.feishuSyncSettings} (后台自动轮询中: 每 ${intervalMins} 分钟刷新)`
+      : t.feishuSyncSettings;
+    feishuConfigBtn.innerHTML = isAutoSyncOn
+      ? `<span>⚙️ 飞书配置</span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#10b981;margin-left:4px;" title="自动轮询中: 每 ${intervalMins} 分钟"></span>`
+      : '<span>⚙️ 飞书配置</span>';
     feishuConfigBtn.onclick = () => openFeishuSettingsModal();
 
     // 按重置时间升序排序按钮 (从早到晚，Dock 从左到右)
@@ -2739,7 +2755,8 @@ function injectExportButton() {}
         const usagePercent = typeof p.usagePercent === 'number' ? p.usagePercent : 0;
         const usageHead = document.createElement('div');
         usageHead.className = 'hub-usage-head';
-        usageHead.innerHTML = `<span class="hub-usage-title">📊 ${t.usageLabel}</span><span class="hub-usage-stat">${p.usageText ? p.usageText : `${usagePercent}%`}</span>`;
+        const displayUsage = p.usageText ? (p.usageText.includes('%') ? p.usageText : `${usagePercent}%`) : `${usagePercent}%`;
+        usageHead.innerHTML = `<span class="hub-usage-title">📊 ${t.usageLabel}</span><span class="hub-usage-stat">${displayUsage}</span>`;
 
         const track = document.createElement('div');
         track.className = 'hub-progress-track';
@@ -3504,11 +3521,23 @@ function injectExportButton() {}
     card.className = 'acct-modal-card';
     card.style.width = '480px';
     card.style.maxHeight = '85vh';
-    card.style.overflowY = 'auto';
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+    card.style.overflow = 'hidden';
 
     const titleEl = document.createElement('div');
     titleEl.className = 'acct-modal-title';
     titleEl.textContent = t.feishuSyncSettings;
+    titleEl.style.flexShrink = '0';
+    titleEl.style.marginBottom = '12px';
+
+    const bodyScroll = document.createElement('div');
+    bodyScroll.style.flex = '1';
+    bodyScroll.style.overflowY = 'auto';
+    bodyScroll.style.paddingRight = '6px';
+    bodyScroll.style.display = 'flex';
+    bodyScroll.style.flexDirection = 'column';
+    bodyScroll.style.gap = '2px';
 
     let cfg = {};
     try {
@@ -3536,7 +3565,7 @@ function injectExportButton() {}
     cliStatusBox.style.background = 'rgba(16, 185, 129, 0.15)';
     cliStatusBox.style.color = '#34d399';
     cliStatusBox.style.border = '1px solid rgba(16, 185, 129, 0.25)';
-    cliStatusBox.style.marginBottom = '12px';
+    cliStatusBox.style.marginBottom = '8px';
     cliStatusBox.style.display = 'flex';
     cliStatusBox.style.alignItems = 'center';
     cliStatusBox.style.gap = '8px';
@@ -3571,13 +3600,21 @@ function injectExportButton() {}
     sortCheck.checked = cfg.sortByResetTime !== false;
     sortRow.appendChild(sortCheck);
 
-    const intervalF = createField(t.feishuInterval, cfg.syncIntervalMinutes || 30, '30', 'number');
+    const intervalF = createField(t.feishuInterval, cfg.syncIntervalMinutes || 5, '5', 'number');
+
+    const intervalTip = document.createElement('div');
+    intervalTip.style.fontSize = '11px';
+    intervalTip.style.color = '#38bdf8';
+    intervalTip.style.marginTop = '-6px';
+    intervalTip.style.marginBottom = '6px';
+    intervalTip.style.lineHeight = '1.4';
+    intervalTip.textContent = '💡 开启后后台定时自动拉取飞书最新用量与重置时间，并实时驱动底部切换栏 (Dock) 使用环与智能排序。';
 
     // 字段映射折叠区
     const fMapTitle = document.createElement('div');
     fMapTitle.style.fontSize = '12px';
     fMapTitle.style.fontWeight = '600';
-    fMapTitle.style.marginTop = '12px';
+    fMapTitle.style.marginTop = '10px';
     fMapTitle.style.color = '#38bdf8';
     fMapTitle.textContent = `📋 ${t.feishuFieldMap}`;
 
@@ -3591,15 +3628,20 @@ function injectExportButton() {}
     const statusBox = document.createElement('div');
     statusBox.style.fontSize = '11px';
     statusBox.style.color = '#94a3b8';
-    statusBox.style.margin = '10px 0';
-    statusBox.style.padding = '8px';
+    statusBox.style.margin = '8px 0';
+    statusBox.style.padding = '8px 10px';
     statusBox.style.background = 'rgba(0, 0, 0, 0.25)';
     statusBox.style.borderRadius = '6px';
+    statusBox.style.lineHeight = '1.4';
     statusBox.textContent = cfg.lastSyncStatus || '尚未同步过多维表格数据';
 
-    // 底部操作
+    // 底部常驻吸底操作栏 (固定在弹窗底部，绝不被表单滚动遮盖)
     const actions = document.createElement('div');
     actions.className = 'acct-modal-actions';
+    actions.style.flexShrink = '0';
+    actions.style.marginTop = '10px';
+    actions.style.paddingTop = '10px';
+    actions.style.borderTop = '1px solid rgba(255, 255, 255, 0.12)';
 
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'acct-modal-btn cancel';
@@ -3610,6 +3652,7 @@ function injectExportButton() {}
     saveAndSyncBtn.className = 'acct-modal-btn confirm';
     saveAndSyncBtn.textContent = '保存并立即同步';
     saveAndSyncBtn.onclick = async () => {
+      const minutesVal = Math.max(1, parseInt(intervalF.input.value, 10) || 5);
       const newConfig = {
         enabled: true,
         syncMode: 'auto',
@@ -3619,7 +3662,7 @@ function injectExportButton() {}
         tableId: tableF.input.value.trim(),
         autoSync: autoCheck.checked,
         sortByResetTime: sortCheck.checked,
-        syncIntervalMinutes: parseInt(intervalF.input.value, 10) || 30,
+        syncIntervalMinutes: minutesVal,
         fieldMap: {
           name: mapNameF.input.value.trim() || '账号名称',
           purpose: mapPurposeF.input.value.trim() || '主要用途',
@@ -3634,7 +3677,7 @@ function injectExportButton() {}
       try {
         const res = await ipcRenderer.invoke('feishu:sync-now');
         if (res && res.ok) {
-          showToast(`飞书同步成功：匹配更新 ${res.updatedProfiles} 个账号`);
+          showToast(`飞书配置已生效并完成同步：更新 ${res.updatedProfiles} 个账号`);
         } else {
           showToast(`飞书同步提示: ${(res && res.error) || '未知错误'}`);
         }
@@ -3648,20 +3691,24 @@ function injectExportButton() {}
     actions.appendChild(cancelBtn);
     actions.appendChild(saveAndSyncBtn);
 
+    bodyScroll.appendChild(cliStatusBox);
+    bodyScroll.appendChild(appIdF.row);
+    bodyScroll.appendChild(secretF.row);
+    bodyScroll.appendChild(tokenF.row);
+    bodyScroll.appendChild(tableF.row);
+    bodyScroll.appendChild(autoRow);
+    bodyScroll.appendChild(sortRow);
+    bodyScroll.appendChild(intervalF.row);
+    bodyScroll.appendChild(intervalTip);
+    bodyScroll.appendChild(fMapTitle);
+    bodyScroll.appendChild(mapNameF.row);
+    bodyScroll.appendChild(mapPurposeF.row);
+    bodyScroll.appendChild(mapUsageF.row);
+    bodyScroll.appendChild(mapResetF.row);
+    bodyScroll.appendChild(statusBox);
+
     card.appendChild(titleEl);
-    card.appendChild(cliStatusBox);
-    card.appendChild(appIdF.row);
-    card.appendChild(secretF.row);
-    card.appendChild(tokenF.row);
-    card.appendChild(tableF.row);
-    card.appendChild(autoRow);
-    card.appendChild(intervalF.row);
-    card.appendChild(fMapTitle);
-    card.appendChild(mapNameF.row);
-    card.appendChild(mapPurposeF.row);
-    card.appendChild(mapUsageF.row);
-    card.appendChild(mapResetF.row);
-    card.appendChild(statusBox);
+    card.appendChild(bodyScroll);
     card.appendChild(actions);
 
     overlay.appendChild(card);
@@ -3921,16 +3968,20 @@ function injectExportButton() {}
         }, 50);
       }
 
-      // 用量外环计算 (SVG 环形进度条，半径 16，周长 100.53)
+      // 用量外环计算 (SVG 环形进度条，半径 15.2，周长 95.50，描边 2.6)
       const pct = Math.max(0, Math.min(100, typeof p.usagePercent === 'number' ? p.usagePercent : 0));
       let ringColor = '#10b981'; // 默认健康翠绿 (<70%)
+      let glowFilter = '';
       if (pct >= 90) {
         ringColor = '#ef4444'; // 严重耗尽/用满 (>=90%)
+        if (pct >= 95) glowFilter = 'filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.7));';
       } else if (pct >= 70) {
         ringColor = '#f59e0b'; // 适中偏高告警 (70%~89%)
       }
-      const circumference = 100.53; // 2 * PI * 16
-      const strokeOffset = +(circumference * (1 - pct / 100)).toFixed(2);
+      const radius = 15.2;
+      const circumference = +(2 * Math.PI * radius).toFixed(2); // 95.50
+      // 0% 时不展示进度段（底环完整显露）；非 0% 时保证按比例并带圆润线帽
+      const strokeOffset = pct === 0 ? circumference : +(circumference * (1 - pct / 100)).toFixed(2);
 
       const ringSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       ringSvg.setAttribute('class', 'acct-dock-ring');
@@ -3944,16 +3995,16 @@ function injectExportButton() {}
       ringSvg.style.height = '36px';
       ringSvg.style.pointerEvents = 'none';
       ringSvg.innerHTML = `
-        <circle class="acct-dock-ring-bg" cx="18" cy="18" r="16" stroke-width="2.2" fill="none" />
-        <circle class="acct-dock-ring-progress" cx="18" cy="18" r="16" stroke-width="2.2" stroke="${ringColor}" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${strokeOffset}" fill="none" transform="rotate(-90 18 18)" />
+        <circle class="acct-dock-ring-bg" cx="18" cy="18" r="${radius}" stroke-width="2.6" fill="none" />
+        <circle class="acct-dock-ring-progress" cx="18" cy="18" r="${radius}" stroke-width="2.6" stroke="${ringColor}" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${strokeOffset}" fill="none" transform="rotate(-90 18 18)" style="${glowFilter}" />
       `;
       item.appendChild(ringSvg);
 
-      // 内层账号圆形头像 (28px 直径，居中陈列)
+      // 内层账号圆形头像 (25px 直径，居中陈列，与外圈 30.4px 环保留 1.4px 间隙，形成悬浮活动环)
       const avatar = document.createElement('div');
       avatar.className = 'acct-dock-avatar';
-      avatar.style.width = '28px';
-      avatar.style.height = '28px';
+      avatar.style.width = '25px';
+      avatar.style.height = '25px';
       avatar.style.borderRadius = '50%';
       avatar.style.backgroundColor = p.color || '#3b82f6';
       avatar.textContent = getInitials(p.name);
@@ -4003,7 +4054,10 @@ function injectExportButton() {}
       usageRow.style.display = 'flex';
       usageRow.style.alignItems = 'center';
       usageRow.style.gap = '5px';
-      usageRow.innerHTML = `<span>用量: ${p.usageText || (pct + '%')}</span>`;
+      const usageIcon = pct >= 90 ? '🔴' : (pct >= 70 ? '🟡' : '🟢');
+      const usageNote = pct >= 95 ? ' (额度耗尽)' : (pct === 0 ? ' (额度充沛)' : '');
+      const displayUsageText = p.usageText ? (p.usageText.includes('%') ? p.usageText : `${pct}%`) : `${pct}%`;
+      usageRow.innerHTML = `<span>${usageIcon}</span><span>用量: ${displayUsageText}${usageNote}</span>`;
       tooltip.appendChild(usageRow);
 
       // 独立重置时间行 (光标悬停在切换框时高亮突出显示)
