@@ -6,11 +6,24 @@
 
 ## 一、当前任务概览
 
-- **关联需求 / 分支**：`main` 分支（临时修复分支 `fix/feishu-auto-sync-and-dock-ring` 已完成验证并 Fast-forward 合并）
+- **关联需求 / 分支**：`main` 分支（临时修复分支 `fix/window-multiscreen-jump-and-dock-scroll` 已完成验证并 Fast-forward 合并）
 - **最新发版状态**：
-  - 本地 `main` 与远端 `origin/main` 保持一致（Commit `1da85c4`）
-  - 远端标签 `v1.5.30` 已成功推送，自动触发 GitHub Actions 多平台构建与 Release 发布工作流
+  - 本地 `main` 与远端 `origin/main` 保持一致（Commit `77f3bd8`）
+  - 远端标签 `v1.5.31` 已成功推送，自动触发 GitHub Actions 多平台构建与 Release 发布工作流
 - **核心问题与最新进展**：
+  1. **问题 1（切换账号时窗口移位与多屏跨屏溢出）根因与彻底修复 (`main.js`)**：
+     - **问题根因**：Windows 底层最大化时 `getBounds()` 带有外扩边框（-8px），切换窗口时直接赋给未最大化窗口，且没有调用 `maximize()`，导致多余的 16px 宽度穿透绘制到副屏；副屏窗口若触发边界检查又被旧版兜底错误居中甩回主屏；
+     - **修复方案**：`switchAccount` 提取 `wasMaximized`、`targetDisplay` 与普通窗口 `normalBounds`，新增 `syncWindowStateAndBounds` 在屏幕工作区内精准锁定并恢复最大化，`ensureBoundsVisible` 增加 `preferredDisplay` 避免副屏跳回主屏，`showWindowSafely` 禁止最大化窗口调用 `setBounds`。
+  2. **问题 2（Dock 账号项自动向左移动隐藏）根因与彻底修复 (`preload-chat-export.js`)**：
+     - **问题根因**：激活账号项在渲染时执行了 `item.scrollIntoView(...)`，强行导致父容器 `list.scrollLeft` 增加，将前面的账号挤出视口；
+     - **修复方案**：彻底移除 `item.scrollIntoView`，增加局部安全滚动守卫（账号项能完全放下时强制 `scrollLeft = 0`，账号超长时仅在 `list` 内部安全滑动）。
+  - **最新验证证据 (v1.5.31)**：
+    - `scratch/test-window-multiscreen-and-dock-scroll.js`：专项单测全部 PASS；
+    - `scratch/test-feishu-auto-sync-and-ring.js`：专用单测全部 PASS；
+    - `scratch/test-account-hub-and-feishu.js`：7 组单测全部 PASS；
+    - `scratch/test-feishu-sort.js`：全部 PASS；
+    - `scratch/test-backup-restore.js`：全部 PASS；
+    - 静态语法检查 `node -c main.js preload-chat-export.js feishu-sync.js` 0 错误。
   1. **飞书后台定时自动轮询未更新根因彻底修复 (`feishu-sync.js` / `main.js`)**：
      - **问题根因**：
        1. 以前 `setupFeishuAutoSync` 硬编码了 `Math.max(5, syncIntervalMinutes || 30)`，如果用户未明确修改则默认 30 分钟，且限制了最小 5 分钟，导致配置 1~3 分钟失效；
