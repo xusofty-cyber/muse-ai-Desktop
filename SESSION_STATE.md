@@ -8,8 +8,8 @@
 
 - **关联需求 / 分支**：`main` 分支（临时修复分支 `fix/feishu-auto-sync-and-dock-ring` 已完成验证并 Fast-forward 合并）
 - **最新发版状态**：
-  - 本地 `main` 包含最新修复提交 Commit `3a7bc2b`
-  - 待用户确认后可推送到远端 `origin/main` 并打标签发布新版
+  - 本地 `main` 与远端 `origin/main` 保持一致（Commit `1da85c4`）
+  - 远端标签 `v1.5.30` 已成功推送，自动触发 GitHub Actions 多平台构建与 Release 发布工作流
 - **核心问题与最新进展**：
   1. **飞书后台定时自动轮询未更新根因彻底修复 (`feishu-sync.js` / `main.js`)**：
      - **问题根因**：
