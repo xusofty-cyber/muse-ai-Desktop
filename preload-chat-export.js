@@ -1571,14 +1571,18 @@ function injectExportButton() {}
         flex-shrink: 0;
       }
       .acct-dock-list {
+        /* 作为账号元素的定位参照, 让 offsetLeft 相对列表本身计算 (2026-11-22 修复切换账号时整体左移) */
+        position: relative;
         display: flex;
         flex-direction: row;
         align-items: center;
-        gap: 8px;
+        /* 账号间距收紧 (2026-11-22): 原 36px 格子 + 8px 间距 = 每个账号 44px; 现 34px + 3px = 37px,
+           同样宽度可多放约 19% 的账号。外环与头像本身尺寸不变 */
+        gap: 3px;
         max-width: calc(100vw - 180px);
         overflow-x: auto;
         overflow-y: hidden;
-        padding: 4px 2px;
+        padding: 4px 3px;
         scrollbar-width: none !important;
         -ms-overflow-style: none !important;
         flex: 0 1 auto;
@@ -1591,8 +1595,8 @@ function injectExportButton() {}
       }
       .acct-dock-item {
         position: relative;
-        width: 36px;
-        height: 36px;
+        width: 34px;
+        height: 34px;
         border-radius: 50%;
         display: flex;
         align-items: center;
@@ -1608,8 +1612,8 @@ function injectExportButton() {}
         position: absolute;
         top: 0;
         left: 0;
-        width: 36px;
-        height: 36px;
+        width: 34px;
+        height: 34px;
         pointer-events: none;
         z-index: 2;
         overflow: visible;
@@ -1659,10 +1663,10 @@ function injectExportButton() {}
         z-index: 2147483646;
       }
       .acct-dock-drop-indicator.left {
-        left: -4px;
+        left: -3px;
       }
       .acct-dock-drop-indicator.right {
-        right: -4px;
+        right: -3px;
       }
       .acct-dock-item.drop-target-before > .acct-dock-drop-indicator.left {
         display: block;
@@ -1673,11 +1677,50 @@ function injectExportButton() {}
       .acct-dock-item:hover {
         transform: scale(1.15) translateY(-2px);
       }
+      /* 当前账号更醒目 (2026-11-22): ① 其他账号调暗 ② 当前账号蓝色光晕 ③ 头像下方蓝色指示条 */
+      .acct-dock-item:not(.active) .acct-dock-avatar,
+      .acct-dock-item:not(.active) .acct-dock-ring {
+        opacity: 0.6;
+        filter: saturate(0.7);
+        transition: opacity 0.15s ease, filter 0.15s ease;
+      }
+      .acct-dock-item:not(.active):hover .acct-dock-avatar,
+      .acct-dock-item:not(.active):hover .acct-dock-ring,
+      .acct-dock-item.switching .acct-dock-avatar,
+      .acct-dock-item.switching .acct-dock-ring {
+        opacity: 1;
+        filter: none;
+      }
       .acct-dock-item.active .acct-dock-avatar {
-        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9), 0 2px 6px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.95), 0 0 10px 3px rgba(96, 165, 250, 0.85), 0 2px 6px rgba(0, 0, 0, 0.5);
+        font-weight: 700;
       }
       .acct-dock-item.active .acct-dock-ring {
-        filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.55));
+        filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.9));
+      }
+      .acct-dock-item.active::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        bottom: -4px;
+        width: 16px;
+        height: 3px;
+        transform: translateX(-50%);
+        border-radius: 2px;
+        background: #60a5fa;
+        box-shadow: 0 0 6px rgba(96, 165, 250, 0.9);
+        pointer-events: none;
+        z-index: 3;
+      }
+      [data-ui-theme="light"] .acct-dock-item.active .acct-dock-avatar {
+        box-shadow: 0 0 0 1px #ffffff, 0 0 10px 3px rgba(37, 99, 235, 0.55), 0 2px 6px rgba(0, 0, 0, 0.25);
+      }
+      [data-ui-theme="light"] .acct-dock-item.active .acct-dock-ring {
+        filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.6));
+      }
+      [data-ui-theme="light"] .acct-dock-item.active::before {
+        background: #2563eb;
+        box-shadow: 0 0 6px rgba(37, 99, 235, 0.6);
       }
       .acct-dock-item.active .acct-dock-ring-bg {
         stroke: rgba(255, 255, 255, 0.38) !important;
@@ -1694,7 +1737,8 @@ function injectExportButton() {}
       }
       .acct-dock-item.switching .acct-dock-ring-progress {
         animation: acctRingRotate 1s linear infinite !important;
-        transform-origin: 18px 18px !important;
+        transform-box: fill-box !important;
+        transform-origin: center !important;
         stroke: #818cf8 !important;
         stroke-dasharray: 40, 60 !important;
       }
@@ -1741,6 +1785,11 @@ function injectExportButton() {}
         align-items: center;
         gap: 6px;
         z-index: 2147483645;
+      }
+      /* 列表里的悬浮提示被列表的滚动裁剪区挡住, 本来就看不见 (显示的是原生 title 提示),
+         但仍参与排版, 会把列表可滚动宽度撑大约半个提示框, 导致可以滚进右侧空白 (2026-11-22) */
+      .acct-dock-list .acct-dock-tooltip {
+        display: none !important;
       }
       .acct-dock-item:hover .acct-dock-tooltip,
       .acct-dock-hub-btn:hover .acct-dock-tooltip {
@@ -2474,7 +2523,7 @@ function injectExportButton() {}
       try {
         const res = await ipcRenderer.invoke('config:export');
         if (res && res.ok) {
-          showToast(`已成功导出 ${res.profileCount} 个账号与代理配置！`);
+          showToast(`已导出 ${res.profileCount} 个账号与代理设置（不含登录信息与密钥；完整加密备份请到 设置 > 备份）`);
         } else if (res && !res.canceled) {
           showToast(`导出失败: ${res.error || '未知错误'}`);
         }
@@ -2679,18 +2728,35 @@ function injectExportButton() {}
         // 卡片内容：主要用途与 Token 重置
         const metaBox = document.createElement('div');
         metaBox.className = 'hub-card-meta';
+        // 值存在时按纯文本显示, 否则显示灰色斜体占位文字
+        const metaValue = (value, placeholder) => {
+          const val = document.createElement('span');
+          val.className = 'hub-meta-val';
+          if (value) {
+            val.textContent = String(value);
+          } else {
+            const em = document.createElement('span');
+            em.style.cssText = 'color:#64748b;font-style:italic;';
+            em.textContent = placeholder;
+            val.appendChild(em);
+          }
+          return val;
+        };
 
         // 主要用途
         const purposeRow = document.createElement('div');
         purposeRow.className = 'hub-meta-row';
-        purposeRow.innerHTML = `<span class="hub-meta-label">📌 ${t.purposeLabel}:</span><span class="hub-meta-val">${p.purpose ? p.purpose : `<span style="color:#64748b;font-style:italic;">${t.noPurpose}</span>`}</span>`;
+        // 用途/用量/重置时间来自飞书表格或导入的备份, 一律按纯文本显示, 不拼进 HTML (2026-11-22 审查 H1)
+        purposeRow.innerHTML = `<span class="hub-meta-label">📌 ${t.purposeLabel}:</span>`;
+        purposeRow.appendChild(metaValue(p.purpose, t.noPurpose));
         metaBox.appendChild(purposeRow);
 
         // 重置倒计时
         const resetRow = document.createElement('div');
         resetRow.className = 'hub-meta-row';
         const displayReset = p.tokenResetAt ? formatDateTime(p.tokenResetAt) : '';
-        resetRow.innerHTML = `<span class="hub-meta-label">⏳ ${t.tokenResetLabel}:</span><span class="hub-meta-val">${displayReset ? displayReset : `<span style="color:#64748b;font-style:italic;">${t.noResetInfo}</span>`}</span>`;
+        resetRow.innerHTML = `<span class="hub-meta-label">⏳ ${t.tokenResetLabel}:</span>`;
+        resetRow.appendChild(metaValue(displayReset, t.noResetInfo));
         metaBox.appendChild(resetRow);
 
         // 代理模式与出口队列
@@ -2756,7 +2822,11 @@ function injectExportButton() {}
         const usageHead = document.createElement('div');
         usageHead.className = 'hub-usage-head';
         const displayUsage = p.usageText ? (p.usageText.includes('%') ? p.usageText : `${usagePercent}%`) : `${usagePercent}%`;
-        usageHead.innerHTML = `<span class="hub-usage-title">📊 ${t.usageLabel}</span><span class="hub-usage-stat">${displayUsage}</span>`;
+        usageHead.innerHTML = `<span class="hub-usage-title">📊 ${t.usageLabel}</span>`;
+        const usageStat = document.createElement('span');
+        usageStat.className = 'hub-usage-stat';
+        usageStat.textContent = displayUsage;
+        usageHead.appendChild(usageStat);
 
         const track = document.createElement('div');
         track.className = 'hub-progress-track';
@@ -3200,13 +3270,17 @@ function injectExportButton() {}
       <div style="font-size:11px; color:#a5b4fc; margin-bottom:4px; font-weight:600;">独立代理服务器地址:</div>
       <div style="display:flex; gap:6px; align-items:center;">
         <select id="acct-custom-type" style="background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 6px; border-radius:4px; font-size:11px;">
-          <option value="http"${(currentCustom.type === 'http') ? ' selected' : ''}>HTTP</option>
-          <option value="socks5"${(currentCustom.type === 'socks5') ? ' selected' : ''}>SOCKS5</option>
+          <option value="http">HTTP</option>
+          <option value="socks5">SOCKS5</option>
         </select>
-        <input type="text" id="acct-custom-host" value="${currentCustom.host || '127.0.0.1'}" placeholder="127.0.0.1" style="flex:1; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 6px; border-radius:4px; font-size:11px;">
-        <input type="number" id="acct-custom-port" value="${currentCustom.port || 7897}" placeholder="7897" style="width:70px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 6px; border-radius:4px; font-size:11px;">
+        <input type="text" id="acct-custom-host" placeholder="127.0.0.1" style="flex:1; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 6px; border-radius:4px; font-size:11px;">
+        <input type="number" id="acct-custom-port" placeholder="7897" style="width:70px; background:#23262e; border:1px solid #3a3f4b; color:#e8eaf0; padding:4px 6px; border-radius:4px; font-size:11px;">
       </div>
     `;
+    // 代理地址可能来自导入的备份: 通过属性赋值, 不拼进 HTML (2026-11-22 审查 H1)
+    customConfigWrap.querySelector('#acct-custom-type').value = currentCustom.type === 'socks5' ? 'socks5' : 'http';
+    customConfigWrap.querySelector('#acct-custom-host').value = String(currentCustom.host || '127.0.0.1');
+    customConfigWrap.querySelector('#acct-custom-port').value = String(parseInt(currentCustom.port, 10) || 7897);
     proxyModeRow.appendChild(customConfigWrap);
 
     // 6. 专属代理出口队列 (Mihomo)
@@ -3934,7 +4008,7 @@ function injectExportButton() {}
     list.addEventListener('wheel', (e) => {
       if (e.deltaY !== 0) {
         e.preventDefault();
-        list.scrollLeft += e.deltaY;
+        list.scrollLeft = Math.min(list.scrollLeft + e.deltaY, maxListScroll());
       }
     }, { passive: false });
 
@@ -3955,8 +4029,8 @@ function injectExportButton() {}
       const item = document.createElement('div');
       item.className = 'acct-dock-item';
       item.style.position = 'relative';
-      item.style.width = '36px';
-      item.style.height = '36px';
+      item.style.width = '34px';
+      item.style.height = '34px';
       item.style.flexShrink = '0';
       if (dockState.switchingTargetId === p.id) {
         item.classList.add('switching');
@@ -3982,14 +4056,15 @@ function injectExportButton() {}
 
       const ringSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       ringSvg.setAttribute('class', 'acct-dock-ring');
-      ringSvg.setAttribute('viewBox', '0 0 36 36');
-      ringSvg.setAttribute('width', '36');
-      ringSvg.setAttribute('height', '36');
+      // 只裁掉外环外侧的空白: 视口取 (1,1)-(35,35), 外环 (直径 33) 与头像按 1:1 显示, 尺寸不变
+      ringSvg.setAttribute('viewBox', '1 1 34 34');
+      ringSvg.setAttribute('width', '34');
+      ringSvg.setAttribute('height', '34');
       ringSvg.style.position = 'absolute';
       ringSvg.style.top = '0';
       ringSvg.style.left = '0';
-      ringSvg.style.width = '36px';
-      ringSvg.style.height = '36px';
+      ringSvg.style.width = '34px';
+      ringSvg.style.height = '34px';
       ringSvg.style.pointerEvents = 'none';
       ringSvg.innerHTML = `
         <circle class="acct-dock-ring-bg" cx="18" cy="18" r="${radius}" stroke-width="2.6" fill="none" />
@@ -4054,7 +4129,11 @@ function injectExportButton() {}
       const usageIcon = pct >= 90 ? '🔴' : (pct >= 70 ? '🟡' : '🟢');
       const usageNote = pct >= 95 ? ' (额度耗尽)' : (pct === 0 ? ' (额度充沛)' : '');
       const displayUsageText = p.usageText ? (p.usageText.includes('%') ? p.usageText : `${pct}%`) : `${pct}%`;
-      usageRow.innerHTML = `<span>${usageIcon}</span><span>用量: ${displayUsageText}${usageNote}</span>`;
+      const usageIconEl = document.createElement('span');
+      usageIconEl.textContent = usageIcon;
+      const usageTextEl = document.createElement('span');
+      usageTextEl.textContent = `用量: ${displayUsageText}${usageNote}`;
+      usageRow.append(usageIconEl, usageTextEl);
       tooltip.appendChild(usageRow);
 
       // 独立重置时间行 (光标悬停在切换框时高亮突出显示)
@@ -4068,7 +4147,17 @@ function injectExportButton() {}
       const countdown = p.tokenResetAt ? formatResetCountdown(p.tokenResetAt) : '';
       if (displayReset) {
         resetRow.style.color = '#38bdf8';
-        resetRow.innerHTML = `<span>⏱️</span><span>重置: ${displayReset}</span>${countdown ? `<span style="opacity:0.8;font-size:10px;margin-left:2px;">(${countdown})</span>` : ''}`;
+        const resetIconEl = document.createElement('span');
+        resetIconEl.textContent = '⏱️';
+        const resetTextEl = document.createElement('span');
+        resetTextEl.textContent = `重置: ${displayReset}`;
+        resetRow.append(resetIconEl, resetTextEl);
+        if (countdown) {
+          const cdEl = document.createElement('span');
+          cdEl.style.cssText = 'opacity:0.8;font-size:10px;margin-left:2px;';
+          cdEl.textContent = `(${countdown})`;
+          resetRow.appendChild(cdEl);
+        }
       } else {
         resetRow.style.color = 'rgba(255, 255, 255, 0.4)';
         resetRow.innerHTML = `<span>⏱️</span><span>重置: 未同步</span>`;
@@ -4189,6 +4278,19 @@ function injectExportButton() {}
     dockContainer.appendChild(list);
 
     // 账号列表横向位置保护：杜绝 scrollIntoView 导致整条 dock 偏移或左侧账号隐藏
+    // 列表最多只能滚到最后一个账号的右边缘, 任何来源 (滚轮、浏览器自身调整、悬停放大) 都不能滚进右侧空白
+    const maxListScroll = () => {
+      const last = list.lastElementChild;
+      if (!last) return 0;
+      const padRight = parseFloat(getComputedStyle(list).paddingRight) || 0;
+      return Math.max(0, last.offsetLeft + last.offsetWidth + padRight - list.clientWidth);
+    };
+    const clampListScroll = () => {
+      const max = maxListScroll();
+      if (list.scrollLeft > max + 1) list.scrollLeft = max;
+    };
+    list.addEventListener('scroll', clampListScroll, { passive: true });
+
     requestAnimationFrame(() => {
       if (!list || !list.isConnected) return;
       if (list.scrollWidth <= list.clientWidth) {
@@ -4197,16 +4299,18 @@ function injectExportButton() {}
       }
       const activeEl = list.querySelector('.acct-dock-item.active');
       if (activeEl) {
-        const itemLeft = activeEl.offsetLeft;
-        const itemRight = itemLeft + activeEl.offsetWidth;
-        const visibleLeft = list.scrollLeft;
-        const visibleRight = list.scrollLeft + list.clientWidth;
-        if (itemLeft < visibleLeft) {
-          list.scrollLeft = itemLeft;
-        } else if (itemRight > visibleRight) {
-          list.scrollLeft = itemRight - list.clientWidth;
+        // 用屏幕坐标比较, 不受定位参照和悬停缩放影响 (此前 offsetLeft 相对整条 dock,
+        // 多算了左侧按钮区的宽度, 当前账号靠右时会多滚一段, 账号整体左移、右侧空出一块)
+        const margin = 4;
+        const lr = list.getBoundingClientRect();
+        const ar = activeEl.getBoundingClientRect();
+        if (ar.left < lr.left + margin) {
+          list.scrollLeft -= (lr.left + margin) - ar.left;
+        } else if (ar.right > lr.right - margin) {
+          list.scrollLeft += ar.right - (lr.right - margin);
         }
       }
+      clampListScroll();
     });
 
     // 右侧垂直分割线
@@ -4417,6 +4521,8 @@ function injectExportButton() {}
         'l.instagram.com', 'l.messenger.com', 'www.facebook.com', 'facebook.com',
         'out.reddit.com', 'www.youtube.com',
         'muse.ai', 'meta.ai', 'meta.com',
+        // Meta AI / Muse 聊天里的外链会先经过 l.meta.ai/?u=... 中转 (2026-11-22 修复白屏)
+        'l.meta.ai', 'lm.meta.ai', 'l.muse.ai', 'lm.muse.ai', 'l.meta.com', 'lm.meta.com',
       ]);
       if (!REDIRECTOR_HOSTS.has(host) && !REDIRECTOR_HOSTS.has(host.replace(/^www\./, ''))) return null;
       const redirectKeys = ['u', 'url', 'target', 'dest', 'destination', 'link', 'href', 'q'];
@@ -4446,39 +4552,17 @@ function injectExportButton() {}
       const parsed = new URL(rawUrl, window.location.href);
       const pathname = parsed.pathname.toLowerCase();
       const search = parsed.search.toLowerCase();
-      const sharePaths = [
-        '/share',
-        '/s/',
-        '/doc',
-        '/docs',
-        '/d/',
-        '/file',
-        '/files',
-        '/f/',
-        '/artifact',
-        '/artifacts',
-        '/attachment',
-        '/attachments',
-        '/download',
-        '/export',
-        '/preview',
-        '/view',
-        '/v/',
-        '/p/',
-      ];
-      if (sharePaths.some((p) => pathname.includes(p))) {
-        return true;
-      }
-      if (
-        search.includes('share=') ||
-        search.includes('token=') ||
-        search.includes('key=') ||
-        search.includes('expires=') ||
-        search.includes('signature=') ||
-        search.includes('sig=')
-      ) {
-        return true;
-      }
+      // [LINK-RULES:share] 与 src/link-rules.js 保持一致, 由 scripts/check-link-rules.js 校验
+      // 按完整路径段匹配 (审查 M4): 此前 includes('/doc') 会把 /doctor、/docs 帮助中心等误判为分享链接
+      const segs = pathname.split('/').filter(Boolean);
+      const FIRST_SEGMENTS = ['share', 's', 'doc', 'd', 'file', 'files', 'f', 'p', 'v']; // 仅作为首段时才算
+      const ANY_SEGMENTS = ['artifact', 'artifacts', 'attachment', 'attachments', 'download', 'export', 'preview'];
+      if (segs.length && FIRST_SEGMENTS.includes(segs[0]) && segs.length > 1) return true;
+      if (segs.length && segs[0] === 'share') return true;
+      if (segs.some((s) => ANY_SEGMENTS.includes(s))) return true;
+      // 只认明确的签名/临时资源参数; 去掉过宽的 token= / key=
+      const params = parsed.searchParams;
+      if (['share', 'expires', 'signature', 'sig'].some((k) => params.has(k))) return true;
       return false;
     } catch {
       return false;
@@ -4579,6 +4663,7 @@ function injectExportButton() {}
       }
 
       // 5. 第三方常用开放平台的特定登录/授权路径（普通仓库、主页、文档绝不属于 Auth）
+      // [LINK-RULES:oauth-hosts] 与 src/link-rules.js 保持一致
       const thirdPartyOAuthHosts = [
         'github.com',
         'spotify.com',
@@ -4594,6 +4679,8 @@ function injectExportButton() {}
         'twitter.com',
         'x.com',
         'plaid.com',
+        'functionhealth.com',
+        'healthex.com',
       ];
       if (thirdPartyOAuthHosts.some((h) => host === h || host.endsWith('.' + h))) {
         if (
@@ -4628,11 +4715,12 @@ function injectExportButton() {}
           if (e.target.closest('#acct-dock, #muse-export-btn, [id^="acct-"], input, textarea, select, [contenteditable="true"]')) {
             return;
           }
-          // 导航栏、侧边栏、快捷栏及应用全局框架按钮：坚决不拦截，保证原生应用内点击行为
-          if (e.target.closest('nav, aside, [role="navigation"], [class*="sidebar"], [class*="rail"], [class*="navbar"], [class*="nav-"], [id*="sidebar"], [id*="nav"]')) {
-            return;
-          }
         }
+        // 导航栏、侧边栏、快捷栏等应用框架区域: 其中的站内链接交给网站自己处理 (见下方 isInternalUrl 分支)。
+        // 2026-11-22 修复: 此前这里直接 return, 连站外链接也不拦, 结果点击后页面开始整体跳转,
+        // 再由主进程 will-navigate 中途取消, 网站已开始卸载页面, 窗口只剩空白。站外链接现在一律在点击时拦下。
+        const inAppChrome = !!(e.target && e.target.closest &&
+          e.target.closest('nav, aside, [role="navigation"], [class*="sidebar"], [class*="rail"], [class*="navbar"], [class*="nav-"], [id*="sidebar"], [id*="nav"]'));
 
         // 核心守卫：必须确切命中 a 标签、带 data-href/data-url/data-link 的元素或 role="link"
         const anchor = e.target && e.target.closest
@@ -4694,7 +4782,7 @@ function injectExportButton() {}
         // 仅当明确属于分享/文档/产物临时资源（isShareOrDocumentUrl）时才调起外部浏览器；
         // 其余所有常规内部路由（如 /chat, /c/..., /, /settings 等），绝对交由主窗口内部处理，杜绝弹出外部标签页！
         if (isInternalUrl(fullHref)) {
-          if (!isShareOrDocumentUrl(fullHref)) {
+          if (inAppChrome || !isShareOrDocumentUrl(fullHref)) {
             return;
           }
         }

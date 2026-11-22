@@ -54,3 +54,9 @@ scratch/
 bin/mihomo/mihomo*
 !bin/mihomo/.gitkeep
 
+
+# 账号与代理配置备份: 可能含登录会话、飞书 App Secret、订阅 token, 绝不提交 (2026-11-22)
+muse-backup*.json
+
+# 测试运行时产生的临时目录 (2026-11-22)
+test/.tmp-*/

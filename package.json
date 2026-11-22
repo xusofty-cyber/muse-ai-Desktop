@@ -14,6 +14,7 @@
     },
     "files": [
       "main.js",
+      "src/**/*.js",
       "feishu-sync.js",
       "mihomo-manager.js",
       "bin/**/*",
@@ -22,9 +23,14 @@
       "offline.html",
       "preload-chat-export.js",
       "preload-lock.js",
+      "preload-popup.js",
+      "preload-prompt.js",
+      "password-prompt.html",
+      "backup-crypto.js",
       "preload-settings.js",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.bak-*"
     ],
     "asarUnpack": [
       "bin/**/*"
@@ -111,7 +117,10 @@
     "dist:linux": "electron-builder --linux AppImage deb",
     "dist:linux:tar": "electron-builder --linux tar.gz",
     "dist:mac": "electron-builder --mac dmg zip",
-    "start": "electron . --no-sandbox"
+    "start": "electron . --no-sandbox",
+    "check:links": "node scripts/check-link-rules.js",
+    "test:mihomo": "node test/test-embedded-mihomo.js",
+    "test": "npm run check:links && npm run test:mihomo"
   },
-  "version": "1.5.31"
+  "version": "1.5.32"
 }

@@ -435,8 +435,8 @@
         完整备份当前电脑上的全部 17+ 账号配置（包含备注名称、群组分类、用途说明、专属代理出口队列、独立代理模式及所有机场订阅源），更换环境或在新电脑上一键导入即可瞬间恢复。
       </div>
       <div style="margin-bottom:10px; padding:7px 10px; background:#1b1e25; border:1px solid #2d323e; border-radius:6px; display:flex; align-items:center; gap:8px;">
-        <input type="checkbox" id="chk-export-sessions" class="toggle-switch" checked>
-        <label for="chk-export-sessions" style="font-size:12px; color:var(--text-main); cursor:pointer; font-weight:600;">包含各账号免登录会话 (Session Cookies，跨电脑/系统导入直接免重新登录)</label>
+        <input type="checkbox" id="chk-export-sessions" class="toggle-switch">
+        <label for="chk-export-sessions" style="font-size:12px; color:var(--text-main); cursor:pointer; font-weight:600;">完整备份：包含各账号免登录会话、飞书 App Secret 与订阅地址（导出时需设置密码加密；不勾选则只导出不含任何登录信息与密钥的设置）</label>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="action primary" id="btn-export-config" style="flex:1; min-width:160px; font-size:12px; padding:7px 0;">📤 导出所有配置 (.json)</button>
@@ -471,6 +471,46 @@
       </div>
       <div id="tab-mihomo-bin-path-info" style="margin-top:8px; font-size:11px; color:#94a3b8; word-break:break-all; padding:4px 8px; background:#16181d; border-radius:4px; border:1px solid #2d323e; display:none;"></div>
       <div id="tab-mihomo-core-msg" style="margin-top:6px; font-size:11.5px; min-height:16px;"></div>
+      <div style="margin-top:8px; padding:7px 10px; background:#1b1e25; border:1px solid #2d323e; border-radius:6px; display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="chk-mihomo-strict" class="toggle-switch">
+        <label for="chk-mihomo-strict" style="font-size:12px; color:var(--text-main); cursor:pointer; font-weight:600;">严格出口隔离：账号的专属节点全部不可用时直接断网，不回落到公共节点（避免多个账号共用同一出口 IP）</label>
+      </div>
+    </div>
+
+    <!-- 模块 1b: 出口 IP 隔离 (2026-11-22) -->
+    <div class="section-title" id="sec-title-exit-iso">出口 IP 隔离 (Exit IP Isolation)</div>
+    <div class="auto-card">
+      <div style="padding:7px 10px; background:#1b1e25; border:1px solid #2d323e; border-radius:6px; display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+        <input type="checkbox" id="chk-webrtc-protect" class="toggle-switch">
+        <label for="chk-webrtc-protect" style="font-size:12px; color:var(--text-main); cursor:pointer; font-weight:600;">阻止 WebRTC 泄露真实 IP（推荐开启。若语音或视频通话异常，可临时关闭）</label>
+      </div>
+      <div style="font-size:11.5px; color:var(--text-muted); line-height:1.5; margin-bottom:8px;">
+        端口独立不等于出口 IP 独立。先实测，再按实测结果给每个账号分配一个其他账号都不用的出口。检测会经由每个节点访问 ipinfo.io / api.ipify.org 查询出口 IP。
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button type="button" class="action" id="btn-exit-check-accounts" style="flex:1; min-width:150px; font-size:12px; padding:6px 0;">① 检测各账号当前出口</button>
+        <button type="button" class="action" id="btn-exit-probe-nodes" style="flex:1; min-width:150px; font-size:12px; padding:6px 0;">② 测试全部节点出口</button>
+        <button type="button" class="action primary" id="btn-exit-plan" style="flex:1; min-width:150px; font-size:12px; padding:6px 0;" disabled>③ 生成独立出口方案</button>
+      </div>
+      <div style="margin-top:10px; padding:7px 10px; background:#1b1e25; border:1px solid #2d323e; border-radius:6px;">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <input type="checkbox" id="chk-exit-monitor" class="toggle-switch">
+          <label for="chk-exit-monitor" style="font-size:12px; color:var(--text-main); cursor:pointer; font-weight:600;">定期自动检测各账号出口</label>
+          <span style="font-size:12px; color:var(--text-muted);">每</span>
+          <select id="sel-exit-monitor-interval" style="font-size:12px; padding:2px 4px; background:#12141a; color:var(--text-main); border:1px solid #2d323e; border-radius:4px;"></select>
+        </div>
+        <div style="font-size:11px; color:var(--text-muted); margin-top:4px; line-height:1.5;">发现多个账号共用出口、某账号出口 IP 变化，或走 Mihomo 的账号无法联网时发系统通知；同一问题只提醒一次。</div>
+        <div id="exit-monitor-status" style="font-size:11px; color:var(--text-muted); margin-top:4px;"></div>
+      </div>
+      <div id="exit-iso-msg" style="margin-top:8px; font-size:11.5px; min-height:16px;"></div>
+      <div id="exit-iso-result" style="margin-top:6px; max-height:360px; overflow:auto;"></div>
+      <div id="exit-iso-apply" style="display:none; margin-top:8px; padding:8px 10px; background:#1b1e25; border:1px solid #2d323e; border-radius:6px;">
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-main); cursor:pointer; margin-bottom:8px;">
+          <input type="checkbox" id="chk-exit-apply-strict" class="toggle-switch" checked>
+          同时开启严格出口隔离（专属节点全挂时断网，不借用别人的出口）
+        </label>
+        <button type="button" class="action primary" id="btn-exit-apply" style="width:100%; font-size:12px; padding:7px 0;">应用方案</button>
+      </div>
     </div>
 
     <!-- 模块 2: 代理配置源管理 (多订阅与本地导入) -->
@@ -2716,12 +2756,12 @@ const chkExportSessions = document.getElementById('chk-export-sessions');
 if (btnExportConfig) {
   btnExportConfig.onclick = async () => {
     if (!window.backupAPI || !window.backupAPI.exportConfig) return;
-    const includeSessions = chkExportSessions ? chkExportSessions.checked : true;
+    const includeSessions = chkExportSessions ? chkExportSessions.checked : false;
     if (backupMsg) {
       backupMsg.style.color = '#7aa2ff';
       backupMsg.textContent = includeSessions
-        ? '正在导出完整配置及各账号免登录会话凭据...'
-        : '正在导出配置备份...';
+        ? '正在导出加密的完整备份（含免登录会话）...'
+        : '正在导出设置备份（不含登录信息与密钥）...';
     }
     try {
       const res = await window.backupAPI.exportConfig({ includeSessions });
@@ -2731,7 +2771,8 @@ if (btnExportConfig) {
           const sessionInfo = (typeof res.sessionCount === 'number' && res.sessionCount > 0)
             ? `（含 ${res.sessionCount} 个免登录会话）`
             : '';
-          backupMsg.textContent = `已成功导出 ${res.profileCount} 个账号与代理配置${sessionInfo}至: ${res.filePath}`;
+          const encInfo = res.encrypted ? '，已加密' : '（不含登录信息与密钥）';
+          backupMsg.textContent = `已成功导出 ${res.profileCount} 个账号与代理配置${sessionInfo}${encInfo}至: ${res.filePath}`;
         }
       } else if (res && !res.canceled) {
         if (backupMsg) {
@@ -2765,7 +2806,10 @@ if (btnImportConfig) {
           const sessionInfo = (typeof res.restoredSessionCount === 'number' && res.restoredSessionCount > 0)
             ? `，并成功恢复 ${res.restoredSessionCount} 个账号的免登录会话！`
             : '！';
-          backupMsg.textContent = `成功导入 ${res.profileCount} 个账号与代理配置${sessionInfo}`;
+          const extra = [];
+          if (res.skippedProfiles) extra.push(`跳过 ${res.skippedProfiles} 个账号 id 不合法的条目`);
+          if (res.removedProfiles) extra.push(`已关闭 ${res.removedProfiles} 个不在备份中的账号窗口（其数据仍保留在本机）`);
+          backupMsg.textContent = `成功导入 ${res.profileCount} 个账号与代理配置${sessionInfo}${extra.length ? ' ' + extra.join('；') : ''}`;
         }
         await loadProxySettings();
         if (typeof loadMihomoTabState === 'function') {
@@ -3147,6 +3191,181 @@ if (pwdModalOverlay) {
       } catch (e) {}
     });
   }
+})();
+</script>
+<script>
+// 严格出口隔离开关 (2026-11-22 审查 M2)
+(() => {
+  const chk = document.getElementById('chk-mihomo-strict');
+  if (!chk || !window.mihomoAPI) return;
+  window.mihomoAPI.getConfig().then((cfg) => { chk.checked = !!(cfg && cfg.strictIsolation); }).catch(() => {});
+  chk.addEventListener('change', async () => {
+    const msg = document.getElementById('tab-mihomo-core-msg');
+    try {
+      const res = await window.mihomoAPI.setConfig({ strictIsolation: chk.checked });
+      if (msg) {
+        msg.style.color = res && res.ok ? '#7ee2a8' : '#ff9a9a';
+        msg.textContent = res && res.ok
+          ? (chk.checked ? '已开启严格出口隔离' : '已关闭严格出口隔离')
+          : ('保存失败: ' + ((res && res.error) || '未知错误'));
+      }
+    } catch (err) {
+      if (msg) { msg.style.color = '#ff9a9a'; msg.textContent = '保存失败: ' + err.message; }
+    }
+  });
+})();
+</script>
+<script>
+// 出口 IP 检测与独立出口分配 (2026-11-22)。节点名、运营商等来自订阅与第三方服务, 一律用 textContent 渲染。
+(() => {
+  const api = window.exitAPI;
+  const $ = (id) => document.getElementById(id);
+  const msg = $('exit-iso-msg'), box = $('exit-iso-result'), applyBox = $('exit-iso-apply');
+  const btnAcc = $('btn-exit-check-accounts'), btnProbe = $('btn-exit-probe-nodes'), btnPlan = $('btn-exit-plan'), btnApply = $('btn-exit-apply');
+  if (!api || !msg) return;
+  const say = (text, kind) => {
+    msg.style.color = kind === 'err' ? '#ff9a9a' : kind === 'ok' ? '#7ee2a8' : kind === 'warn' ? '#f5c46b' : '#7aa2ff';
+    msg.textContent = text;
+  };
+  const busy = (on) => { [btnAcc, btnProbe, btnApply].forEach((b) => { if (b) b.disabled = on; }); if (on) btnPlan.disabled = true; };
+  const el = (tag, text, style) => { const n = document.createElement(tag); if (text !== undefined && text !== null) n.textContent = String(text); if (style) n.style.cssText = style; return n; };
+  const table = (headers, rows) => {
+    const t = el('table', null, 'width:100%; border-collapse:collapse; font-size:11.5px;');
+    const thead = el('tr');
+    headers.forEach((h) => thead.appendChild(el('th', h, 'text-align:left; padding:4px 6px; border-bottom:1px solid #2d323e; color:var(--text-muted); font-weight:600; position:sticky; top:0; background:var(--bg-card);')));
+    t.appendChild(thead);
+    rows.forEach((r) => {
+      const tr = el('tr');
+      r.cells.forEach((c) => tr.appendChild(el('td', c, 'padding:4px 6px; border-bottom:1px solid #22262e; vertical-align:top; word-break:break-all;' + (r.style || ''))));
+      t.appendChild(tr);
+    });
+    return t;
+  };
+  const place = (r) => [r.country, r.city].filter(Boolean).join(' ') || '—';
+
+  // WebRTC 防护开关
+  const chkRtc = $('chk-webrtc-protect');
+  if (chkRtc && window.uiAPI) {
+    window.uiAPI.get().then((u) => { chkRtc.checked = !(u && u.webrtcProtection === false); }).catch(() => { chkRtc.checked = true; });
+    chkRtc.addEventListener('change', async () => {
+      const r = await window.uiAPI.set({ webrtcProtection: chkRtc.checked }).catch((e) => ({ ok: false, error: e.message }));
+      if (r && r.ok) say(chkRtc.checked ? '已开启 WebRTC 防护，对之后新建的连接立即生效' : '已关闭 WebRTC 防护：网页可能获取到你的真实 IP', chkRtc.checked ? 'ok' : 'warn');
+      else say('保存失败: ' + ((r && r.error) || '未知错误'), 'err');
+    });
+  }
+
+
+  // 定期自动检测
+  const chkMon = $('chk-exit-monitor'), selMon = $('sel-exit-monitor-interval'), monStatus = $('exit-monitor-status');
+  const fmtInterval = (m) => (m < 60 ? `${m} 分钟` : `${m / 60} 小时`);
+  const fmtTime = (ts) => (ts ? new Date(ts).toLocaleString('zh-CN', { hour12: false }) : '—');
+  const renderMonitor = (m) => {
+    if (!m) return;
+    chkMon.checked = !!m.enabled;
+    if (!selMon.options.length) (m.intervals || []).forEach((v) => { const o = document.createElement('option'); o.value = String(v); o.textContent = fmtInterval(v); selMon.appendChild(o); });
+    selMon.value = String(m.intervalMinutes);
+    selMon.disabled = !m.enabled;
+    const parts = [];
+    if (m.lastRunAt) {
+      const s = m.lastSummary || {};
+      parts.push(`上次检测 ${fmtTime(m.lastRunAt)}：${s.reachable || 0}/${s.accounts || 0} 个账号成功，${s.distinctIps || 0} 个不同出口，${s.issues ? s.issues + ' 个问题' : '无问题'}`);
+    } else parts.push('尚未检测过');
+    if (m.enabled && m.nextRunAt) parts.push(`下次 ${fmtTime(m.nextRunAt)}`);
+    monStatus.textContent = parts.join('；');
+  };
+  const refreshMonitor = () => api.getMonitor && api.getMonitor().then(renderMonitor).catch(() => {});
+  if (chkMon && api.getMonitor) {
+    refreshMonitor();
+    const save = async (patch) => {
+      const r = await api.setMonitor(patch).catch((e) => ({ ok: false, error: e.message }));
+      if (r && r.ok) renderMonitor(r.monitor);
+      else say('保存失败: ' + ((r && r.error) || '未知错误'), 'err');
+    };
+    chkMon.addEventListener('change', () => save({ enabled: chkMon.checked }));
+    selMon.addEventListener('change', () => save({ intervalMinutes: parseInt(selMon.value, 10) }));
+  }
+
+  api.onProgress((p) => { if (p && p.total) say(`正在测试节点出口… ${p.done}/${p.total}`); });
+
+  // ① 各账号当前出口
+  btnAcc.onclick = async () => {
+    busy(true); applyBox.style.display = 'none'; box.textContent = '';
+    say('正在检测各账号的真实出口 IP…');
+    try {
+      const r = await api.checkAccounts();
+      if (!r || !r.ok) return say('检测失败: ' + ((r && r.error) || '未知错误'), 'err');
+      const s = r.summary;
+      say(`${s.accounts} 个账号，${s.reachable} 个检测成功，共 ${s.distinctIps} 个不同出口 IP；${s.sharing} 个账号与其他账号共用出口`, s.sharing ? 'warn' : 'ok');
+      box.appendChild(table(['账号', '出口 IP', '地区', '运营商', '状态'], r.results.map((x) => ({
+        cells: [x.name, x.ok ? x.ip : '—', x.ok ? place(x) : '—', x.ok ? (x.org || '—') : '—',
+          !x.ok ? ('失败：' + x.error) : x.sharedWith.length ? ('与 ' + x.sharedWith.join('、') + ' 共用') : (x.viaMihomo ? '独立' : '独立（未经 Mihomo）')],
+        style: !x.ok ? 'color:#ff9a9a;' : x.sharedWith.length ? 'color:#f5c46b;' : '',
+      }))));
+    } catch (e) { say('检测失败: ' + e.message, 'err'); } finally { busy(false); btnPlan.disabled = !probed; refreshMonitor(); }
+  };
+
+  // ② 全部节点出口
+  let probed = false;
+  btnProbe.onclick = async () => {
+    busy(true); applyBox.style.display = 'none'; box.textContent = '';
+    say('正在启动临时检测内核（不影响正在使用的账号）…');
+    try {
+      const r = await api.probeNodes();
+      if (!r || !r.ok) { probed = false; return say('测试失败: ' + ((r && r.error) || '未知错误'), 'err'); }
+      probed = true;
+      const s = r.summary;
+      const enough = s.exitIps >= s.eligibleAccounts;
+      say(`${s.nodes} 个节点，${s.usable} 个可用，实测共 ${s.exitIps} 个不同出口 IP；使用 Mihomo 的账号 ${s.eligibleAccounts} 个` + (enough ? '，足够每个账号独立一个出口' : '，出口不够每个账号独立一个'), enough ? 'ok' : 'warn');
+      const byIp = new Map();
+      r.results.filter((x) => x.ok).forEach((x) => { if (!byIp.has(x.ip)) byIp.set(x.ip, []); byIp.get(x.ip).push(x); });
+      const rows = [...byIp.entries()].sort((a, b) => b[1].length - a[1].length).map(([ip, list]) => ({
+        cells: [ip, place(list[0]), list[0].org || '—', list.map((n) => n.name).join('\n')],
+      }));
+      r.results.filter((x) => !x.ok).forEach((x) => rows.push({ cells: ['—', '—', '—', x.name + '（' + x.error + '）'], style: 'color:#ff9a9a;' }));
+      const t = table(['出口 IP', '地区', '运营商', '节点（同一行 = 实际同一出口）'], rows);
+      t.querySelectorAll('td:last-child').forEach((td) => { td.style.whiteSpace = 'pre-line'; });
+      box.appendChild(t);
+    } catch (e) { probed = false; say('测试失败: ' + e.message, 'err'); } finally { busy(false); btnPlan.disabled = !probed; }
+  };
+
+  // ③ 生成方案
+  btnPlan.onclick = async () => {
+    busy(true); applyBox.style.display = 'none'; box.textContent = '';
+    try {
+      const r = await api.plan({ backupsPerAccount: 2 });
+      if (!r || !r.ok) return say('生成失败: ' + ((r && r.error) || '未知错误'), 'err');
+      const p = r.plan, st = p.stats;
+      const parts = [`${p.assignments.length}/${st.accounts} 个账号分到独立出口`, `${st.changed} 个需要更改`];
+      if (p.unassigned.length) parts.push(`${p.unassigned.length} 个因出口不足保持原样：${p.unassigned.map((u) => u.name).join('、')}`);
+      const low = p.assignments.filter((a) => a.lowTier);
+      if (low.length) parts.push(`${low.length} 个保留了低倍率主节点（${low.map((a) => a.name).join('、')}），建议之后手动换掉`);
+      say(parts.join('；'), p.unassigned.length || low.length ? 'warn' : 'ok');
+      box.appendChild(table(['账号', '出口 IP', '地区', '主节点', '备用节点', '变化'], p.assignments.map((a) => ({
+        cells: [a.name, a.exitIp, place(a), a.primary, a.queue.slice(1).join('\n') || '—',
+          !a.changed ? '不变' : a.kept ? '仅调整备用' : '更换出口'],
+        style: a.changed && !a.kept ? 'color:#7aa2ff;' : '',
+      }))));
+      box.querySelectorAll('td:nth-child(5)').forEach((td) => { td.style.whiteSpace = 'pre-line'; });
+      if (p.assignments.some((a) => a.backupOtherIp > 0)) {
+        box.appendChild(el('div', '注：备用节点优先选与主节点同一出口 IP 的其他线路（切换后 IP 不变）；不够时才用其他空闲出口，这种情况下主节点故障后出口 IP 会改变。', 'margin-top:6px; font-size:11px; color:var(--text-muted);'));
+      }
+      applyBox.style.display = st.changed ? '' : 'none';
+      if (!st.changed) say('当前配置已经满足每个账号独立出口，无需更改', 'ok');
+    } catch (e) { say('生成失败: ' + e.message, 'err'); } finally { busy(false); btnPlan.disabled = !probed; }
+  };
+
+  // 应用
+  btnApply.onclick = async () => {
+    busy(true);
+    say('正在应用方案并重载代理…');
+    try {
+      const r = await api.apply({ enableStrict: $('chk-exit-apply-strict').checked });
+      if (!r || !r.ok) return say('应用失败: ' + ((r && r.error) || '未知错误'), 'err');
+      applyBox.style.display = 'none';
+      const strictChk = $('chk-mihomo-strict'); if (strictChk) strictChk.checked = !!r.strictIsolation;
+      say(`已更新 ${r.changed} 个账号的出口。建议点「① 检测各账号当前出口」确认结果。`, 'ok');
+    } catch (e) { say('应用失败: ' + e.message, 'err'); } finally { busy(false); btnPlan.disabled = true; probed = false; }
+  };
 })();
 </script>
 </body>

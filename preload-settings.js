@@ -91,6 +91,21 @@ contextBridge.exposeInMainWorld('mihomoAPI', {
   setProfileQueue: (payload) => ipcRenderer.invoke('account:set-proxy-queue', payload),
 });
 
+// 出口 IP 检测与独立出口分配 (2026-11-22)
+contextBridge.exposeInMainWorld('exitAPI', {
+  checkAccounts: () => ipcRenderer.invoke('exit:check-accounts'),
+  probeNodes: () => ipcRenderer.invoke('exit:probe-nodes'),
+  plan: (opts) => ipcRenderer.invoke('exit:plan', opts),
+  apply: (opts) => ipcRenderer.invoke('exit:apply', opts),
+  getMonitor: () => ipcRenderer.invoke('exit:monitor-get'),
+  setMonitor: (patch) => ipcRenderer.invoke('exit:monitor-set', patch),
+  onProgress: (cb) => {
+    if (typeof cb !== 'function') return;
+    ipcRenderer.removeAllListeners('exit:progress');
+    ipcRenderer.on('exit:progress', (_e, p) => cb(p));
+  },
+});
+
 contextBridge.exposeInMainWorld('backupAPI', {
   exportConfig: (opts) => ipcRenderer.invoke('config:export', opts),
   importConfig: () => ipcRenderer.invoke('config:import'),

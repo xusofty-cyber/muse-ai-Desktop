@@ -1,118 +1,189 @@
-# 项目上下文与长期事实 (PROJECT_CONTEXT.md)
-
-> **定位说明**：本文件记录 `muse-windows` 的核心架构事实与长期工程约束，作为 AI Agent 会话启动与技术决策的单一事实源（Single Source of Truth）。仅在系统架构、核心技术栈、持久层设计或全局红线发生重大变更时维护。会话级临时状态与进度断点请记录于 `SESSION_STATE.md`。
-
----
-
-## 一、项目定位与核心业务
-
-- **系统名称**：`muse-windows` (产品名称 Muse)
-- **业务领域**：Windows 桌面原生封装客户端，为 Muse (muse.ai) 和 Meta AI (meta.ai) 提供原生桌面窗口运行环境，支持快捷对话、独立多会话 Profiles、托盘驻留与系统级能力集成。
-- **核心业务矩阵**：
-  1. **主窗口与双站点切换 (Main Window & Site Toggle)**：原生窗口封装 muse.ai 与 meta.ai，支持快捷键 (Ctrl+Shift+M) 或托盘菜单在两站点间快速切换并复用窗口，记忆窗口尺寸和位置，启用 GPU 光栅化以保证平滑滚动。
-  2. **快速对话浮窗 (Quick Chat Popup)**：全局快捷键 (Ctrl+Shift+Space) 在任意界面唤起轻量快捷聊天窗口，失去焦点时自动隐藏。
-  3. **多 Profile 与账号会话隔离 (Profiles & Account Switcher)**：基于 Electron Session Partition 实现多用户 Profile 独立登录与隔离；在 Meta AI 模式下提供多账号快速切换 (Ctrl+Shift+N) 与“添加 Meta AI 账号”能力。支持侧边栏头像 SVG 用量进度外环与悬浮重置倒计时提示。
-  4. **账号宫格看板与飞书多维表格同步 (Account Hub & Feishu Sync)**：独立入口看板 (⊞ / Ctrl+Shift+G) 提供大图卡片看板、多维状态与搜索过滤；内置纯 Node 实现的 `bin/feishu-cli.js` 同步引擎，支持多维表格字段智能映射与定时轮询；支持同步后自动按重置时间从小到大升序排序（Dock 从左到右展示最早重置账号），且鼠标悬停在切换头像框时清晰展示精确重置时间与倒计时。
-  5. **内置 Mihomo 智能分流与多配置源聚合管理 (Embedded Mihomo Proxy Engine)**：内置轻量 Mihomo (Clash.Meta) 内核，支持机场 Clash 订阅链接与本地 YAML/YML 文件多源同时开启与智能合并；为每个 Muse 账号分配独立本地端口（18001+），支持账号级 5 种代理模式（`inherit`/`system`/`mihomo`/`direct`/`custom`）与专属 Fallback 故障转移队列，实现账号间物理级出口 IP 隔离。
-  6. **多账号与代理配置一键导出导入 (Config Backup & Migration)**：支持将所有账号备注、群组分类、专属代理出口队列、独立代理模式及 Mihomo 配置源完整备份为标准 `.json`，支持一键跨机迁移并自动创建防灾快照。
-  7. **系统级原生集成与控制 (System & Audio Controls)**：系统托盘驻留与菜单、开机自启、麦克风与扬声器全局静音切换、快捷键自定义配置页面 (`hotkeys.html`)、剪贴板超长文本导出为文件 (`Documents/Muse clips/`) 以及原生下载管理。
-  8. **自动化控制与安全放行 (Automation / Auto-Allow Controls)**：显式 Opt-in 的自动化主开关、屏幕悬浮小部件、细粒度连接器/动作分类放行规则。
-  9. **自动更新与跨端分发 (Auto-Update & Distribution)**：集成 GitHub Releases 自动检测与静默下载更新；支持构建 Windows NSIS 安装包 (`dist/Muse Setup 1.1.0.exe`) 及免安装便携版 (`dist/Muse-Portable-1.1.0.exe`)。
-
----
-
-## 二、代码仓库与技术栈
-
-### 1. 基础环境与分支
-- **代码仓库**：`git@github.com:xusofty-cyber/muse-windows.git`（上游发布配置：`whxjwksjs/muse-windows`）
-- **主分支 / 开发分支**：`main`
-- **运行/部署环境**：Windows 桌面运行环境 (Node.js LTS 本地开发；生产分发为 Windows x64 NSIS 安装包及 Portable 便携版)
-
-### 2. 技术栈选型
-
-| 层级 / 领域 | 技术栈与版本 | 说明与关键库 |
-|---|---|---|
-| **核心语言 / 运行时** | JavaScript (ES6+ / Node.js 20 LTS) | 主业务逻辑开发语言与桌面端运行时 |
-| **基础框架与构建** | Electron ^44.6.0 / electron-builder ^26.15.3 | 桌面原生窗口、系统托盘、快捷键及 NSIS/Portable 打包工具 |
-| **持久化与缓存** | Electron Session Partition / 本地 JSON | 隔离 Profiles/会话 Cookie，持久化热键、自动化配置与窗口状态 |
-| **接口与中间件** | Electron IPC (`ipcMain` / `ipcRenderer`) / Preload Scripts | 主进程与设置渲染页安全通信，网页注入脚本抓取与导出交互 |
-
----
-
-## 三、核心架构与分层设计
-
-- **架构模式**：Electron 主进程 (Main Process) + 预加载桥接 (Preload Scripts) + 多渲染上下文 (WebContents & Settings UI) 的桌面混合分层架构
-- **关键模块与目录职责**：
-  - `main.js`：Electron 主进程入口，负责应用生命周期、多窗口管理 (`mainWindow`, `quickWindow`, `settingsWindow`)、系统托盘、全局快捷键注册与状态持久化。
-  - `mihomo-manager.js`：内置 Mihomo 内核协同引擎，负责机场订阅拉取、配置动态合成、子进程生命周期守护与 External Controller REST API 通信。
-  - `feishu-sync.js`：飞书 OpenAPI 与多维表格（Bitable）数据同步引擎。
-  - `preload-settings.js`：快捷键与设置页面的预加载桥接脚本，暴露安全的 IPC 接口。
-  - `preload-chat-export.js`：网页注入预加载脚本，实现多账号侧边栏、宫格看板与聊天交互。
-  - `hotkeys.html`：快捷键与综合设置页面（渲染进程 UI）。
-  - `bin/`：内置免安装辅助 CLI 工具（`bin/feishu-cli.js` 等）。
-  - `bin/mihomo/`：本地 Mihomo 内核二进制目录（受 `.gitignore` 保护）。
-  - `assets/`：应用程序图标与静态素材（`icon.ico` 等）。
-  - `docs/`：技术架构、产品规约与参考文档（核心架构见 `docs/architecture/ARCH-002-embedded-mihomo-proxy.md`，操作指南见 `docs/guides/GUIDE-002-embedded-mihomo-proxy.md`）。
-  - `tasks/`：任务规划 (`todo.md`) 与研发经验沉淀 (`lessons.md`)。
-
----
-
-## 四、关键技术约束与全局开发红线
-
-1. **极简实现与不随意扩充依赖（Ponytail 懒人阶梯）**：
-   - 改动前遵循决策阶梯：优先使用项目既有工具与标准库，满足明确要求的最小清晰实现，严禁非必要的投机性抽象或盲目引入新依赖。
-2. **统一异常流与日志脱敏**：
-   - 业务错误统一使用标准异常结构，禁止静默吞噬错误；
-   - 严禁在日志、输出或代码中明文记录 API Key、Token、密码、私钥或敏感连接串。
-3. **Git 授权与分支安全铁律**：
-   - 受保护分支（`main` / `develop` / `master`）禁止直接提交，必须拉取临时特性分支；
-   - 严禁盲目 `git add .` / `git add -A`，必须只暂存明确路径；严禁强制推送（`git push --force`）。
-
----
-
-## 五、关键架构与技术决策记录 (ADR / Decision Log)
-
-- **2026-10-15**：[初始化项目记忆规范与技术栈上下文]
-  - **背景**：根据项目 README.md 与代码库建立统一的跨会话项目上下文记忆标准。
-  - **决策**：在 `PROJECT_CONTEXT.md` 固化 `muse-windows` 的 Electron 架构事实、双站点封装机制、快捷键与持久化设计。
-  - **影响**：所有 Agent 在会话启动阶段优先加载本文件，确保业务理解与技术决策准确一致。
-- **2026-10-15**：[落地零重载多标签常驻架构与自适应代理防黑屏机制]
-  - **背景**：原账号切换会销毁窗口或重新 `loadURL` 导致白屏打断体验；另外 Chromium 默认后量子握手与代理配置异常易触发握手中断 (`-100 ERR_CONNECTION_CLOSED` / `-130 ERR_PROXY_CONNECTION_FAILED`) 陷入黑屏。
-  - **决策**：
-    1. 采用 `profileWindows = new Map()` 维护常驻窗口实例，账号切换通过可见性瞬切与 Bounds 继承，实现 `< 10ms` 零重载、输入状态 100% 保留；
-    2. 默认采用 `mode: 'system'` 自适应 Windows 系统代理与 TUN 虚拟网卡（开箱即用免配置），设置界面支持手动覆盖；禁用 `PostQuantumKeyAgreement` 彻底打通 TLS 握手，搭配 `offline.html` 离线诊断页保障黑屏自愈。
-  - **影响**：多账号切换达到原生多标签体验，新环境部署免配置直接联网，彻底根治握手超时与黑屏。
-- **2026-11-11**：[内置轻量 Mihomo 代理分流引擎与多账号独立出口队列]
-  - **背景**：海外 AI 服务（Meta AI 等）对请求源 IP 与指纹极为敏感，多账号共用单代理/单出口 IP 极易触发联防风控、验证码拦截与集体封号。
-  - **决策**：
-    1. **子进程级内置协同**：将轻量跨平台 Mihomo (Clash.Meta) 二进制作为子进程嵌入，自动解析机场 Clash 订阅 YAML 并提取全量节点；
-    2. **物理端口级隔离分流**：为每个账号 Profile 动态分配专属本地 Inbound 端口（`18001+`）并绑定专属 Fallback 故障转移策略组，主节点抖动时自动毫秒级漂移；
-    3. **Session 级无感注入**：在主进程 `applyProxyToSession` 中将 Electron 分区 Session 直连映射到对应本地端口，上层业务与 WebContents 透明解耦。
-  - **影响**：实现账号级出口 IP 隔离防封，支持一键拉取机场订阅与全节点延迟测速，大幅提升海量账号矩阵的稳定性与反风控能力。
-- **2026-10-15**：[网络代理全局设备级统一持久化与异常自动唤起配置]
-  - **背景**：多账号标签页各自配置代理会产生割裂，需实现全局统一网络设备管理；且配置后必须持久化，重启直接生效，发生阻断时需主动引导修复。
-  - **决策**：
-    1. **设备级网络统一**：代理配置统一收口至 `state.proxy`，无论后续切换账号还是新增账号标签，均在窗口初始化阶段自动继承当前全局代理设置，禁止单个账号重复配置；
-    2. **持久化与热重载**：保存代理设置时写入 `userData/app-state.json`，下次启动直接在 `app.whenReady()` 阶段读取生效；保存时广播热重载所有存活的账号窗口（`profileWindows`）；
-    3. **异常主动引导**：当遇到连接阻断（`-130`、`-100`、`-7`、`-105` 等）时，主进程除展示离线诊断页外，主动唤起设置窗口并聚焦至“网络与代理设置”选项卡。
-  - **影响**：网络配置与多账号彻底解耦，统一配置全应用生效，断网或代理失效时实现零门槛可视化修复。
-- **2026-11-14**：[多订阅源与本地 YAML 节点合并智能管理]
-  - **背景**：单一订阅源无法满足多机场容灾与本地定制规则节点需求，需要多源同时启用且节点名自动去重防冲突。
-  - **决策**：
-    1. 在 `mihomo-manager.js` 中新增本地 YAML 解析（`parseLocalYaml`）与多源冲突规避合并引擎（`mergeSourceProxies`）；
-    2. 设置面板与 Preload 新增 `mihomo:add-source`、`mihomo:sync-all-sources` 等全套多源管理能力。
-  - **影响**：实现机场订阅与本地 YAML 节点混合生效与一键聚合。
-- **2026-11-15**：[全量配置与多账号一键导入导出（热迁移与容灾备份）]
-  - **背景**：拥有 17+ 账号与复杂代理队列的用户在跨设备迁移或系统重装时配置成本高昂。
-  - **决策**：
-    1. 主进程实现 `config:export` 与 `config:import`，在保存前自动生成带时间戳的 `app-state.pre-import-*.bak` 防灾快照；
-    2. 严格脱敏隔离，禁止导出锁屏密码 Hash/Salt 等敏感凭证。
-  - **影响**：实现全量账号与网络代理配置秒级跨机迁移。
-- **2026-11-16**：[修复配置导入时不存在方法引发崩溃及节点池丢失缺陷]
-  - **背景**：导入 `docs/muse-backup-2026-11-15.json` 时因调用不存在的 `mm.syncAllSources` 触发 TypeError 导致导入完全失败，且旧备份未持久化 `mihomo.cachedProxies` 与激活状态。
-  - **决策**：
-    1. 抽离独立的业务处理核心 `importConfigFromFile`，移除错误的 `mm.syncAllSources` 调用，改由 `refreshMihomoMergedProxiesAndReload(true)` 统一调度 `mergeSourceProxies` 聚合节点池并热载内核；
-    2. 自动检测 profile 中使用 `mihomo` 模式的账号并激活 `state.mihomo.enabled`；
-    3. 完整恢复 `activeProfileId`、`accountGroups`、`theme`、`locale` 与 `ui` 属性。
-  - **影响**：`docs/muse-backup-2026-11-15.json` 成功 100% 完整导入恢复 18 个账号与 68 个代理节点。
-
+# 项目上下文与长期事实 (PROJECT_CONTEXT.md)
+
+> **定位说明**：本文件记录 `muse-windows` 的核心架构事实与长期工程约束，作为 AI Agent 会话启动与技术决策的单一事实源（Single Source of Truth）。仅在系统架构、核心技术栈、持久层设计或全局红线发生重大变更时维护。会话级临时状态与进度断点请记录于 `SESSION_STATE.md`。
+
+---
+
+## 一、项目定位与核心业务
+
+- **系统名称**：`muse-windows` (产品名称 Muse)
+- **业务领域**：Windows 桌面原生封装客户端，为 Muse (muse.ai) 和 Meta AI (meta.ai) 提供原生桌面窗口运行环境，支持快捷对话、独立多会话 Profiles、托盘驻留与系统级能力集成。
+- **核心业务矩阵**：
+  1. **主窗口与双站点切换 (Main Window & Site Toggle)**：原生窗口封装 muse.ai 与 meta.ai，支持快捷键 (Ctrl+Shift+M) 或托盘菜单在两站点间快速切换并复用窗口，记忆窗口尺寸和位置，启用 GPU 光栅化以保证平滑滚动。
+  2. **快速对话浮窗 (Quick Chat Popup)**：全局快捷键 (Ctrl+Shift+Space) 在任意界面唤起轻量快捷聊天窗口，失去焦点时自动隐藏。
+  3. **多 Profile 与账号会话隔离 (Profiles & Account Switcher)**：基于 Electron Session Partition 实现多用户 Profile 独立登录与隔离；在 Meta AI 模式下提供多账号快速切换 (Ctrl+Shift+N) 与“添加 Meta AI 账号”能力。支持侧边栏头像 SVG 用量进度外环与悬浮重置倒计时提示。
+  4. **账号宫格看板与飞书多维表格同步 (Account Hub & Feishu Sync)**：独立入口看板 (⊞ / Ctrl+Shift+G) 提供大图卡片看板、多维状态与搜索过滤；内置纯 Node 实现的 `bin/feishu-cli.js` 同步引擎，支持多维表格字段智能映射与定时轮询；支持同步后自动按重置时间从小到大升序排序（Dock 从左到右展示最早重置账号），且鼠标悬停在切换头像框时清晰展示精确重置时间与倒计时。
+  5. **内置 Mihomo 智能分流与多配置源聚合管理 (Embedded Mihomo Proxy Engine)**：内置轻量 Mihomo (Clash.Meta) 内核，支持机场 Clash 订阅链接与本地 YAML/YML 文件多源同时开启与智能合并；为每个 Muse 账号分配独立本地端口（18001+），支持账号级 5 种代理模式（`inherit`/`system`/`mihomo`/`direct`/`custom`）与专属 Fallback 故障转移队列，实现账号间物理级出口 IP 隔离。
+  6. **多账号与代理配置一键导出导入 (Config Backup & Migration)**：支持将所有账号备注、群组分类、专属代理出口队列、独立代理模式及 Mihomo 配置源完整备份为标准 `.json`，支持一键跨机迁移并自动创建防灾快照。
+  7. **系统级原生集成与控制 (System & Audio Controls)**：系统托盘驻留与菜单、开机自启、麦克风与扬声器全局静音切换、快捷键自定义配置页面 (`hotkeys.html`)、剪贴板超长文本导出为文件 (`Documents/Muse clips/`) 以及原生下载管理。
+  8. **自动化控制与安全放行 (Automation / Auto-Allow Controls)**：显式 Opt-in 的自动化主开关、屏幕悬浮小部件、细粒度连接器/动作分类放行规则。
+  9. **自动更新与跨端分发 (Auto-Update & Distribution)**：集成 GitHub Releases 自动检测与静默下载更新；支持构建 Windows NSIS 安装包 (`dist/Muse Setup 1.1.0.exe`) 及免安装便携版 (`dist/Muse-Portable-1.1.0.exe`)。
+
+---
+
+## 二、代码仓库与技术栈
+
+### 1. 基础环境与分支
+- **代码仓库**：`git@github.com:xusofty-cyber/muse-windows.git`（上游发布配置：`whxjwksjs/muse-windows`）
+- **主分支 / 开发分支**：`main`
+- **运行/部署环境**：Windows 桌面运行环境 (Node.js LTS 本地开发；生产分发为 Windows x64 NSIS 安装包及 Portable 便携版)
+
+### 2. 技术栈选型
+
+| 层级 / 领域 | 技术栈与版本 | 说明与关键库 |
+|---|---|---|
+| **核心语言 / 运行时** | JavaScript (ES6+ / Node.js 20 LTS) | 主业务逻辑开发语言与桌面端运行时 |
+| **基础框架与构建** | Electron ^44.6.0 / electron-builder ^26.15.3 | 桌面原生窗口、系统托盘、快捷键及 NSIS/Portable 打包工具 |
+| **持久化与缓存** | Electron Session Partition / 本地 JSON | 隔离 Profiles/会话 Cookie，持久化热键、自动化配置与窗口状态 |
+| **接口与中间件** | Electron IPC (`ipcMain` / `ipcRenderer`) / Preload Scripts | 主进程与设置渲染页安全通信，网页注入脚本抓取与导出交互 |
+
+---
+
+## 三、核心架构与分层设计
+
+- **架构模式**：Electron 主进程 (Main Process) + 预加载桥接 (Preload Scripts) + 多渲染上下文 (WebContents & Settings UI) 的桌面混合分层架构
+- **关键模块与目录职责**：
+  - `main.js`：Electron 主进程入口，负责应用生命周期、多窗口管理 (`mainWindow`, `quickWindow`, `settingsWindow`)、系统托盘、全局快捷键注册与状态持久化。
+  - `mihomo-manager.js`：内置 Mihomo 内核协同引擎，负责机场订阅拉取、配置动态合成、子进程生命周期守护与 External Controller REST API 通信。
+  - `feishu-sync.js`：飞书 OpenAPI 与多维表格（Bitable）数据同步引擎。
+  - `preload-settings.js`：快捷键与设置页面的预加载桥接脚本，暴露安全的 IPC 接口。
+  - `preload-chat-export.js`：网页注入预加载脚本，实现多账号侧边栏、宫格看板与聊天交互。
+  - `hotkeys.html`：快捷键与综合设置页面（渲染进程 UI）。
+  - `bin/`：内置免安装辅助 CLI 工具（`bin/feishu-cli.js` 等）。
+  - `bin/mihomo/`：本地 Mihomo 内核二进制目录（受 `.gitignore` 保护）。
+  - `assets/`：应用程序图标与静态素材（`icon.ico` 等）。
+  - `docs/`：技术架构、产品规约与参考文档（核心架构见 `docs/architecture/ARCH-002-embedded-mihomo-proxy.md`，操作指南见 `docs/guides/GUIDE-002-embedded-mihomo-proxy.md`）。
+  - `tasks/`：任务规划 (`todo.md`) 与研发经验沉淀 (`lessons.md`)。
+
+---
+
+## 四、关键技术约束与全局开发红线
+
+1. **极简实现与不随意扩充依赖（Ponytail 懒人阶梯）**：
+   - 改动前遵循决策阶梯：优先使用项目既有工具与标准库，满足明确要求的最小清晰实现，严禁非必要的投机性抽象或盲目引入新依赖。
+2. **统一异常流与日志脱敏**：
+   - 业务错误统一使用标准异常结构，禁止静默吞噬错误；
+   - 严禁在日志、输出或代码中明文记录 API Key、Token、密码、私钥或敏感连接串。
+3. **Git 授权与分支安全铁律**：
+   - 受保护分支（`main` / `develop` / `master`）禁止直接提交，必须拉取临时特性分支；
+   - 严禁盲目 `git add .` / `git add -A`，必须只暂存明确路径；严禁强制推送（`git push --force`）。
+
+---
+
+## 五、关键架构与技术决策记录 (ADR / Decision Log)
+
+- **2026-10-15**：[初始化项目记忆规范与技术栈上下文]
+  - **背景**：根据项目 README.md 与代码库建立统一的跨会话项目上下文记忆标准。
+  - **决策**：在 `PROJECT_CONTEXT.md` 固化 `muse-windows` 的 Electron 架构事实、双站点封装机制、快捷键与持久化设计。
+  - **影响**：所有 Agent 在会话启动阶段优先加载本文件，确保业务理解与技术决策准确一致。
+- **2026-10-15**：[落地零重载多标签常驻架构与自适应代理防黑屏机制]
+  - **背景**：原账号切换会销毁窗口或重新 `loadURL` 导致白屏打断体验；另外 Chromium 默认后量子握手与代理配置异常易触发握手中断 (`-100 ERR_CONNECTION_CLOSED` / `-130 ERR_PROXY_CONNECTION_FAILED`) 陷入黑屏。
+  - **决策**：
+    1. 采用 `profileWindows = new Map()` 维护常驻窗口实例，账号切换通过可见性瞬切与 Bounds 继承，实现 `< 10ms` 零重载、输入状态 100% 保留；
+    2. 默认采用 `mode: 'system'` 自适应 Windows 系统代理与 TUN 虚拟网卡（开箱即用免配置），设置界面支持手动覆盖；禁用 `PostQuantumKeyAgreement` 彻底打通 TLS 握手，搭配 `offline.html` 离线诊断页保障黑屏自愈。
+  - **影响**：多账号切换达到原生多标签体验，新环境部署免配置直接联网，彻底根治握手超时与黑屏。
+- **2026-11-11**：[内置轻量 Mihomo 代理分流引擎与多账号独立出口队列]
+  - **背景**：海外 AI 服务（Meta AI 等）对请求源 IP 与指纹极为敏感，多账号共用单代理/单出口 IP 极易触发联防风控、验证码拦截与集体封号。
+  - **决策**：
+    1. **子进程级内置协同**：将轻量跨平台 Mihomo (Clash.Meta) 二进制作为子进程嵌入，自动解析机场 Clash 订阅 YAML 并提取全量节点；
+    2. **物理端口级隔离分流**：为每个账号 Profile 动态分配专属本地 Inbound 端口（`18001+`）并绑定专属 Fallback 故障转移策略组，主节点抖动时自动毫秒级漂移；
+    3. **Session 级无感注入**：在主进程 `applyProxyToSession` 中将 Electron 分区 Session 直连映射到对应本地端口，上层业务与 WebContents 透明解耦。
+  - **影响**：实现账号级出口 IP 隔离防封，支持一键拉取机场订阅与全节点延迟测速，大幅提升海量账号矩阵的稳定性与反风控能力。
+- **2026-10-15**：[网络代理全局设备级统一持久化与异常自动唤起配置]
+  - **背景**：多账号标签页各自配置代理会产生割裂，需实现全局统一网络设备管理；且配置后必须持久化，重启直接生效，发生阻断时需主动引导修复。
+  - **决策**：
+    1. **设备级网络统一**：代理配置统一收口至 `state.proxy`，无论后续切换账号还是新增账号标签，均在窗口初始化阶段自动继承当前全局代理设置，禁止单个账号重复配置；
+    2. **持久化与热重载**：保存代理设置时写入 `userData/app-state.json`，下次启动直接在 `app.whenReady()` 阶段读取生效；保存时广播热重载所有存活的账号窗口（`profileWindows`）；
+    3. **异常主动引导**：当遇到连接阻断（`-130`、`-100`、`-7`、`-105` 等）时，主进程除展示离线诊断页外，主动唤起设置窗口并聚焦至“网络与代理设置”选项卡。
+  - **影响**：网络配置与多账号彻底解耦，统一配置全应用生效，断网或代理失效时实现零门槛可视化修复。
+- **2026-11-14**：[多订阅源与本地 YAML 节点合并智能管理]
+  - **背景**：单一订阅源无法满足多机场容灾与本地定制规则节点需求，需要多源同时启用且节点名自动去重防冲突。
+  - **决策**：
+    1. 在 `mihomo-manager.js` 中新增本地 YAML 解析（`parseLocalYaml`）与多源冲突规避合并引擎（`mergeSourceProxies`）；
+    2. 设置面板与 Preload 新增 `mihomo:add-source`、`mihomo:sync-all-sources` 等全套多源管理能力。
+  - **影响**：实现机场订阅与本地 YAML 节点混合生效与一键聚合。
+- **2026-11-15**：[全量配置与多账号一键导入导出（热迁移与容灾备份）]
+  - **背景**：拥有 17+ 账号与复杂代理队列的用户在跨设备迁移或系统重装时配置成本高昂。
+  - **决策**：
+    1. 主进程实现 `config:export` 与 `config:import`，在保存前自动生成带时间戳的 `app-state.pre-import-*.bak` 防灾快照；
+    2. 严格脱敏隔离，禁止导出锁屏密码 Hash/Salt 等敏感凭证。
+  - **影响**：实现全量账号与网络代理配置秒级跨机迁移。
+- **2026-11-16**：[修复配置导入时不存在方法引发崩溃及节点池丢失缺陷]
+  - **背景**：导入 `docs/muse-backup-2026-11-15.json` 时因调用不存在的 `mm.syncAllSources` 触发 TypeError 导致导入完全失败，且旧备份未持久化 `mihomo.cachedProxies` 与激活状态。
+  - **决策**：
+    1. 抽离独立的业务处理核心 `importConfigFromFile`，移除错误的 `mm.syncAllSources` 调用，改由 `refreshMihomoMergedProxiesAndReload(true)` 统一调度 `mergeSourceProxies` 聚合节点池并热载内核；
+    2. 自动检测 profile 中使用 `mihomo` 模式的账号并激活 `state.mihomo.enabled`；
+    3. 完整恢复 `activeProfileId`、`accountGroups`、`theme`、`locale` 与 `ui` 属性。
+  - **影响**：`docs/muse-backup-2026-11-15.json` 成功 100% 完整导入恢复 18 个账号与 68 个代理节点。
+- **2026-11-22**：[账号隔离下链接点不开 / 打开后非当前账号的修复]
+  - **背景**：设置 > 通用 >「Meta 账户」(accountscenter.meta.com) 点击无反应：`*.meta.com` 被 `isInternalSiteUrl` 判为内部站点，`setWindowOpenHandler` 内部分支对根路径 `/` 直接 deny。站内分享/文档/附件链接交给系统浏览器后缺失当前账号登录态；OAuth/连接器子弹窗内的链接因不在 `open-external-url` IPC 纳管名单而被静默拒绝。
+  - **决策**（均在 `main.js`）：
+    1. 新增 `isMetaAccountUrl` / `isProfileScopedUrl` / `isOwnSiteHost` / `isDownloadLikeUrl`，以及 `openProfileScopedWindow`（复用父窗口 `webContents.session`、`trackChildWindow` 登记、标题带账号名）、`openUrlForProfile`（下载类走 `downloadURL`）、`findProfileForWebContents`；
+    2. `setWindowOpenHandler` / `will-navigate` / `will-redirect`：Meta 账户及站内分享/文档链接改为当前账号 session 的应用内窗口；内部路由改按完整 URL（去 hash）比较，修复首页与同路径不同参数无响应；
+    3. `open-external-url` IPC 纳管名单加入 `childWindowsByProfile` 子窗口，站内链接按发起方所属账号在应用内打开；真外链（含跳板解包）仍走 `shell.openExternal`。
+  - **影响**：账号相关链接一律在本账号 session 打开、无串号；切账号随动隐藏、登出/删号随之关闭。改前备份：`main.js.bak-links`。
+- **2026-11-22**：[链接与账号隔离专项审查修复]
+  - **背景**：对账号隔离、IPC 安全、链接/导航逻辑做第一轮审查，发现上次修复对整个 `*.meta.com` 改道会截断登录跳转链、授权弹窗继承聊天页 preload、两份链接规则不一致等问题。
+  - **决策**：
+    1. **H1**：主窗口导航只对 `accountscenter.*`（`isMetaAccountCenterUrl`）改道弹窗；`will-redirect` 一律不走新增改道逻辑；
+    2. **M2**：授权/连接器弹窗改用空的 `preload-popup.js`（已加入 `build.files`），第三方页面不再运行 `preload-chat-export.js`；
+    3. **M3**：preload 授权域名补齐 `functionhealth.com`、`healthex.com`；新增 `scripts/check-link-rules.js`（`npm run check:links`）比对两份规则；
+    4. **M4**：`isShareOrDocumentUrl` 改为按路径段匹配，去掉 `/docs`、`/view`、`token=`、`key=` 等过宽规则；
+    5. **L1** `download:open-*` 只放行本次运行完成的下载路径；**L2** `google-session-reset` 优先清发起窗口所属账号；**L3** 同账号同站点复用账号页面窗口；**L4** 子窗口移出 `open-external-url` 纳管名单。
+  - **影响**：改前备份 `main.js.bak-audit`、`preload-chat-export.js.bak-audit`、`package.json.bak-audit`。M1（offlineAPI）复核为已有 `file:` 守卫，无需修改。
+- **2026-11-22**：[第二轮审查修复：备份安全、导入加固、代理隔离]
+  - **背景**：审查 Mihomo、飞书同步与导入导出，发现明文导出全部登录 Cookie、导入可篡改内核/CLI 路径与账号 id、账号重排后出口端口错位等问题。
+  - **决策**：
+    1. **H1 备份加密**：新增 `backup-crypto.js`（scrypt + AES-256-GCM）与密码输入窗口（`password-prompt.html` + `preload-prompt.js`）。默认导出不含任何凭据的设置备份；勾选完整备份时才含登录会话、飞书 App Secret、订阅地址与节点，且必须设置密码加密。
+    2. **H2 导入加固**：`importConfigFromFile` 改为逐字段白名单（`pickImportedProxy` / `pickImportedFeishu` / `pickImportedSources`），永不导入 `customBinPath`、`customCliPath`、端口与端口表；账号 id 与订阅源 id 必须匹配 `SAFE_ID_RE`（`sanitizeAndMergeState` 同步生效）；删除账号目录前校验路径位于 `Partitions` 下。
+    3. **H3 固定端口**：`state.mihomo.portByProfile` 按账号 id 固定出口端口（`ensureProfilePort` / `pruneProfilePorts`），`MihomoManager` 通过 `portResolver` 取端口；升级时按原顺序迁移，出口不变。
+    4. **M1–M6**：只结束 pid 文件记录的自家残留内核，控制端口被占用时改用空闲端口；新增严格出口隔离开关 `strictIsolation`；内核意外退出自动重启（2s 起指数退避，10 分钟超过 5 次停止）并发系统通知；出口端口被占用时自动改派并通知；飞书 App Secret 改经环境变量传给外部 CLI，发给页面时以占位符代替；导入后关闭已不存在账号的窗口，Cookie 只写入仍存在的账号。
+    5. **L1–L3**：订阅下载 20MB 上限、禁止 https→http 跳转、测速改 https；`mihomo.log` 超过 5MB 轮转；飞书按 `feishuRecordId` 优先匹配，重名不再按名称匹配。
+  - **影响**：旧版明文完整备份仍可导入（同样经过白名单）。导入后被移除账号的会话目录保留在磁盘上。改前备份为 `*.bak-audit2`。`main.js` 模块拆分另起一轮进行。
+- **2026-11-22**：[main.js 拆分 第 1 步：链接规则模块]
+  - **决策**：10 个 URL 判断纯函数原样迁到 `src/link-rules.js`，`main.js` 改为 require；`scripts/check-link-rules.js` 改为比对 `src/link-rules.js` 与 preload 拷贝；`build.files` 加入 `src/**/*`。
+  - **约束**：preload 在 sandbox 下无法 require 本地模块，仍保留拷贝；以 `src/link-rules.js` 为准。
+  - **后续顺序**：state → windows → proxy → backup → ipc → updater，每步单独提交并回归。改前备份 `main.js.bak-split1`。
+- **2026-11-22**：[main.js 拆分 第 2 步：状态模块]
+  - **决策**：默认值、`sanitizeAndMergeState`、`loadState`（.bak / .bak2 代际恢复）、`saveState`（原子写入与轮转）、`saveStateDebounced`、`SAFE_ID_RE`、`DEFAULT_HOTKEYS`、`AVATAR_COLORS` 等原样迁到 `src/state.js`。
+  - **约束（重要）**：`main.js` 的 `state` 与模块内部持有的是同一个对象，字段读写照旧；**整体替换必须写成 `state = replaceState(next)`**，否则 `saveState` 会继续写旧对象。目前全项目只有导入备份一处整体替换。
+  - **影响**：改前备份 `main.js.bak-split2`。
+- **2026-11-22**：[main.js 拆分 第 3 步：账号子窗口模块]
+  - **决策**：授权弹窗登记与跟随显隐（`trackChildWindow` / `setChildWindowsVisible` / `closeChildWindows`）、账号页面窗口（`openProfileScopedWindow` / `openUrlForProfile`）迁到 `src/child-windows.js`，以工厂函数 `createChildWindowManager` 导出。
+  - **约束**：模块需要 `main.js` 的 `attachZoomShortcuts` / `attachContextMenu` / `setupExternalLinkHandler`，而 `main.js` 又要调用模块，因此通过 `decorateWindow` 回调注入，避免循环 require。`findProfileForWebContents` 仍在 `main.js`（依赖账号主窗口与快捷窗口），子窗口部分委托给 `findChildOwner`。
+  - **影响**：改前备份 `main.js.bak-split3`。
+- **2026-11-22**：[main.js 拆分 第 3b 步：窗口几何模块；主窗口核心暂停拆分]
+  - **决策**：零依赖的 `ensureBoundsVisible`、`syncWindowStateAndBounds` 迁到 `src/window-geometry.js`。
+  - **暂不拆分**：`getOrCreateProfileWindow`（24 个依赖）、`switchAccount`（13 个）、`showMainWindow`、快捷窗口。阻碍是 `mainWindow`（67 处引用、8 个函数中重新赋值）与 `quickWindow`（65 处引用）都是可变的模块级变量，CommonJS 无法导出可变绑定，拆分需先把所有读写改为共享对象属性（如 `windows.main`），这是一次全文件机械改写，只有真实运行 Electron 才能验证。
+  - **建议**：先在本机完整回归前面各步，再做这次改写；或保持主窗口逻辑留在 `main.js`。改前备份 `main.js.bak-split4`。
+- **2026-11-22**：[main.js 拆分 第 4 步：代理模块]
+  - **决策**：`ensureProfilePort`、`pruneProfilePorts`、Mihomo 崩溃自动重启、`getMihomoManager`、`applyProxyToSession`、`applyProxySettings`、`refreshMihomoMergedProxiesAndReload` 迁到 `src/proxy.js`，以工厂函数 `createProxyController({ notify, partitionFor })` 导出；`main.js` 不再直接引用 `MihomoManager`。
+  - **约束（重要）**：模块内通过 `getState()` 取状态，**不得捕获 state 引用**——Mihomo 管理器上注册的回调（端口改派、严格模式判断、崩溃重启）会一直存活，导入备份整体替换状态后必须作用于新对象。退出时用 `peekMihomoManager()`，只停止已创建的内核，不会为停止而新建。
+  - **已知旧行为（未改）**：`session.defaultSession` 在 Mihomo 模式下取账号列表第一个账号的端口，排序后会变。默认会话不承载任何账号窗口，影响很小。
+  - **影响**：改前备份 `main.js.bak-split5`。
+- **2026-11-22**：[main.js 拆分 第 5 步：备份模块]
+  - **决策**：备份密码窗口（含 `prompt:*` IPC，创建服务时注册）、`handleConfigExport`、导入时的文件读取与解密（新抽出的 `readBackupFile`）、导入字段白名单 `pickImported*`、`COOKIE_DOMAIN_RE` / `COOKIE_SAMESITE`、`FEISHU_SECRET_MASK` 迁到 `src/backup.js`，以 `createBackupService({ getMainWindow, partitionFor, flushAllSessions, iconPath })` 导出。
+  - **约束**：`importConfigFromFile` 的"应用到当前状态"部分留在 `main.js`，因为它要 `state = replaceState(...)` 并重新指定 `mainWindow`。模块里的 `state` / `mainWindow` 都通过 getter 取最新值。模块位于 `src/`，引用根目录的 `password-prompt.html`、`preload-prompt.js` 时路径须带 `'..'`。
+  - **影响**：改前备份 `main.js.bak-split6`。
+- **端口分配规则（备查）**：每个账号按 id 固定一个出口端口，从 `basePort`（默认 18001）起取最小的空闲号，跳过控制端口；账号数量不限（已验证 10 / 50 / 200 个均各不相同）。删除账号后其端口回收，可分给之后新建的账号。端口独立 ≠ 出口 IP 独立：出口取决于账号的节点队列，未设队列的账号共用节点池前 10 个，非严格模式下专属队列尾部还会追加公共节点。
+- **2026-11-22**：[main.js 拆分 第 6 步：自动更新模块]
+  - **决策**：便携版自动更新（`checkForUpdates`、`installUpdateAndRestart`、`setupAutoUpdate`、`buildUpdateScript`、`canWriteBesideExe`、`cmpVersions`、`isPortableWindowsBuild`、`UPDATE_REPO`）迁到 `src/updater.js`，以 `createUpdater({ notify, buildTrayMenu })` 导出；`pendingUpdate` / `updateDownloaded` / `isCheckingUpdate` 成为模块内部状态，托盘菜单改用 `isUpdateDownloaded()`。`main.js` 不再引入 electron 的 `net`。
+  - **影响**：改前备份 `main.js.bak-split7`。
+- **2026-11-22**：[出口 IP 隔离：WebRTC 防护、出口实测、一键独立出口]
+  - **背景**：11-15 备份显示 18 个账号的队列只有 3 种首节点（10 / 6 / 2 个账号共用），策略均为 fallback，实际只有 3 个出口 IP；另外账号会话只代理 http/https，WebRTC 的 UDP 会绕过代理暴露真实 IP。
+  - **决策**：
+    1. `app.on('web-contents-created')` 对所有页面设置 `setWebRTCIPHandlingPolicy('disable_non_proxied_udp')`；开关为 `state.ui.webrtcProtection`（默认开，设置页可关，切换后对已打开页面立即生效）。
+    2. `src/exit-probe.js`：`checkSessionExit` 用账号自己的会话请求 ipinfo.io（失败回退 api.ipify.org），测真实出口；`probeNodeExits` 另起临时 Mihomo（数据目录 `userData/mihomo-probe`、控制端口 = 正式端口 + 100、节点端口从 28001 起、严格模式每组只含一个节点），经本地 CONNECT 隧道逐节点实测出口，测完即停，不影响正在运行的内核。
+    3. `src/exit-isolation.js`（纯函数）：按实测 IP 分组；方案规则为主出口互不相同 → 能保留现状就保留 → 改派时优先同国家、非低倍率、低延迟 → 备用优先同 IP 其他线路、其次无人使用的出口 → 出口不足时多出的账号保持原样并列出。
+    4. IPC `exit:check-accounts` / `exit:probe-nodes` / `exit:plan` / `exit:apply`；节点实测结果与方案只存内存，30 分钟内有效。应用时只写入仍在节点池中的节点、策略统一为 fallback、可选同时开启严格隔离，随后重载内核、断开旧连接并刷新账号页面。
+  - **影响**：改前备份 `*.bak-exitiso`。WebRTC 防护可能影响依赖 WebRTC 的语音/视频功能。
+- **2026-11-22**：[出口 IP 定期自动检测]
+  - **决策**：新增 `src/exit-monitor.js`（`createExitMonitor`，计时器可注入）。按 `state.exitMonitor.intervalMinutes`（15 / 30 / 60 / 180 / 360 / 720 分钟，默认 60，默认关闭）检测各账号当前出口；问题类型为多账号共用出口、出口 IP 变化、走 Mihomo 的账号检测失败、全部失败（视为断网，只报一条且不改记录）。同一问题只通知一次（`activeIssues`），解决后再出现才再次通知；断网期间保留已提醒过的问题，恢复后不重复提醒。通知只含账号名、不含 IP，点击打开设置页 Mihomo 标签。
+  - **约束**：`exit:check-accounts` 与定期检测共用 `runAccountExitCheck`；手动检测结果以静默方式计入记录。`exit:apply` 会清掉被改派账号的出口记录，避免有意的更换被报成"出口变化"。`state.exitMonitor` 不随备份导出或导入。应用启动 2 分钟后首次检测，刚打开开关时 10 秒后检测。
+  - **影响**：改前备份 `*.bak-monitor`。
+- **2026-11-22**：[全面审查修复（第三轮）]
+  - **H1 页面注入**：`preload-chat-export.js` 中 6 处把飞书 / 备份数据（用途、用量文字、重置时间、自定义代理地址）拼进 `innerHTML`，可在所有账号页面以 muse.ai / meta.ai 身份执行脚本。改为 `textContent` / DOM 属性赋值。**约束：账号字段、飞书字段、节点名一律不得拼进 HTML。**
+  - **M1**：新增 `ensureSessionHandlers(profileId)`，在创建账号窗口、快捷窗口和导入备份后为账号挂上权限拦截与下载处理；此前导入新增的账号在重启前没有权限拦截（Electron 默认放行）。
+  - **M2**：`mihomo:set-config` 改为字段白名单（enabled / strictIsolation / autoUpdateInterval / basePort）；`feishu:save-config` 不再接受 `customCliPath`；删除会执行任意路径的 `feishu:detect-cli`。
+  - **低风险**：删除无人调用的 `account:set-groups`、`automation-toggle`、`muse-export-request`；去掉未用的 `isDownloadLikeUrl` 引入；节点检测后删除临时内核的 `config.yaml`；设置窗口显式开启 contextIsolation / sandbox；应用出口方案时作废进行中的定期检测（`exitMonitor.invalidate()`）。
+  - **测试**：`scratch/test-embedded-mihomo.js` 复制到 `test/`，新增 `npm run test:mihomo` 与 `npm test`；`.gitignore` 加入 `test/.tmp-*/`。改前备份 `*.bak-review`。

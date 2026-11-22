@@ -23,7 +23,11 @@ const yaml = require('js-yaml');
 
 const DEFAULT_CONTROLLER_PORT = 19090;
 const DEFAULT_BASE_PROXY_PORT = 18001;
-const DEFAULT_TEST_URL = 'http://www.gstatic.com/generate_204';
+const DEFAULT_TEST_URL = 'https://www.gstatic.com/generate_204'; // 审查 L1: 测速改用 https
+const SAFE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/; // 审查 H2: 源 id 会拼进文件路径, 必须是安全字符
+const MAX_SUB_BYTES = 20 * 1024 * 1024; // 审查 L1: 订阅下载体积上限
+const MAX_SUB_DECODED_BYTES = 50 * 1024 * 1024;
+const MAX_LOG_BYTES = 5 * 1024 * 1024; // 审查 L2: 日志超过 5MB 时轮转
 const SUB_USER_AGENT = 'clash-verge/v1.7.7 (Clash.Meta)';
 
 class MihomoManager {
@@ -34,6 +38,10 @@ class MihomoManager {
    * @param {number} [options.basePort] 起始监听端口 (默认 18001)
    * @param {number} [options.controllerPort] External Controller 端口 (默认 19090)
    * @param {string} [options.secret] Controller Secret (留空自动生成)
+   * @param {(acct: Object) => number} [options.portResolver] 返回账号的固定出口端口 (审查 H3)
+   * @param {(id: string, newPort: number, oldPort: number) => void} [options.onPortReassigned] 端口被占用改派后回调 (审查 M4)
+   * @param {() => boolean} [options.isStrict] 是否严格隔离: 专属节点全挂时不回落到公共节点 (审查 M2)
+   * @param {(info: {code: number, signal: string}) => void} [options.onUnexpectedExit] 内核意外退出回调 (审查 M3)
    */
   constructor(options = {}) {
     const opts = typeof options === 'string' ? { dataDir: options } : (options || {});
@@ -42,6 +50,12 @@ class MihomoManager {
     this.basePort = opts.basePort || DEFAULT_BASE_PROXY_PORT;
     this.controllerPort = opts.controllerPort || DEFAULT_CONTROLLER_PORT;
     this.secret = opts.secret || crypto.randomBytes(16).toString('hex');
+
+    this.portResolver = typeof opts.portResolver === 'function' ? opts.portResolver : null;
+    this.onPortReassigned = typeof opts.onPortReassigned === 'function' ? opts.onPortReassigned : null;
+    this.isStrict = typeof opts.isStrict === 'function' ? opts.isStrict : () => false;
+    this.onUnexpectedExit = typeof opts.onUnexpectedExit === 'function' ? opts.onUnexpectedExit : null;
+    this._stopping = false;
 
     this.process = null;
     this.logStream = null;
@@ -269,7 +283,7 @@ class MihomoManager {
       const cachePath = path.join(this.dataDir, 'subscription.yaml');
       fs.writeFileSync(cachePath, rawYaml, 'utf8');
 
-      if (sourceId && typeof sourceId === 'string') {
+      if (sourceId && typeof sourceId === 'string' && SAFE_ID_RE.test(sourceId)) {
         const sourceFile = path.join(this.dataDir, 'sources', `${sourceId}.yaml`);
         fs.writeFileSync(sourceFile, rawYaml, 'utf8');
       }
@@ -321,7 +335,7 @@ class MihomoManager {
             src.cachedProxies = list;
             src.nodeCount = list.length;
           }
-        } else if (src.type === 'url') {
+        } else if (src.type === 'url' && SAFE_ID_RE.test(String(src.id || ''))) {
           const subFile = path.join(this.dataDir, 'sources', `${src.id}.yaml`);
           if (fs.existsSync(subFile)) {
             try {
@@ -419,11 +433,20 @@ class MihomoManager {
     const portMap = {};
 
     let currentPort = this.basePort;
+    const usedPorts = new Set();
+    const strict = !!this.isStrict();
 
     // 为每个账号建立专属 Listener 和 Proxy Group
     for (const acct of accounts) {
       if (!acct || !acct.id) continue;
-      const port = currentPort++;
+      // 端口按账号固定 (审查 H3): 此前按排列顺序递增分配, 账号重新排序后端口跟着变,
+      // 未重新应用代理的账号会连到别人的出口。无 resolver 时保留旧的顺序分配作为兼容。
+      let port = this.portResolver ? this.portResolver(acct) : null;
+      if (!Number.isInteger(port) || port <= 0 || port > 65535 || usedPorts.has(port)) {
+        while (usedPorts.has(currentPort) || currentPort === this.controllerPort) currentPort++;
+        port = currentPort++;
+      }
+      usedPorts.add(port);
       portMap[acct.id] = port;
 
       const groupName = `muse_group_${acct.id}`;
@@ -443,12 +466,19 @@ class MihomoManager {
       let finalNodes = [];
       if (validNodes.length > 0) {
         finalNodes = [...validNodes];
+      }
+      if (validNodes.length > 0 && strict) {
+        // 严格隔离 (审查 M2): 只用账号专属节点, 全挂时断网而不是和别的账号共用出口
+      } else if (validNodes.length > 0) {
         // 关键兜底防雪崩：如果账号配置的专属队列（如大阪节点服务器临时宕机/超时），
         // 在 fallback 队列尾部自动追加全局其他可用节点作为二级兜底，防止全部节点宕机导致直接连接重置 (-100)
         const backupNodes = proxyList.map(p => p.name).filter(n => !validNodes.includes(n));
         if (backupNodes.length > 0) {
           finalNodes.push(...backupNodes.slice(0, 5));
         }
+      } else if (strict && rawQueue.length > 0) {
+        // 严格隔离下配置过专属队列但节点已全部失效: 拒绝连接, 不悄悄换成公共节点
+        finalNodes = ['REJECT'];
       } else {
         finalNodes = proxyList.length > 0 ? proxyList.slice(0, 10).map(p => p.name) : ['DIRECT'];
       }
@@ -523,22 +553,50 @@ class MihomoManager {
       return { ok: false, error: '未找到可用的 Mihomo 二进制内核，请确保已安装或放置于 bin/mihomo/' };
     }
 
+    this._stopping = false;
+    const assignedPorts = new Set(
+      (accounts || []).filter((a) => a && a.id && this.portResolver).map((a) => this.portResolver(a)).filter(Number.isInteger)
+    );
+
     // 启动前探针: 检测 Controller 端口是否已被旧残留进程霸占
+    // 审查 M1: 此前按进程名 taskkill /IM 强杀, 会误杀用户另外运行的 Mihomo / Clash。
+    // 现在只结束本应用记录在 pid 文件里的上次残留进程; 仍被占用说明是别的程序, 改用空闲控制端口。
     let ctrlBusy = await this._isPortInUse(this.controllerPort);
     if (ctrlBusy) {
-      console.warn(`[MihomoCore] Controller port ${this.controllerPort} is already in use, clearing orphaned process...`);
-      try {
-        if (process.platform === 'win32') {
-          const exeName = path.basename(exe);
-          execSync(`taskkill /F /IM "${exeName}"`, { stdio: 'ignore' });
-        } else {
-          try {
-            execSync(`pkill -9 -f "${this.dataDir}"`, { stdio: 'ignore' });
-          } catch (_) {}
-        }
+      console.warn(`[MihomoCore] Controller port ${this.controllerPort} is already in use, checking for our own orphaned process...`);
+      if (this._killOwnOrphan(exe)) {
         await new Promise((r) => setTimeout(r, 400));
         ctrlBusy = await this._isPortInUse(this.controllerPort);
-      } catch (_) {}
+      }
+      if (ctrlBusy) {
+        let p = this.controllerPort + 1;
+        while (assignedPorts.has(p) || await this._isPortInUse(p)) p++;
+        console.warn(`[MihomoCore] Controller port ${this.controllerPort} is held by another program, using ${p} instead`);
+        this.controllerPort = p;
+      }
+    }
+
+    // 审查 M4: 账号出口端口被其他程序占用时改派到空闲端口, 并通知主进程持久化
+    const reassignedPorts = [];
+    if (this.portResolver) {
+      const taken = new Set();
+      for (const acct of accounts || []) {
+        if (!acct || !acct.id) continue;
+        const port = this.portResolver(acct);
+        if (!Number.isInteger(port)) continue;
+        if (taken.has(port) || await this._isPortInUse(port)) {
+          let next = port + 1;
+          while (taken.has(next) || assignedPorts.has(next) || next === this.controllerPort || await this._isPortInUse(next)) next++;
+          assignedPorts.add(next);
+          reassignedPorts.push({ id: acct.id, from: port, to: next });
+          if (this.onPortReassigned) {
+            try { this.onPortReassigned(acct.id, next, port); } catch (_) {}
+          }
+          taken.add(next);
+        } else {
+          taken.add(port);
+        }
+      }
     }
 
     const { configYaml, portMap } = this.generateConfig(accounts, proxies);
@@ -547,6 +605,13 @@ class MihomoManager {
 
     try {
       const logFile = path.join(this.dataDir, 'mihomo.log');
+      try {
+        if (fs.existsSync(logFile) && fs.statSync(logFile).size > MAX_LOG_BYTES) {
+          const rotated = `${logFile}.1`;
+          try { fs.unlinkSync(rotated); } catch (_) {}
+          fs.renameSync(logFile, rotated);
+        }
+      } catch (_) {}
       const logStream = fs.createWriteStream(logFile, { flags: 'a' });
       this.logStream = logStream;
       logStream.write(`\n=== [${new Date().toISOString()}] Mihomo Process Starting ===\n`);
@@ -559,6 +624,7 @@ class MihomoManager {
       this.process = child;
       this.isRunning = true;
       this.lastError = null;
+      try { if (child.pid) fs.writeFileSync(this._pidFile(), String(child.pid), 'utf8'); } catch (_) {}
 
       child.stdout.on('data', (d) => {
         if (this.logStream) this.logStream.write(d);
@@ -576,14 +642,21 @@ class MihomoManager {
       child.on('exit', (code, sig) => {
         if (this.logStream) this.logStream.write(`[MihomoCore] Exited with code=${code}, signal=${sig}\n`);
         console.log(`[MihomoCore] Exited with code=${code}, signal=${sig}`);
+        // 只处理当前进程: restart 时旧进程的 exit 晚于新进程启动, 不能把新进程的状态清掉
+        if (this.process !== child) return;
         this.isRunning = false;
         this.process = null;
+        try { fs.unlinkSync(this._pidFile()); } catch (_) {}
+        if (!this._stopping && this.onUnexpectedExit) {
+          try { this.onUnexpectedExit({ code, signal: sig }); } catch (_) {}
+        }
       });
 
       child.on('error', (err) => {
         if (this.logStream) this.logStream.write(`[MihomoCore] Error: ${err.message}\n`);
         console.error('[MihomoCore] Process error:', err);
         this.lastError = err.message;
+        if (this.process !== child) return;
         this.isRunning = false;
         this.process = null;
       });
@@ -596,7 +669,7 @@ class MihomoManager {
       }
 
       console.log(`[MihomoCore] Started successfully. Controller on 127.0.0.1:${this.controllerPort}, Ports:`, portMap);
-      return { ok: true, portMap };
+      return { ok: true, portMap, reassignedPorts, controllerPort: this.controllerPort };
     } catch (err) {
       this.isRunning = false;
       this.process = null;
@@ -608,6 +681,7 @@ class MihomoManager {
    * 停止 Mihomo 内核进程
    */
   stop() {
+    this._stopping = true;
     if (this.process) {
       const pid = this.process.pid;
       try {
@@ -621,6 +695,7 @@ class MihomoManager {
         } catch (_) {}
       }
       this.process = null;
+      try { fs.unlinkSync(this._pidFile()); } catch (_) {}
     }
     if (this.logStream) {
       try { this.logStream.end(); } catch (_) {}
@@ -741,6 +816,37 @@ class MihomoManager {
     });
   }
 
+  _pidFile() {
+    return path.join(this.dataDir, 'mihomo.pid');
+  }
+
+  /** 只结束本应用上次启动、记录在 pid 文件里的残留内核进程 (审查 M1) */
+  _killOwnOrphan(exe) {
+    let pid = null;
+    try { pid = parseInt(fs.readFileSync(this._pidFile(), 'utf8').trim(), 10); } catch (_) { return false; }
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+      if (process.platform === 'win32') {
+        // 核对该 pid 当前确实是同名内核, 防止 pid 已被系统复用给别的程序
+        const out = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        if (!out.toLowerCase().includes(path.basename(exe).toLowerCase())) return false;
+        execSync(`taskkill /F /PID ${pid} /T`, { stdio: 'ignore' });
+      } else {
+        let cmd = '';
+        try { cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8'); } catch (_) {
+          try { cmd = execSync(`ps -p ${pid} -o command=`, { encoding: 'utf8' }); } catch (__) { return false; }
+        }
+        if (!cmd.includes(this.dataDir)) return false;
+        process.kill(pid, 'SIGKILL');
+      }
+      try { fs.unlinkSync(this._pidFile()); } catch (_) {}
+      console.warn(`[MihomoCore] Killed own orphaned kernel process pid=${pid}`);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   _isPortInUse(port) {
     return new Promise((resolve) => {
       const server = net.createServer();
@@ -796,19 +902,36 @@ class MihomoManager {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           try { res.resume(); } catch (_) {} // 显式消耗流，释放底层 Socket 句柄防泄漏
           const nextUrl = new URL(res.headers.location, urlStr).toString();
+          // 审查 L1: 不允许从 https 降级跳转到 http (订阅地址里的 token 会明文传输)
+          if (isHttps && !/^https:/i.test(nextUrl)) {
+            return reject(new Error('订阅地址试图从 HTTPS 跳转到不安全的 HTTP，已拒绝'));
+          }
           return resolve(this._httpGetWithRedirect(nextUrl, options, redirectCount + 1));
         }
 
+        const declared = parseInt(res.headers['content-length'], 10);
+        if (Number.isFinite(declared) && declared > MAX_SUB_BYTES) {
+          req.destroy(new Error('订阅内容超过 20MB 上限'));
+          return;
+        }
         const chunks = [];
-        res.on('data', chunk => { chunks.push(chunk); });
+        let received = 0;
+        res.on('data', chunk => {
+          received += chunk.length;
+          if (received > MAX_SUB_BYTES) {
+            req.destroy(new Error('订阅内容超过 20MB 上限'));
+            return;
+          }
+          chunks.push(chunk);
+        });
         res.on('end', () => {
           try {
             let buffer = Buffer.concat(chunks);
             const encoding = (res.headers['content-encoding'] || '').toLowerCase();
             if (encoding.includes('gzip')) {
-              buffer = zlib.gunzipSync(buffer);
+              buffer = zlib.gunzipSync(buffer, { maxOutputLength: MAX_SUB_DECODED_BYTES });
             } else if (encoding.includes('deflate')) {
-              buffer = zlib.inflateSync(buffer);
+              buffer = zlib.inflateSync(buffer, { maxOutputLength: MAX_SUB_DECODED_BYTES });
             }
             resolve({
               statusCode: res.statusCode,

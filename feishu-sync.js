@@ -98,8 +98,11 @@ async function fetchRecordsViaCli(cliPath, appToken, tableId, extraOptions = {})
     const bin = cliPath || (process.platform === 'win32' ? 'feishu.cmd' : 'feishu');
     const args = ['bitable', 'records', 'list', '--app-token', appToken.trim(), '--table-id', tableId.trim(), '--json'];
     if (extraOptions.appId) args.push('--app-id', extraOptions.appId.trim());
-    if (extraOptions.appSecret) args.push('--app-secret', extraOptions.appSecret.trim());
-    execFile(bin, args, { timeout: 20000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+    // 审查 M5: App Secret 不再放进命令行参数 (任何本机进程都能从进程列表读到), 改用环境变量传递
+    const env = { ...process.env };
+    if (extraOptions.appId) env.FEISHU_APP_ID = extraOptions.appId.trim();
+    if (extraOptions.appSecret) env.FEISHU_APP_SECRET = extraOptions.appSecret.trim();
+    execFile(bin, args, { timeout: 20000, maxBuffer: 10 * 1024 * 1024, env }, (err, stdout, stderr) => {
       if (err) {
         return reject(new Error(`飞书 CLI 运行异常: ${stderr ? stderr.trim() : err.message}`));
       }
@@ -390,25 +393,53 @@ async function executeFeishuSync(feishuConfig, currentProfiles, saveCallback) {
 
     let updatedCount = 0;
     const nameToRecordMap = new Map();
+    const recordById = new Map();
+    const ambiguousNames = new Set();
 
     for (const rec of records) {
       const fields = rec.fields || {};
       const rawName = extractFieldValue(fields[fieldMap.name]);
       const cleanName = String(rawName).trim();
+      const entry = {
+        recordId: rec.record_id,
+        purpose: String(extractFieldValue(fields[fieldMap.purpose]) || '').trim(),
+        usage: extractFieldValue(fields[fieldMap.usage]),
+        tokenReset: formatDateTime(extractFieldValue(fields[fieldMap.tokenReset])),
+      };
+      if (rec.record_id) recordById.set(rec.record_id, entry);
       if (cleanName) {
-        nameToRecordMap.set(cleanName.toLowerCase(), {
-          recordId: rec.record_id,
-          purpose: String(extractFieldValue(fields[fieldMap.purpose]) || '').trim(),
-          usage: extractFieldValue(fields[fieldMap.usage]),
-          tokenReset: formatDateTime(extractFieldValue(fields[fieldMap.tokenReset])),
-        });
+        const key = cleanName.toLowerCase();
+        // 表格里同名多行时无法确定对应哪个账号, 一律不按名字匹配 (审查 L3)
+        if (nameToRecordMap.has(key)) ambiguousNames.add(key);
+        else nameToRecordMap.set(key, entry);
+      }
+    }
+
+    // 匹配规则 (审查 L3): 先按已绑定的 feishuRecordId 认领 (账号改名后仍能对上),
+    // 再对未绑定的账号按名字匹配; 一条记录只能被一个账号认领, 避免重名账号同时套用同一行
+    const matches = new Map(); // prof -> entry
+    const claimed = new Set();
+    for (const prof of currentProfiles) {
+      const byId = prof.feishuRecordId ? recordById.get(prof.feishuRecordId) : null;
+      if (byId && !claimed.has(byId.recordId)) {
+        matches.set(prof, byId);
+        claimed.add(byId.recordId);
+      }
+    }
+    for (const prof of currentProfiles) {
+      if (matches.has(prof)) continue;
+      const key = String(prof.name || '').trim().toLowerCase();
+      if (!key || ambiguousNames.has(key)) continue;
+      const byName = nameToRecordMap.get(key);
+      if (byName && !claimed.has(byName.recordId)) {
+        matches.set(prof, byName);
+        claimed.add(byName.recordId);
       }
     }
 
     // 匹配并更新本地 profiles
     for (const prof of currentProfiles) {
-      const targetKey = String(prof.name || '').trim().toLowerCase();
-      const match = nameToRecordMap.get(targetKey);
+      const match = matches.get(prof);
       if (match) {
         updatedCount++;
         prof.feishuRecordId = match.recordId;
@@ -438,7 +469,7 @@ async function executeFeishuSync(feishuConfig, currentProfiles, saveCallback) {
     }
 
     feishuConfig.lastSyncTime = new Date().toISOString();
-    feishuConfig.lastSyncStatus = `成功通过 [${usedEngine === 'cli' ? '飞书 CLI' : '飞书 OpenAPI'}] 同步：共 ${records.length} 条记录，更新了 ${updatedCount} 个匹配账号`;
+    feishuConfig.lastSyncStatus = `成功通过 [${usedEngine === 'cli' ? '飞书 CLI' : '飞书 OpenAPI'}] 同步：共 ${records.length} 条记录，更新了 ${updatedCount} 个匹配账号${ambiguousNames.size ? `；表格中有 ${ambiguousNames.size} 个重名账号未按名称匹配` : ''}`;
 
     // 若配置了自动轮询，同步推算下次预计同步时间点
     if (feishuConfig.autoSync) {

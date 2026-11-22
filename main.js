@@ -1,10 +1,57 @@
-const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeImage, clipboard, session, dialog, Notification, ipcMain, net, powerMonitor, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, MenuItem, globalShortcut, shell, nativeImage, clipboard, session, dialog, Notification, ipcMain, powerMonitor, webContents, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
-const { defaultFeishuConfig, detectFeishuCli, executeFeishuSync, setupFeishuAutoSync, formatDateTime, sortProfilesByResetTime } = require('./feishu-sync');
-const { MihomoManager, DEFAULT_CONTROLLER_PORT, DEFAULT_BASE_PROXY_PORT } = require('./mihomo-manager');
+const { defaultFeishuConfig, executeFeishuSync, setupFeishuAutoSync, formatDateTime, sortProfilesByResetTime } = require('./feishu-sync');
+// Mihomo 管理器的创建与调度已移到 src/proxy.js
+// 备份加解密由 src/backup.js 调用
+// 状态默认值、清洗、加载与原子写入 (2026-11-22 main.js 拆分 第 2 步)
+const {
+  SAFE_ID_RE,
+  DEFAULT_HOTKEYS,
+  AVATAR_COLORS,
+  sanitizeWindowBounds,
+  defaultProxy,
+  defaultLock,
+  defaultMihomoConfig,
+  defaultState,
+  sanitizeAndMergeState,
+  statePath,
+  initState,
+  replaceState,
+  saveState,
+  saveStateDebounced,
+  wasStateSafelyLoaded,
+} = require('./src/state');
+const { createChildWindowManager } = require('./src/child-windows');
+const { ensureBoundsVisible, syncWindowStateAndBounds } = require('./src/window-geometry');
+const { createProxyController } = require('./src/proxy');
+const {
+  FEISHU_SECRET_MASK,
+  COOKIE_DOMAIN_RE,
+  COOKIE_SAMESITE,
+  pickImportedProxy,
+  pickImportedFeishu,
+  pickImportedSources,
+  createBackupService,
+} = require('./src/backup');
+const { isPortableWindowsBuild, createUpdater } = require('./src/updater');
+const { markSharedExits, buildExitGroups, planIsolation } = require('./src/exit-isolation');
+const { checkSessionExit, probeNodeExits, mapLimit } = require('./src/exit-probe');
+const { createExitMonitor } = require('./src/exit-monitor');
+// 链接与导航判断规则 (纯函数, 无应用状态)。preload 在 sandbox 下无法 require 本地模块, 那边仍是一份拷贝,
+// 两边一致性由 npm run check:links 校验 (2026-11-22 main.js 拆分 第 1 步)
+const {
+  extractExternalTargetUrl,
+  isInternalSiteUrl,
+  isAuthOrConnectorUrl,
+  isTrackingOrAdUrl,
+  isMetaAccountUrl,
+  isMetaAccountCenterUrl,
+  isProfileScopedUrl,
+} = require('./src/link-rules');
+
 
 // ---- 核心加固 1 & 2: 先定身份/UserData 再拿单例锁 + 统一 UserData 目录 -------------
 // 顺序要点 (v1.5.15 修正评审 P1-11): Chromium 单例锁绑定获取时刻的 userData
@@ -70,16 +117,6 @@ const SITES = {
   meta: { name: 'Meta AI', url: 'https://www.meta.ai/' },
 };
 // Global hotkeys, all user-remappable via the tray menu's "Customize hotkeys…".
-const DEFAULT_HOTKEYS = {
-  quick: 'CommandOrControl+Shift+Space',
-  site: 'CommandOrControl+Shift+M',
-  export: 'CommandOrControl+Shift+E',
-  mic: 'CommandOrControl+Shift+U',
-  speaker: 'CommandOrControl+Shift+O',
-  automation: 'CommandOrControl+Shift+A',
-  metaAccount: 'CommandOrControl+Shift+N',
-  lock: 'CommandOrControl+Shift+L',
-};
 const HOTKEY_LABELS = {
   en: {
     quick: 'Quick chat popup',
@@ -253,8 +290,6 @@ const HOTKEY_ACTIONS = {
 let mainWindow = null;
 let quickWindow = null;
 let tray = null;
-let updateDownloaded = false;
-let pendingUpdate = null;
 
 // Performance & Network flags
 app.commandLine.appendSwitch('enable-gpu-rasterization');
@@ -274,122 +309,6 @@ app.userAgentFallback = CHROME_UA;
 // 会话的客户端一旦走被劫持的代理/Wi-Fi 即可被中间人窃取全部 Cookie。
 // 本地代理的证书问题应在系统信任库层面解决, 不在应用内全局关检。
 
-// ---- persisted state ----------------------------------------------------
-const AVATAR_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
-  '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16',
-  '#6366f1', '#14b8a6', '#f97316', '#d946ef',
-  '#0284c7', '#16a34a', '#ea580c', '#9333ea',
-];
-
-// ---- 窗口几何安全 (Ubuntu 多账号窗口唤不回根治) --------------------------------
-// 背景: 全部账号共用一份 state.window 且从不校验, 多窗口 resize/move 竞写、
-// 最小化/隐藏瞬间或虚拟机分辨率变化都可能把屏幕外坐标/异常尺寸持久化,
-// 之后 showMainWindow 只做 show/focus, 窗口逻辑上已显示、物理上永不可见。
-// 因此: 加载时钳制 -> 落盘时过滤 -> 显示前按当前屏幕二次校验并居中兜底。
-const MIN_WIN_WIDTH = 800;
-const MIN_WIN_HEIGHT = 560;
-
-function sanitizeWindowBounds(raw) {
-  if (!raw || typeof raw !== 'object') return {};
-  const out = {};
-  const w = Number(raw.width);
-  const h = Number(raw.height);
-  if (Number.isFinite(w)) out.width = Math.min(Math.max(Math.round(w), MIN_WIN_WIDTH), 7680);
-  if (Number.isFinite(h)) out.height = Math.min(Math.max(Math.round(h), MIN_WIN_HEIGHT), 4320);
-  const x = Number(raw.x);
-  const y = Number(raw.y);
-  if (Number.isFinite(x) && Math.abs(x) < 20000) out.x = Math.round(x);
-  if (Number.isFinite(y) && Math.abs(y) < 20000) out.y = Math.round(y);
-  return out;
-}
-
-// 确保 bounds 与至少一块显示器的可用区有足够交叠; 否则居中兜底。
-// displays 可注入 (display.bounds/workArea), preferredDisplay 可指定优先显示器 (如多屏下当前正在操作的副屏)。
-function ensureBoundsVisible(bounds, displays, preferredDisplay) {
-  const b = sanitizeWindowBounds(bounds);
-  let list = displays;
-  if (!list) {
-    try {
-      const scr = require('electron').screen;
-      const all = scr.getAllDisplays();
-      const primary = scr.getPrimaryDisplay();
-      const pref = preferredDisplay || (scr.getDisplayMatching ? scr.getDisplayMatching(b) : primary);
-      const prefId = pref && pref.id;
-      list = pref ? [pref, ...all.filter((d) => d.id !== prefId)] : (primary ? [primary, ...all.filter((d) => d.id !== primary.id)] : all);
-    } catch { list = []; }
-  }
-  if (!list || !list.length) return b;
-  const width = b.width || 1200;
-  const height = b.height || 800;
-  if (typeof b.x === 'number' && typeof b.y === 'number') {
-    const visible = list.some((d) => {
-      const wa = (d && (d.workArea || d.bounds)) || null;
-      if (!wa) return false;
-      const overlapX = Math.min(b.x + width, wa.x + wa.width) - Math.max(b.x, wa.x);
-      const overlapY = Math.min(b.y + height, wa.y + wa.height) - Math.max(b.y, wa.y);
-      if (overlapX <= 0 || overlapY <= 0) return false;
-      // 标题栏 (顶部 40px) 必须落在可用区内, 且交叠面积 >= 窗口的 30%:
-      // 只剩一条边在屏内的窗口对用户等于不存在, 不能判为可见
-      const titleVisible = (b.y + 40 > wa.y) && (b.y < wa.y + wa.height) && overlapX >= 120;
-      const areaRatio = (overlapX * overlapY) / (width * height);
-      return titleVisible && areaRatio >= 0.3;
-    });
-    if (visible) { b.width = width; b.height = height; return b; }
-  }
-  const wa = (list[0] && (list[0].workArea || list[0].bounds)) || { x: 0, y: 0, width: 1920, height: 1080 };
-  b.width = Math.min(width, wa.width);
-  b.height = Math.min(height, wa.height);
-  b.x = Math.round(wa.x + (wa.width - b.width) / 2);
-  b.y = Math.round(wa.y + (wa.height - b.height) / 2);
-  return b;
-}
-
-function defaultProxy() {
-  return {
-    mode: 'system', // 'system' (自适应系统/TUN网卡), 'custom' (手动指定覆盖), 'direct' (直连)
-    enabled: false,  // 手动指定代理开关
-    type: 'http',   // 'http' | 'socks5'
-    host: '127.0.0.1',
-    port: 7897,
-    bypass: '<local>;localhost;127.0.0.1',
-  };
-}
-
-function defaultAutomation() {
-  return {
-    enabled: false,
-    autoAllowAll: false,
-    showOnScreenWidget: true,
-    actions: {
-      connectors: true,
-      file_access: true,
-      external_links: true,
-      media_permissions: true,
-      code_execution: true,
-    },
-    sites: {},
-    siteActions: {},
-  };
-}
-
-function detectDefaultLocale() {
-  try {
-    const sys = app.getLocale() || '';
-    if (sys.toLowerCase().startsWith('zh')) return 'zh-CN';
-  } catch {}
-  return 'en';
-}
-
-function defaultLock() {
-  return {
-    enabled: false,
-    hash: '',
-    salt: '',
-    autoLockEnabled: false,
-    idleMinutes: 15,
-  };
-}
 
 function hashPassword(password, salt) {
   if (!salt) {
@@ -414,259 +333,9 @@ function verifyPassword(password, salt, storedHash) {
   }
 }
 
-function defaultMihomoConfig() {
-  return {
-    enabled: false,
-    subscriptionUrl: '',
-    sources: [], // Array<{ id, type: 'url'|'file', name, target, enabled, nodeCount, updatedAt, cachedProxies, subscriptionUserinfo }>
-    autoUpdateInterval: 24,
-    lastUpdated: '',
-    basePort: DEFAULT_BASE_PROXY_PORT,
-    controllerPort: DEFAULT_CONTROLLER_PORT,
-    customBinPath: '',
-    cachedProxies: [],
-  };
-}
 
-function defaultState() {
-  return {
-    window: {},
-    windowByProfile: {},
-    site: 'muse',
-    profiles: [{
-      id: 'default',
-      name: '账号 1',
-      color: AVATAR_COLORS[0],
-      group: '默认群组',
-      purpose: '',
-      usagePercent: 0,
-      usageText: '',
-      tokenResetAt: '',
-      status: 'normal',
-      proxyQueue: [],
-      proxyStrategy: 'fallback',
-      proxyMode: 'inherit',
-      proxyCustom: { type: 'http', host: '127.0.0.1', port: 7897 },
-    }],
-    activeProfileId: 'default',
-    accountGroups: ['默认群组'],
-    feishu: defaultFeishuConfig(),
-    hotkeys: { ...DEFAULT_HOTKEYS },
-    automation: defaultAutomation(),
-    proxy: defaultProxy(),
-    mihomo: defaultMihomoConfig(),
-    theme: 'dark', // 'dark' | 'light' | 'system'
-    locale: detectDefaultLocale(), // 'zh-CN' | 'en'
-    ui: {
-      autoHideButtons: true, // 自动隐藏右上角与右下角按钮
-      dockPinned: true, // 账号栏是否固定常态展开 (默认 true: 常驻展示，方便多账号切换)
-    },
-    lock: defaultLock(),
-  };
-}
-const statePath = () => path.join(app.getPath('userData'), 'app-state.json');
-const stateBackupPath = () => path.join(app.getPath('userData'), 'app-state.json.bak');
-const stateBackup2Path = () => path.join(app.getPath('userData'), 'app-state.json.bak2');
-
-let isStateSafelyLoaded = false;
-
-function sanitizeAndMergeState(raw) {
-  const merged = { ...defaultState(), ...raw };
-  merged.hotkeys = { ...DEFAULT_HOTKEYS, ...(raw.hotkeys || {}) };
-  merged.theme = raw.theme || 'dark';
-  merged.locale = (raw.locale === 'zh-CN' || raw.locale === 'en') ? raw.locale : detectDefaultLocale();
-  merged.ui = { ...defaultState().ui, ...(raw.ui || {}) };
-  if (typeof merged.ui.dockPinned !== 'boolean') {
-    merged.ui.dockPinned = false;
-  }
-  merged.automation = {
-    ...defaultAutomation(),
-    ...(raw.automation || {}),
-    actions: { ...defaultAutomation().actions, ...((raw.automation && raw.automation.actions) || {}) },
-    sites: { ...((raw.automation && raw.automation.sites) || {}) },
-    siteActions: { ...((raw.automation && raw.automation.siteActions) || {}) },
-  };
-  merged.proxy = { ...defaultProxy(), ...(raw.proxy || {}) };
-  const rawLock = (raw && raw.lock) || {};
-  merged.lock = {
-    enabled: typeof rawLock.enabled === 'boolean' ? rawLock.enabled : false,
-    hash: typeof rawLock.hash === 'string' ? rawLock.hash : '',
-    salt: typeof rawLock.salt === 'string' ? rawLock.salt : '',
-    autoLockEnabled: typeof rawLock.autoLockEnabled === 'boolean' ? rawLock.autoLockEnabled : false,
-    idleMinutes: (typeof rawLock.idleMinutes === 'number' && [1, 5, 15, 30, 60].includes(rawLock.idleMinutes)) ? rawLock.idleMinutes : 15,
-  };
-  // 窗口几何必须钳制后再用: 历史坏值 (屏幕外/负尺寸) 不得重放进新会话
-  merged.window = sanitizeWindowBounds(raw.window || {});
-  const wbp = {};
-  if (raw.windowByProfile && typeof raw.windowByProfile === 'object') {
-    for (const [pid, b] of Object.entries(raw.windowByProfile)) {
-      if (b && typeof b === 'object') wbp[pid] = sanitizeWindowBounds(b);
-    }
-  }
-  merged.windowByProfile = wbp;
-  // 兼容历史老数据：若未显式指定 custom/direct，统一重置为 system 自适应模式
-  if (merged.proxy.mode !== 'custom' && merged.proxy.mode !== 'direct') {
-    merged.proxy.mode = 'system';
-    merged.proxy.enabled = false;
-  }
-  // 群组与飞书多维表格同步配置合并
-  merged.accountGroups = Array.isArray(raw.accountGroups) && raw.accountGroups.length > 0
-    ? [...new Set(raw.accountGroups.filter((g) => typeof g === 'string' && g.trim()))]
-    : ['默认群组'];
-  if (!merged.accountGroups.includes('默认群组')) {
-    merged.accountGroups.unshift('默认群组');
-  }
-
-  merged.feishu = {
-    ...defaultFeishuConfig(),
-    ...(raw.feishu || {}),
-    fieldMap: {
-      ...defaultFeishuConfig().fieldMap,
-      ...((raw.feishu && raw.feishu.fieldMap) || {}),
-    },
-  };
-
-  const rawMihomo = (raw && raw.mihomo) || {};
-  let rawSources = Array.isArray(rawMihomo.sources) ? rawMihomo.sources : [];
-  // 兼容旧版单一 subscriptionUrl 自动平滑迁移至多源架构
-  if (rawSources.length === 0 && typeof rawMihomo.subscriptionUrl === 'string' && rawMihomo.subscriptionUrl.trim()) {
-    rawSources = [{
-      id: 'src_default',
-      type: 'url',
-      name: '默认订阅',
-      target: rawMihomo.subscriptionUrl.trim(),
-      enabled: true,
-      nodeCount: Array.isArray(rawMihomo.cachedProxies) ? rawMihomo.cachedProxies.length : 0,
-      updatedAt: rawMihomo.lastUpdated || '',
-      cachedProxies: Array.isArray(rawMihomo.cachedProxies) ? rawMihomo.cachedProxies : [],
-      subscriptionUserinfo: '',
-    }];
-  }
-
-  merged.mihomo = {
-    ...defaultMihomoConfig(),
-    ...rawMihomo,
-    sources: rawSources.map((s) => ({
-      id: (s && s.id) || ('src_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
-      type: s && s.type === 'file' ? 'file' : 'url',
-      name: (s && typeof s.name === 'string' && s.name.trim())
-        ? s.name.trim()
-        : (s && s.type === 'file' ? '本地 YAML 节点' : '机场订阅'),
-      target: (s && typeof s.target === 'string') ? s.target.trim() : '',
-      enabled: typeof (s && s.enabled) === 'boolean' ? s.enabled : true,
-      nodeCount: typeof (s && s.nodeCount) === 'number' ? s.nodeCount : (Array.isArray(s && s.cachedProxies) ? s.cachedProxies.length : 0),
-      updatedAt: (s && typeof s.updatedAt === 'string') ? s.updatedAt : '',
-      cachedProxies: Array.isArray(s && s.cachedProxies) ? s.cachedProxies : [],
-      subscriptionUserinfo: (s && s.subscriptionUserinfo) || '',
-    })),
-    cachedProxies: Array.isArray(rawMihomo.cachedProxies) ? rawMihomo.cachedProxies : [],
-  };
-
-  // profiles 合法性校验 (v1.5.16, 评审 P2): 此前只补颜色, 不查 id。空/重复/
-  // 非字符串 id 会让多个账号映射到同一 persist:muse-undefined 分区且不可拆分。
-  // 现在过滤非法与重复 id (保留首个), 全部非法时回退默认账号。
-  if (Array.isArray(merged.profiles) && merged.profiles.length > 0) {
-    const seenIds = new Set();
-    merged.profiles = merged.profiles
-      .filter((prof) => {
-        if (!prof || typeof prof.id !== 'string' || !prof.id.trim() || seenIds.has(prof.id)) return false;
-        seenIds.add(prof.id);
-        return true;
-      })
-      .map((prof, idx) => ({
-        ...prof,
-        color: prof.color || AVATAR_COLORS[idx % AVATAR_COLORS.length],
-        group: typeof prof.group === 'string' && prof.group.trim() ? prof.group.trim() : '默认群组',
-        purpose: typeof prof.purpose === 'string' ? prof.purpose : '',
-        usagePercent: typeof prof.usagePercent === 'number' ? Math.max(0, Math.min(100, Math.round(prof.usagePercent))) : 0,
-        usageText: typeof prof.usageText === 'string' ? prof.usageText : '',
-        tokenResetAt: prof.tokenResetAt ? formatDateTime(prof.tokenResetAt) : '',
-        status: ['normal', 'warning', 'exhausted', 'idle'].includes(prof.status) ? prof.status : 'normal',
-        proxyQueue: Array.isArray(prof.proxyQueue) ? prof.proxyQueue.filter((n) => typeof n === 'string' && n.trim()) : [],
-        proxyStrategy: ['fallback', 'url-test', 'load-balance', 'select'].includes(prof.proxyStrategy) ? prof.proxyStrategy : 'fallback',
-        proxyMode: ['inherit', 'system', 'mihomo', 'direct', 'custom'].includes(prof.proxyMode) ? prof.proxyMode : 'inherit',
-        proxyCustom: (prof.proxyCustom && typeof prof.proxyCustom === 'object') ? {
-          type: ['http', 'socks5'].includes(prof.proxyCustom.type) ? prof.proxyCustom.type : 'http',
-          host: typeof prof.proxyCustom.host === 'string' && prof.proxyCustom.host.trim() ? prof.proxyCustom.host.trim() : '127.0.0.1',
-          port: parseInt(prof.proxyCustom.port, 10) || 7897,
-        } : { type: 'http', host: '127.0.0.1', port: 7897 },
-      }));
-  }
-  if (!Array.isArray(merged.profiles) || merged.profiles.length === 0) {
-    merged.profiles = [{
-      id: 'default',
-      name: '账号 1',
-      color: AVATAR_COLORS[0],
-      group: '默认群组',
-      purpose: '',
-      usagePercent: 0,
-      usageText: '',
-      tokenResetAt: '',
-      status: 'normal',
-      proxyQueue: [],
-      proxyStrategy: 'fallback',
-      proxyMode: 'inherit',
-      proxyCustom: { type: 'http', host: '127.0.0.1', port: 7897 },
-    }];
-  }
-  // windowByProfile 只保留现存账号的条目, 防已删账号的几何记录无限堆积
-  {
-    const validIds = new Set(merged.profiles.map((prof) => prof.id));
-    for (const pid of Object.keys(merged.windowByProfile)) {
-      if (!validIds.has(pid)) delete merged.windowByProfile[pid];
-    }
-  }
-  return merged;
-}
-
-function loadState() {
-  const primaryPath = statePath();
-  const backupPath = stateBackupPath();
-
-  // 1. 优先尝试读取主状态文件
-  try {
-    if (fs.existsSync(primaryPath)) {
-      const content = fs.readFileSync(primaryPath, 'utf8');
-      if (content && content.trim()) {
-        const raw = JSON.parse(content);
-        const parsed = sanitizeAndMergeState(raw);
-        isStateSafelyLoaded = true;
-        // 成功读取且包含 profiles，维护备份
-        if (parsed.profiles && parsed.profiles.length > 0) {
-          try { fs.copyFileSync(primaryPath, backupPath); } catch {}
-        }
-        return parsed;
-      }
-    }
-  } catch (err) {
-    console.warn('[State] Main app-state.json corrupted or unreadable, attempting backup recovery:', err);
-  }
-
-  // 2. 主文件损坏或空文件时，依次尝试 .bak / .bak2 代际备份恢复，绝不直接抹空账号
-  for (const candidate of [backupPath, stateBackup2Path()]) {
-    try {
-      if (fs.existsSync(candidate)) {
-        const backupContent = fs.readFileSync(candidate, 'utf8');
-        if (backupContent && backupContent.trim()) {
-          const rawBackup = JSON.parse(backupContent);
-          const parsedBackup = sanitizeAndMergeState(rawBackup);
-          console.log('[State] Successfully restored profiles and settings from backup file:', candidate);
-          isStateSafelyLoaded = true;
-          try { fs.writeFileSync(primaryPath, JSON.stringify(parsedBackup, null, 2), 'utf8'); } catch {}
-          return parsedBackup;
-        }
-      }
-    } catch (backupErr) {
-      console.error('[State] Backup recovery failed for', candidate, backupErr);
-    }
-  }
-
-  // 3. 首次启动主备均无时，采用默认状态
-  isStateSafelyLoaded = false;
-  return defaultState();
-}
-
-let state = loadState();
+// state 与 src/state.js 持有的是同一个对象; 整体替换必须用 replaceState
+let state = initState();
 // 一次性迁移 (v1.5.18): 站点选择会随 app-state.json 跨版本保留, 旧版本里切到
 // Meta AI 的用户升级后每次启动仍直达 meta.ai, 而 Muse AI 的登录地址只有
 // https://muse.ai 。首次运行本版时把站点强制扳回 muse; 落盘交给下方既有的
@@ -684,51 +353,9 @@ if (!state.profiles.some((p) => p.id === state.activeProfileId)) {
   state.activeProfileId = state.profiles[0].id;
 }
 
-// 核心加固：原子写入与双备份，杜绝 0 字节截断损坏导致账号凭据与列表丢失
-function saveState() {
-  try {
-    const filePath = statePath();
-    const backupPath = stateBackupPath();
-    const tmpPath = filePath + '.tmp';
-    const content = JSON.stringify(state, null, 2);
-
-    // 1. 代际轮换 (v1.5.16, 评审 P2): 旧实现每次保存后立刻用新内容覆盖 .bak,
-    // 内存中的 state 一旦被写坏, 主备会一起坏。改为覆盖主文件之前, 先把磁盘上
-    // 当前主文件 (最后一个可解析的已知良好版本) 轮为 .bak, 旧 .bak 轮为
-    // .bak2; 当前主文件不可解析时不轮转, 防止坏内容污染备份链。
-    try {
-      const currentOnDisk = fs.readFileSync(filePath, 'utf8');
-      JSON.parse(currentOnDisk);
-      try { if (fs.existsSync(backupPath)) fs.copyFileSync(backupPath, stateBackup2Path()); } catch {}
-      try { fs.copyFileSync(filePath, backupPath); } catch {}
-    } catch {}
-
-    // 2. 先安全落盘至临时文件
-    fs.writeFileSync(tmpPath, content, 'utf8');
-
-    // 3. 原子重命名替换
-    try {
-      fs.renameSync(tmpPath, filePath);
-    } catch {
-      fs.copyFileSync(tmpPath, filePath);
-      try { fs.unlinkSync(tmpPath); } catch {}
-    }
-  } catch (err) {
-    console.error('[State] Failed to save state atomically:', err);
-  }
-}
-
-// 窗口 resize/move 等高频事件防抖版本，避免频繁磁盘 IO
-let saveStateDebounceTimer = null;
-function saveStateDebounced() {
-  if (saveStateDebounceTimer) clearTimeout(saveStateDebounceTimer);
-  saveStateDebounceTimer = setTimeout(() => {
-    saveState();
-  }, 300);
-}
 
 // 仅在明确安全加载或全新初始安装时执行首写，避免覆盖损坏现场
-if (isStateSafelyLoaded || !fs.existsSync(statePath())) {
+if (wasStateSafelyLoaded() || !fs.existsSync(statePath())) {
   saveState();
 }
 
@@ -835,320 +462,131 @@ function attachZoomShortcuts(win) {
   });
 }
 
-// ---- External links & navigation security (Open in system default browser) --
-function extractExternalTargetUrl(rawUrl) {
-  if (!rawUrl || typeof rawUrl !== 'string') return null;
+
+// ---- 账号子窗口 (授权弹窗登记、账号页面窗口) -----------------------------------
+// 实现在 src/child-windows.js (2026-11-22 main.js 拆分 第 3 步)。这里注入 main.js 才有的
+// 装饰函数; 它们都是函数声明 (已提升), 且只在窗口真正创建时才被调用。
+const childWindows = createChildWindowManager({
+  getProfileName: (profileId) => {
+    const prof = (state.profiles || []).find((p) => p.id === profileId);
+    return prof && prof.name ? prof.name : '';
+  },
+  iconPath: APP_ICON_PATH,
+  userAgent: CHROME_UA,
+  decorateWindow: (win, profileId) => {
+    attachZoomShortcuts(win);
+    attachContextMenu(win);
+    setupExternalLinkHandler(win, profileId);
+  },
+});
+const {
+  childWindowsByProfile,
+  trackChildWindow,
+  setChildWindowsVisible,
+  closeChildWindows,
+  openProfileScopedWindow,
+  openUrlForProfile,
+} = childWindows;
+
+// ---- 代理与 Mihomo 调度 ----------------------------------------------------------
+// 实现在 src/proxy.js (2026-11-22 main.js 拆分 第 4 步)。notify 是函数声明 (已提升),
+// 只在内核崩溃或端口改派时才被调用。
+const proxyController = createProxyController({ notify, partitionFor });
+const {
+  ensureProfilePort,
+  pruneProfilePorts,
+  getMihomoManager,
+  applyProxyToSession,
+  applyProxySettings,
+  refreshMihomoMergedProxiesAndReload,
+} = proxyController;
+
+// ---- 配置备份 (密码窗口、导出、导入文件读取) -----------------------------------
+// 实现在 src/backup.js (2026-11-22 main.js 拆分 第 5 步); 创建时注册 prompt:* IPC。
+// mainWindow 用 getter 传入: 它在 main.js 里会被重新赋值。
+const backupService = createBackupService({
+  getMainWindow: () => mainWindow,
+  partitionFor,
+  flushAllSessions,
+  iconPath: APP_ICON_PATH,
+});
+const { handleConfigExport } = backupService;
+
+// ---- 便携版自动更新 -----------------------------------------------------------
+// 实现在 src/updater.js (2026-11-22 main.js 拆分 第 6 步)。notify / buildTrayMenu 是函数声明 (已提升)。
+const { checkForUpdates, installUpdateAndRestart, setupAutoUpdate, isUpdateDownloaded } = createUpdater({
+  notify,
+  buildTrayMenu,
+});
+
+// ---- WebRTC 真实 IP 泄露防护 (2026-11-22) ------------------------------------------
+// 账号会话只为 http/https 设置了代理, WebRTC 走 UDP 会绕过代理直连, 网页一段脚本就能拿到
+// 真实公网 IP, 所有账号拿到的都是同一个, 足以把它们关联起来。disable_non_proxied_udp 让
+// WebRTC 只能经代理走 TCP。可能影响依赖 WebRTC 的语音/视频通话, 因此可在设置里关闭。
+const WEBRTC_SAFE_POLICY = 'disable_non_proxied_udp';
+const currentWebRTCPolicy = () => (state.ui && state.ui.webrtcProtection === false ? 'default' : WEBRTC_SAFE_POLICY);
+function applyWebRTCPolicy(wc) {
   try {
-    let cleanUrl = rawUrl.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
-    const parsed = new URL(cleanUrl);
-    const host = parsed.hostname.toLowerCase();
+    if (wc && !wc.isDestroyed() && typeof wc.setWebRTCIPHandlingPolicy === 'function') {
+      wc.setWebRTCIPHandlingPolicy(currentWebRTCPolicy());
+    }
+  } catch (err) {
+    console.warn('[WebRTC] Failed to set IP handling policy:', err);
+  }
+}
+// 覆盖所有渲染进程: 账号主窗口、快捷窗口、授权弹窗、账号页面窗口; 在页面加载前生效
+app.on('web-contents-created', (_e, wc) => applyWebRTCPolicy(wc));
 
-    // 只解包已知跳转站与内部重定向包装的参数 (含 Meta AI / Facebook / Instagram / Google 等外链跳板)
-    const REDIRECTOR_HOSTS = new Set([
-      'www.google.com', 'google.com', 'www.bing.com', 'bing.com',
-      'duckduckgo.com', 'html.duckduckgo.com',
-      'link.meta.com', 'l.facebook.com', 'lm.facebook.com',
-      'l.instagram.com', 'l.messenger.com', 'www.facebook.com', 'facebook.com',
-      'out.reddit.com', 'www.youtube.com',
-      'muse.ai', 'meta.ai', 'meta.com',
-    ]);
-    if (!REDIRECTOR_HOSTS.has(host) && !REDIRECTOR_HOSTS.has(host.replace(/^www\./, ''))) return null;
+// 根据发起请求的 webContents 反查所属账号 (主窗口 / 快捷窗口 / 子弹窗)
+function findProfileForWebContents(wc) {
+  if (!wc) return null;
+  const same = (w) => w && !w.isDestroyed() && (w.webContents === wc || w.webContents.id === wc.id);
+  for (const [pid, w] of profileWindows) if (same(w)) return { profileId: pid, win: w };
+  if (same(quickWindow)) return { profileId: quickWindowProfileId, win: quickWindow };
+  return childWindows.findChildOwner(wc);
+}
 
-    // 识别常见重定向跳转参数
-    const redirectKeys = ['u', 'url', 'target', 'dest', 'destination', 'link', 'href', 'q'];
-    for (const key of redirectKeys) {
-      const candidate = parsed.searchParams.get(key);
-      if (candidate) {
-        try {
-          const candUrl = new URL(candidate);
-          if (candUrl.protocol === 'http:' || candUrl.protocol === 'https:') {
-            const candHost = candUrl.hostname.toLowerCase();
-            const isInternal = candHost === 'muse.ai' || candHost.endsWith('.muse.ai') ||
-                             candHost === 'meta.ai' || candHost.endsWith('.meta.ai');
-            if (!isInternal) {
-              return candidate;
-            }
-          }
-        } catch {}
+// 取消主框架跳转后的白屏自愈 (2026-11-22)。只在页面确实没有任何可见内容时才重新加载, 避免误伤。
+const BLANK_PAGE_PROBE = `(() => {
+  const body = document.body;
+  if (!body) return true;
+  const ours = (el) => /^(acct-|muse-)/.test(el.id || '') || el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'LINK';
+  for (const el of body.children) {
+    if (ours(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width > 50 && r.height > 50 && (el.innerText || '').trim().length > 0) return false;
+  }
+  return true;
+})()`;
+const blankRecoveryAt = new WeakMap(); // webContents -> 上次自愈时间, 防止反复重载
+function scheduleBlankPageRecovery(win) {
+  if (!win || win.isDestroyed()) return;
+  const wc = win.webContents;
+  setTimeout(async () => {
+    if (win.isDestroyed() || wc.isDestroyed() || wc.isLoading()) return;
+    try {
+      const blank = await wc.executeJavaScript(BLANK_PAGE_PROBE, true);
+      const last = blankRecoveryAt.get(wc) || 0;
+      if (blank && Date.now() - last > 30 * 1000) {
+        blankRecoveryAt.set(wc, Date.now());
+        const cur = wc.getURL();
+        // 停在跳转中转页 (如 l.meta.ai/?u=...) 上时, 重新加载会再跳一次、再打开一次浏览器:
+        // 改为返回上一页; 没有上一页就回到站点首页
+        if (extractExternalTargetUrl(cur) || !isInternalSiteUrl(cur)) {
+          const hist = wc.navigationHistory;
+          const canBack = hist && typeof hist.canGoBack === 'function' ? hist.canGoBack() : (wc.canGoBack && wc.canGoBack());
+          console.warn('[ExternalLink] Page went blank on a redirect page, going back:', cur);
+          if (canBack) { if (hist && hist.goBack) hist.goBack(); else wc.goBack(); }
+          else wc.loadURL(currentSite().url);
+        } else {
+          console.warn('[ExternalLink] Page went blank after a cancelled navigation, reloading:', cur);
+          wc.reload();
+        }
       }
+    } catch (err) {
+      console.warn('[ExternalLink] Blank-page check failed:', err && err.message);
     }
-  } catch {}
-  return null;
-}
-
-function isShareOrDocumentUrl(rawUrl) {
-  if (!rawUrl || typeof rawUrl !== 'string') return false;
-  try {
-    const parsed = new URL(rawUrl);
-    const pathname = parsed.pathname.toLowerCase();
-    const search = parsed.search.toLowerCase();
-    const sharePaths = [
-      '/share',
-      '/s/',
-      '/doc',
-      '/docs',
-      '/d/',
-      '/file',
-      '/files',
-      '/f/',
-      '/artifact',
-      '/artifacts',
-      '/attachment',
-      '/attachments',
-      '/download',
-      '/export',
-      '/preview',
-      '/view',
-      '/v/',
-      '/p/',
-    ];
-    if (sharePaths.some((p) => pathname.includes(p))) {
-      return true;
-    }
-    if (
-      search.includes('share=') ||
-      search.includes('token=') ||
-      search.includes('key=') ||
-      search.includes('expires=') ||
-      search.includes('signature=') ||
-      search.includes('sig=')
-    ) {
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-function isInternalSiteUrl(rawUrl) {
-  try {
-    // 若属于外部链接包装重定向，实质属于外链
-    if (extractExternalTargetUrl(rawUrl)) return false;
-    // 分享/文档/附件/临时资源链接不作为应用内基础导航，应作为独立资源处理
-    if (isShareOrDocumentUrl(rawUrl)) return false;
-
-    const parsed = new URL(rawUrl);
-    const host = parsed.hostname.toLowerCase();
-    if (host === 'muse.ai' || host.endsWith('.muse.ai')) return true;
-    if (host === 'meta.ai' || host.endsWith('.meta.ai')) return true;
-    if (host === 'meta.com' || host.endsWith('.meta.com')) return true;
-    // file: 不再归为内部站点 (v1.5.17, 评审 P2): 旧归类让任意本地 HTML 能在
-    // 挂有特权 preload 的窗口内被当作内部页面放行导航。应用自身页面都由主
-    // 进程直接 loadURL/loadFile 打开, 不经过链接/导航拦截, 不受此改动影响。
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-function isAuthOrConnectorUrl(rawUrl) {
-  if (typeof rawUrl !== 'string') return false;
-  // 关键：允许空白弹窗占位符（现代前端异步打开 OAuth 弹窗的通用标准模式：先 window.open('') 再重定向）
-  const trimmed = rawUrl.trim();
-  if (trimmed === '' || trimmed === 'about:blank' || trimmed.startsWith('about:')) {
-    return true;
-  }
-  try {
-    const parsed = new URL(trimmed);
-    const host = parsed.hostname.toLowerCase();
-    const pathname = parsed.pathname.toLowerCase();
-    const search = parsed.search.toLowerCase();
-
-    // 0. Meta / Muse 跨域 SSO 与 AYMH ("Accounts You Might Have") 握手链
-    if (pathname.includes('/aymh') || (search.includes('origin=') && host.endsWith('muse.ai'))) {
-      return true;
-    }
-
-    // 1. 专属纯身份认证域名（该域名整个域均为登录/认证中心）
-    const dedicatedAuthHosts = [
-      'accounts.google.com',
-      'appleid.apple.com',
-      'auth.meta.com',
-      'account.meta.com',
-      'family.meta.com',
-      'work.meta.com',
-      'login.microsoftonline.com',
-      'login.live.com',
-      'accounts.spotify.com',
-    ];
-    if (dedicatedAuthHosts.some((h) => host === h || host.endsWith('.' + h))) {
-      return true;
-    }
-
-    // 2. Meta 家族 (Facebook / Instagram / Messenger) 的认证、授权与 SSO 路径
-    const metaFamilyHosts = ['facebook.com', 'fb.com', 'instagram.com', 'messenger.com'];
-    if (metaFamilyHosts.some((h) => host === h || host.endsWith('.' + h))) {
-      if (
-        pathname.includes('/aymh') ||
-        pathname.includes('/login') ||
-        pathname.includes('/signin') ||
-        pathname.includes('/oauth') ||
-        pathname.includes('/dialog') ||
-        pathname.includes('/checkpoint') ||
-        pathname.includes('/recover') ||
-        search.includes('client_id=') ||
-        search.includes('redirect_uri=')
-      ) {
-        return true;
-      }
-    }
-
-    // 3. 内部站点的连接器中转授权与登录路由（含认证错误回调、状态码与授权换码）
-    const isInternal = host === 'muse.ai' || host.endsWith('.muse.ai') ||
-                       host === 'meta.ai' || host.endsWith('.meta.ai') ||
-                       host === 'meta.com' || host.endsWith('.meta.com');
-    if (isInternal) {
-      if (
-        pathname.includes('/connector') ||
-        pathname.includes('/auth') ||
-        pathname.includes('/oauth') ||
-        pathname.includes('/login') ||
-        pathname.includes('/signin') ||
-        search.includes('connector') ||
-        search.includes('error=') ||
-        search.includes('code=') ||
-        search.includes('state=') ||
-        search.includes('token=')
-      ) {
-        return true;
-      }
-    }
-
-    // 4. 通用 OAuth 特征（包含 client_id 以及 redirect_uri / response_type / state / code）
-    if (
-      (search.includes('client_id=') || search.includes('response_type=')) &&
-      (search.includes('redirect_uri=') || pathname.includes('oauth') || pathname.includes('auth'))
-    ) {
-      return true;
-    }
-
-    // 5. 第三方常用开放平台（GitHub, Slack, Notion, Zoom, Dropbox, Canva 等）的特定登录/授权路径
-    const thirdPartyOAuthHosts = [
-      'github.com',
-      'spotify.com',
-      'dropbox.com',
-      'zoom.us',
-      'canva.com',
-      'onepeloton.com',
-      'peloton.com',
-      'slack.com',
-      'notion.so',
-      'live.com',
-      'linkedin.com',
-      'twitter.com',
-      'x.com',
-      'plaid.com',
-      'functionhealth.com',
-      'healthex.com',
-    ];
-    if (thirdPartyOAuthHosts.some((h) => host === h || host.endsWith('.' + h))) {
-      // 只有明确属于 OAuth 授权或登录的路径才认定为 Auth 弹窗，普通仓库/文章/主页属于常规外部链接
-      if (
-        pathname.includes('/oauth') ||
-        pathname.startsWith('/login') ||
-        pathname.startsWith('/signin') ||
-        pathname.includes('/authorize') ||
-        search.includes('client_id=') ||
-        search.includes('redirect_uri=')
-      ) {
-        return true;
-      }
-    }
-
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-// 识别第三方广告、追踪分析与数据上报埋点链接 (防止 iframe 内部重定向或打点唤起外部默认浏览器)
-function isTrackingOrAdUrl(rawUrl) {
-  if (typeof rawUrl !== 'string') return false;
-  try {
-    const parsed = new URL(rawUrl);
-    const host = parsed.hostname.toLowerCase();
-    const pathname = parsed.pathname.toLowerCase();
-    const search = parsed.search.toLowerCase();
-
-    // 常见广告 / 埋点统计 / 转化追踪域名
-    const trackingHosts = [
-      'doubleclick.net',
-      'google-analytics.com',
-      'googletagmanager.com',
-      'fbthirdpartypixel.com',
-      'analytics.twitter.com',
-      'clarity.ms',
-      'hotjar.com',
-      'segment.io',
-      'mixpanel.com',
-      'scorecardresearch.com',
-      'criteo.com',
-      'adroll.com',
-    ];
-
-    if (trackingHosts.some((h) => host === h || host.endsWith('.' + h))) {
-      return true;
-    }
-
-    if (host === 'tr.snapchat.com' || (host.endsWith('snapchat.com') && pathname.startsWith('/cm/'))) {
-      return true;
-    }
-
-    if (
-      pathname.includes('/activityi') ||
-      pathname.includes('/pixel') ||
-      search.includes('dc_pre=') ||
-      search.includes('fbthirdpartypixel')
-    ) {
-      return true;
-    }
-
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-// ---- 子弹窗 (OAuth/连接器) 追踪 (v1.5.15, 评审 P1-6) -------------------------
-// 此前 did-create-window 的子窗口无人登记: 切账号不跟随、登出/删号关不掉,
-// 开着的授权弹窗能在存储清除后回写 Cookie 让已登出会话复活。现在按父窗口
-// 所属 profile 登记, closed 时注销, 并提供跟随显隐与批量关闭工具。
-const childWindowsByProfile = new Map(); // profileId -> Set<BrowserWindow>
-const childrenHiddenBySwitch = new WeakSet();
-
-function trackChildWindow(profileId, childWin) {
-  if (!profileId || !childWin) return;
-  let set = childWindowsByProfile.get(profileId);
-  if (!set) { set = new Set(); childWindowsByProfile.set(profileId, set); }
-  set.add(childWin);
-  childWin.on('closed', () => {
-    const st = childWindowsByProfile.get(profileId);
-    if (st) { st.delete(childWin); if (!st.size) childWindowsByProfile.delete(profileId); }
-  });
-}
-
-function setChildWindowsVisible(profileId, visible) {
-  const set = childWindowsByProfile.get(profileId);
-  if (!set) return;
-  for (const child of set) {
-    if (!child || child.isDestroyed()) continue;
-    if (visible) {
-      if (childrenHiddenBySwitch.has(child)) { childrenHiddenBySwitch.delete(child); child.show(); }
-    } else if (child.isVisible()) {
-      childrenHiddenBySwitch.add(child);
-      child.hide();
-    }
-  }
-}
-
-function closeChildWindows(profileId) {
-  const set = childWindowsByProfile.get(profileId);
-  if (!set) return;
-  for (const child of [...set]) {
-    if (child && !child.isDestroyed()) { try { child.destroy(); } catch {} }
-  }
-  childWindowsByProfile.delete(profileId);
+  }, 1500);
 }
 
 function setupExternalLinkHandler(win, profileId) {
@@ -1172,19 +610,42 @@ function setupExternalLinkHandler(win, profileId) {
         action: 'allow',
         overrideBrowserWindowOptions: {
           autoHideMenuBar: true,
+          // 授权/连接器弹窗多为第三方页面 (Google/GitHub 等): 不再继承聊天页的
+          // preload-chat-export.js (注入 UI、链接拦截、IPC 通道), 改用空的最小 preload。
+          // session 仍自动继承打开者 (当前账号), 授权结果照常写回本账号。
+          webPreferences: {
+            preload: path.join(__dirname, 'preload-popup.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+          },
         },
       };
+    }
+
+    // Meta 账户中心等账号页面: 在应用内用当前账号的 session 打开独立窗口
+    if (isMetaAccountUrl(url) && !extractExternalTargetUrl(url)) {
+      openProfileScopedWindow(win, profileId, url);
+      return { action: 'deny' };
     }
 
     // 关键守卫：内部站点常规基础功能路由（如左侧栏的聊天 /chat、会话切换 /c/、设置等），绝不向外打开浏览器
     if (isInternalSiteUrl(url)) {
       try {
-        const parsed = new URL(url);
+        // 此前只比较 pathname, 且 "/" 直接忽略: 指向首页、或同一路径不同参数 (如 /settings?tab=xx) 的链接
+        // 点击后毫无反应。现在按完整地址 (忽略 #hash) 比较, 只要目标不同就在当前窗口跳转。
+        const strip = (u) => String(u || '').split('#')[0].replace(/\/$/, '');
         const curUrl = win.webContents.getURL() || '';
-        if (parsed.pathname && parsed.pathname !== '/' && !curUrl.endsWith(parsed.pathname)) {
+        if (strip(url) !== strip(curUrl)) {
           win.loadURL(url);
         }
       } catch {}
+      return { action: 'deny' };
+    }
+
+    // 站内分享/文档/附件等链接: 用当前账号的登录态在应用内打开, 而不是没有登录态的系统浏览器
+    if (isProfileScopedUrl(url)) {
+      openUrlForProfile(win, profileId, url);
       return { action: 'deny' };
     }
 
@@ -1249,7 +710,7 @@ function setupExternalLinkHandler(win, profileId) {
   });
 
   // 2. 拦截在主窗口内的普通超链接跳转（如 <a href="...">）及 302 重定向，防止主聊天窗口被覆盖或因阻止导航挂起黑屏
-  const handleNavigation = (event, url, isInPlace, isMainFrame) => {
+  const handleNavigation = (event, url, isInPlace, isMainFrame, isRedirect = false) => {
     // 关键守卫：严格忽略子框架 (iframe/subframe) 的所有导航与 302 重定向！
     // 页面内的第三方统计埋点（Snapchat Pixel, DoubleClick, Facebook Pixel 等）及后台嵌入 iframe 频繁重定向，
     // 若拦截子框架会导致 Blink Mojo 报错并误唤起外部系统浏览器打开后台资源。
@@ -1264,8 +725,27 @@ function setupExternalLinkHandler(win, profileId) {
     if (isAuthOrConnectorUrl(url)) {
       return;
     }
+    // 主聊天窗口内直接跳转到 Meta 账户中心: 不覆盖聊天页, 改为弹出当前账号的独立窗口。
+    // 若当前窗口本身已在 meta.com 页面内 (即账户窗口自身的站内跳转), 正常放行。
+    // 服务端 302 重定向 (登录/切号链路) 一律不改道, 保持原有行为
+    if (!isRedirect && isMetaAccountCenterUrl(url) && !extractExternalTargetUrl(url)) {
+      let curIsMeta = false;
+      try { curIsMeta = isMetaAccountUrl(win.webContents.getURL()); } catch {}
+      if (!curIsMeta) {
+        event.preventDefault();
+        openProfileScopedWindow(win, profileId, url);
+      }
+      return;
+    }
     // 内部站点链接：主框架正常导航
     if (isInternalSiteUrl(url)) {
+      return;
+    }
+
+    // 站内分享/文档/附件等: 不覆盖主聊天窗口, 也不交给没有登录态的系统浏览器, 改为当前账号窗口打开
+    if (!isRedirect && isProfileScopedUrl(url)) {
+      event.preventDefault();
+      openUrlForProfile(win, profileId, url);
       return;
     }
 
@@ -1281,113 +761,15 @@ function setupExternalLinkHandler(win, profileId) {
         console.warn('[ExternalLink] Failed to open external URL on nav:', finalExternalUrl, err);
       });
     }
+    // 兜底 (2026-11-22): 页面整体跳转被中途取消时, 网站可能已开始卸载页面, 窗口只剩空白和账号栏。
+    // 1.5 秒后检查页面上除本应用注入的元素外是否还有可见内容, 没有就重新加载当前页面。
+    scheduleBlankPageRecovery(win);
   };
 
-  win.webContents.on('will-navigate', handleNavigation);
-  win.webContents.on('will-redirect', handleNavigation);
+  win.webContents.on('will-navigate', (ev, url, isInPlace, isMainFrame) => handleNavigation(ev, url, isInPlace, isMainFrame, false));
+  win.webContents.on('will-redirect', (ev, url, isInPlace, isMainFrame) => handleNavigation(ev, url, isInPlace, isMainFrame, true));
 }
 
-let mihomoManager = null;
-function getMihomoManager() {
-  if (!mihomoManager) {
-    const mihomoDataDir = path.join(app.getPath('userData'), 'mihomo');
-    mihomoManager = new MihomoManager({
-      dataDir: mihomoDataDir,
-      binPath: state.mihomo && state.mihomo.customBinPath,
-      basePort: (state.mihomo && state.mihomo.basePort) || DEFAULT_BASE_PROXY_PORT,
-      controllerPort: (state.mihomo && state.mihomo.controllerPort) || DEFAULT_CONTROLLER_PORT,
-    });
-  }
-  return mihomoManager;
-}
-
-// ---- network & proxy settings ---------------------------------------------
-async function applyProxyToSession(targetSession, profileId = null) {
-  if (!targetSession) return;
-
-  const prof = profileId ? state.profiles.find((p) => p.id === profileId) : null;
-  const acctMode = (prof && prof.proxyMode && prof.proxyMode !== 'inherit') ? prof.proxyMode : null;
-
-  // 1. 若账号单独指定了代理模式（system / direct / custom）
-  if (acctMode === 'system') {
-    try {
-      await targetSession.setProxy({ mode: 'system' });
-      console.log(`[Proxy] Applied individual system/TUN mode to session for profile: ${profileId}`);
-      return;
-    } catch (err) {
-      console.error(`[Proxy] Failed to apply system mode to profile ${profileId}:`, err);
-    }
-  } else if (acctMode === 'direct') {
-    try {
-      await targetSession.setProxy({ mode: 'direct' });
-      console.log(`[Proxy] Applied individual direct mode to session for profile: ${profileId}`);
-      return;
-    } catch (err) {
-      console.error(`[Proxy] Failed to apply direct mode to profile ${profileId}:`, err);
-    }
-  } else if (acctMode === 'custom') {
-    const c = (prof && prof.proxyCustom) || { type: 'http', host: '127.0.0.1', port: 7897 };
-    const type = (c.type || 'http').toLowerCase();
-    const host = (c.host || '127.0.0.1').trim();
-    const port = parseInt(c.port, 10) || 7897;
-    const proxyRules = `${type}://${host}:${port}`;
-    const proxyBypassRules = '<local>;localhost;127.0.0.1';
-    try {
-      await targetSession.setProxy({ proxyRules, proxyBypassRules });
-      console.log(`[Proxy] Applied individual custom proxy (${proxyRules}) to session for profile: ${profileId}`);
-      return;
-    } catch (err) {
-      console.error(`[Proxy] Failed to apply custom proxy to profile ${profileId}:`, err);
-    }
-  }
-
-  // 2. 账号选了 mihomo 或跟随全局 (inherit):
-  // 若开启了内置 Mihomo 智能分流（或账号显式选了 mihomo）
-  if (acctMode === 'mihomo' || (state.mihomo && state.mihomo.enabled)) {
-    const mm = getMihomoManager();
-    // 优先从 portMap 中找该 profileId 对应的独立端口，没有则按账号索引确定推算
-    let dedicatedPort = profileId && mm && mm.portMap ? mm.portMap[profileId] : null;
-    if (!dedicatedPort) {
-      const basePort = (state.mihomo && state.mihomo.basePort) || DEFAULT_BASE_PROXY_PORT;
-      const acctIdx = state.profiles ? state.profiles.findIndex((p) => p.id === profileId) : -1;
-      dedicatedPort = acctIdx >= 0 ? (basePort + acctIdx) : basePort;
-    }
-    try {
-      const proxyRules = `http=127.0.0.1:${dedicatedPort};https=127.0.0.1:${dedicatedPort}`;
-      const proxyBypassRules = '<local>;localhost;127.0.0.1';
-      await targetSession.setProxy({ proxyRules, proxyBypassRules });
-      console.log(`[Proxy] Applied Mihomo dedicated port ${dedicatedPort} to session for profile: ${profileId || 'default'}`);
-      return;
-    } catch (err) {
-      console.error(`[Proxy] Failed to apply Mihomo port ${dedicatedPort} to profile ${profileId}:`, err);
-    }
-    return;
-  }
-
-  // 3. 传统全局通用代理策略 (Custom / Direct / System 自适应)
-  const p = state.proxy || defaultProxy();
-  try {
-    if (p.mode === 'custom' && p.enabled !== false) {
-      const type = (p.type || 'http').toLowerCase();
-      const host = (p.host || '127.0.0.1').trim();
-      const port = parseInt(p.port, 10) || 7897;
-      // 标准单代理规则语法：http://127.0.0.1:7897 或 socks5://127.0.0.1:7897
-      const proxyRules = `${type}://${host}:${port}`;
-      const proxyBypassRules = p.bypass || '<local>;localhost;127.0.0.1';
-      await targetSession.setProxy({ proxyRules, proxyBypassRules });
-      console.log(`[Proxy] Applied custom proxy to session: ${proxyRules}`);
-    } else if (p.mode === 'direct') {
-      await targetSession.setProxy({ mode: 'direct' });
-      console.log('[Proxy] Applied direct connection mode to session');
-    } else {
-      // 默认自适应系统网络与TUN虚拟网卡（开箱即用，支持多机部署）
-      await targetSession.setProxy({ mode: 'system' });
-      console.log('[Proxy] Applied adaptive system/TUN proxy mode to session');
-    }
-  } catch (err) {
-    console.error('[Proxy] Failed to apply proxy to session:', err);
-  }
-}
 
 // ---- Google OAuth / Connector Session Reset & Helper ------------------------
 async function clearGoogleAuthSession(targetSession) {
@@ -1509,13 +891,6 @@ async function promptResetGoogleSession() {
   }
 }
 
-async function applyProxySettings() {
-  await applyProxyToSession(session.defaultSession);
-  for (const p of state.profiles) {
-    const s = session.fromPartition(partitionFor(p.id));
-    await applyProxyToSession(s, p.id);
-  }
-}
 
 // ---- 待生效导航 (v1.5.15, 评审 P1-12) ---------------------------------------
 // 切站点/改代理此前对所有账号窗口无差别 loadURL/reload, 后台账号未发送的
@@ -1593,7 +968,7 @@ function broadcastAccountChange() {
     activeProfileId: state.activeProfileId,
     dockPinned: !!(state.ui && state.ui.dockPinned),
     accountGroups: state.accountGroups || ['默认群组'],
-    feishu: state.feishu || defaultFeishuConfig(),
+    feishu: maskFeishuConfig(state.feishu),
   };
   for (const win of profileWindows.values()) {
     if (win && !win.isDestroyed()) {
@@ -1669,46 +1044,6 @@ function setUIAutoHide(enabled) {
   broadcastUISettingsChange();
 }
 
-// 同步多屏与最大化状态，杜绝跨屏溢出与位置跳跃
-function syncWindowStateAndBounds(targetWin, normalBounds, wasMaximized, targetDisplay) {
-  if (!targetWin || targetWin.isDestroyed()) return;
-  let disp = targetDisplay;
-  if (!disp) {
-    try {
-      const scr = require('electron').screen;
-      disp = (normalBounds && scr.getDisplayMatching ? scr.getDisplayMatching(normalBounds) : scr.getPrimaryDisplay());
-    } catch { disp = null; }
-  }
-  const wa = (disp && (disp.workArea || disp.bounds)) || { x: 0, y: 0, width: 1920, height: 1080 };
-
-  if (wasMaximized) {
-    // 若原窗口最大化，确保目标窗口先定位在当前屏幕的工作区再最大化，防止多屏下最大化错屏或被设为超出边界的伪尺寸
-    if (!targetWin.isMaximized()) {
-      try {
-        targetWin.setBounds({
-          x: wa.x + Math.max(0, Math.round((wa.width - 1200) / 2)),
-          y: wa.y + Math.max(0, Math.round((wa.height - 800) / 2)),
-          width: Math.min(1200, wa.width),
-          height: Math.min(800, wa.height),
-        });
-      } catch {}
-      targetWin.maximize();
-    }
-  } else {
-    // 若原窗口是普通窗口，目标窗口若是最大化先解除最大化
-    if (targetWin.isMaximized()) {
-      targetWin.unmaximize();
-    }
-    if (normalBounds) {
-      // 严格限制在当前显示器的工作区内，杜绝多屏边界溢出
-      const w = Math.min(normalBounds.width || 1200, wa.width);
-      const h = Math.min(normalBounds.height || 800, wa.height);
-      const x = Math.max(wa.x, Math.min(typeof normalBounds.x === 'number' ? normalBounds.x : wa.x, wa.x + wa.width - w));
-      const y = Math.max(wa.y, Math.min(typeof normalBounds.y === 'number' ? normalBounds.y : wa.y, wa.y + wa.height - h));
-      try { targetWin.setBounds({ x, y, width: w, height: h }); } catch {}
-    }
-  }
-}
 
 function getOrCreateProfileWindow(profileId, targetBounds, wasMaximized, targetDisplay) {
   let win = profileWindows.get(profileId);
@@ -1723,6 +1058,7 @@ function getOrCreateProfileWindow(profileId, targetBounds, wasMaximized, targetD
 
   // 确保新窗口的 Session 立即继承全局统一的网络代理配置
   const ses = session.fromPartition(partitionFor(profileId));
+  ensureSessionHandlers(profileId);
   applyProxyToSession(ses, profileId);
 
   const saved = ensureBoundsVisible(
@@ -1900,6 +1236,7 @@ function createQuickWindow() {
   // partition 必须显式绑定创建瞬间的活动账号; 此前用 webPrefs() 的隐含值
   // 在创建后即冻结, 切账号后快捷窗仍以旧账号登录态工作 (串号, 评审 P0-4)
   quickWindowProfileId = state.activeProfileId;
+  ensureSessionHandlers(quickWindowProfileId);
   quickWindow = new BrowserWindow({
     width: 430,
     height: 600,
@@ -2316,9 +1653,7 @@ function addProfile(customName, customGroup, customPurpose) {
     state.accountGroups.push(group);
   }
   saveState();
-  setupDownloadHandler(id);
-  setupPermissions(id);
-  setupSessionPersistence(id);
+  ensureSessionHandlers(id);
 
   if (state.mihomo && state.mihomo.enabled) {
     const mm = getMihomoManager();
@@ -2495,6 +1830,18 @@ function toggleAutomationMaster(forcedValue) {
   );
 }
 
+// 账号会话的权限拦截与下载处理 (2026-11-22 审查 M1): 此前只在启动时和"新增账号"时设置,
+// 导入备份新增的账号在重启前没有权限拦截, Electron 默认会放行麦克风/摄像头/剪贴板/定位等请求。
+// 现在任何窗口要用某个账号的会话前都先调用这里; 重复调用安全 (都是覆盖式设置)。
+const sessionHandlersReady = new Set();
+function ensureSessionHandlers(profileId) {
+  if (!profileId || sessionHandlersReady.has(profileId)) return;
+  setupDownloadHandler(profileId);
+  setupPermissions(profileId);
+  setupSessionPersistence(profileId);
+  sessionHandlersReady.add(profileId);
+}
+
 function setupPermissions(profileId) {
   const ses = session.fromPartition(partitionFor(profileId));
   ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
@@ -2652,7 +1999,13 @@ function openHotkeySettings(initialTab) {
     minHeight: 640,
     maximizable: true,
     autoHideMenuBar: true,
-    webPreferences: { preload: path.join(__dirname, 'preload-settings.js') },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-settings.js'),
+      // 显式写明, 不依赖 Electron 默认值 (2026-11-22 审查 L4)
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
   });
   if (process.platform !== 'darwin' && fs.existsSync(APP_ICON_PATH)) {
     hotkeyWindow.setIcon(APP_ICON_PATH);
@@ -2737,12 +2090,6 @@ ipcMain.handle('automation-set', (e, updates) => {
   return { ok: true, state: state.automation };
 });
 
-ipcMain.handle('automation-toggle', (e) => {
-  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
-  toggleAutomationMaster();
-  return { ok: true, enabled: state.automation.enabled };
-});
-
 ipcMain.handle('automation-toggle-site', (e, hostname, enabled) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (!isValidHostname(hostname)) return { ok: false, error: 'Invalid hostname' };
@@ -2794,7 +2141,7 @@ ipcMain.handle('account:get-state', (e) => (denyUntrusted(e) ? undefined : ({
   activeProfileId: state.activeProfileId,
   dockPinned: !!(state.ui && state.ui.dockPinned),
   accountGroups: state.accountGroups || ['默认群组'],
-  feishu: state.feishu || defaultFeishuConfig(),
+  feishu: maskFeishuConfig(state.feishu),
 })));
 
 ipcMain.handle('dock:set-pinned', (e, { pinned }) => {
@@ -2847,46 +2194,36 @@ ipcMain.handle('account:update-meta', (e, { id, name, group, purpose, usagePerce
   return { ok: true, profile: p };
 });
 
-ipcMain.handle('account:set-groups', (e, { groups }) => {
-  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
-  if (!Array.isArray(groups)) return { ok: false, error: 'groups must be an array' };
-  const cleanGroups = [...new Set(groups.filter((g) => typeof g === 'string' && g.trim()))];
-  if (!cleanGroups.includes('默认群组')) cleanGroups.unshift('默认群组');
-  state.accountGroups = cleanGroups;
-
-  for (const prof of state.profiles) {
-    if (!state.accountGroups.includes(prof.group)) {
-      prof.group = '默认群组';
-    }
-  }
-
-  saveState();
-  broadcastAccountChange();
-  return { ok: true, groups: state.accountGroups };
-});
+// 飞书配置发给页面前把 App Secret 换成占位符 (审查 M5)
+function maskFeishuConfig(cfg) {
+  const c = cfg || defaultFeishuConfig();
+  return { ...c, appSecret: c.appSecret ? FEISHU_SECRET_MASK : '', hasAppSecret: !!c.appSecret };
+}
 
 ipcMain.handle('feishu:get-config', (e) => {
   if (denyUntrusted(e)) return undefined;
-  return state.feishu || defaultFeishuConfig();
-});
-
-ipcMain.handle('feishu:detect-cli', async (e, customCliPath) => {
-  if (denyUntrusted(e)) return { available: false, error: 'untrusted sender' };
-  return await detectFeishuCli(customCliPath || (state.feishu && state.feishu.customCliPath));
+  return maskFeishuConfig(state.feishu);
 });
 
 ipcMain.handle('feishu:save-config', (e, config) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (!config || typeof config !== 'object') return { ok: false, error: 'Invalid config' };
 
+  // 页面回传占位符或未传时保留原 Secret; 传空字符串表示用户主动清除
+  const incoming = { ...config };
+  if (typeof incoming.appSecret !== 'string' || incoming.appSecret === FEISHU_SECRET_MASK) delete incoming.appSecret;
+  delete incoming.hasAppSecret;
+  // 外部 CLI 路径会被当作程序执行, 不接受页面传入 (审查 M2); 设置页本来也不传这个字段
+  delete incoming.customCliPath;
+
   state.feishu = {
     ...defaultFeishuConfig(),
     ...(state.feishu || {}),
-    ...config,
+    ...incoming,
     fieldMap: {
       ...defaultFeishuConfig().fieldMap,
       ...((state.feishu && state.feishu.fieldMap) || {}),
-      ...(config.fieldMap || {}),
+      ...(incoming.fieldMap || {}),
     },
   };
 
@@ -2897,7 +2234,7 @@ ipcMain.handle('feishu:save-config', (e, config) => {
     broadcastAccountChange();
   });
   broadcastAccountChange();
-  return { ok: true, feishu: state.feishu };
+  return { ok: true, feishu: maskFeishuConfig(state.feishu) };
 });
 
 ipcMain.handle('feishu:sync-now', async (e) => {
@@ -3023,6 +2360,7 @@ ipcMain.handle('account:delete', async (e, { id }) => {
   const wasActive = state.activeProfileId === id;
   state.profiles.splice(idx, 1);
   if (state.windowByProfile) delete state.windowByProfile[id];
+  pruneProfilePorts();
   if (wasActive) state.activeProfileId = state.profiles[0].id;
   saveState();
   buildTrayMenu();
@@ -3031,12 +2369,12 @@ ipcMain.handle('account:delete', async (e, { id }) => {
   await clearWholeSession(session.fromPartition(partitionFor(id)));
   // partition 的磁盘目录一并删除, 不留孤儿会话残留 (失败忽略, 不阻塞结果)
   try {
-    const partDir = path.join(
-      app.getPath('userData'),
-      'Partitions',
-      partitionFor(id).replace(/^persist:/, '')
-    );
-    await fs.promises.rm(partDir, { recursive: true, force: true });
+    const partRoot = path.resolve(app.getPath('userData'), 'Partitions');
+    const partDir = path.resolve(partRoot, partitionFor(id).replace(/^persist:/, ''));
+    // 只删 Partitions 目录下的直接子目录, 防止异常 id 让递归删除越界 (审查 H2)
+    if (SAFE_ID_RE.test(id) && path.dirname(partDir) === partRoot) {
+      await fs.promises.rm(partDir, { recursive: true, force: true });
+    }
   } catch {}
 
   if (wasActive) {
@@ -3095,24 +2433,6 @@ ipcMain.handle('proxy-set', async (e, config) => {
   return { ok: true };
 });
 
-// 内置 Mihomo 智能代理分流：重新聚合所有启用源并热重载内核
-async function refreshMihomoMergedProxiesAndReload(shouldReloadKernel = true) {
-  const mm = getMihomoManager();
-  const merged = mm.mergeSourceProxies(state.mihomo.sources);
-  state.mihomo.cachedProxies = merged;
-  state.mihomo.lastUpdated = new Date().toISOString();
-  saveState();
-
-  if (state.mihomo.enabled && shouldReloadKernel) {
-    if (mm.isRunning) {
-      await mm.reload(state.profiles, merged);
-    } else {
-      await mm.start(state.profiles, merged);
-    }
-    await applyProxySettings();
-  }
-  return merged;
-}
 
 // 内置 Mihomo 智能代理分流 IPC handlers
 ipcMain.handle('mihomo:get-config', (e) => {
@@ -3392,11 +2712,27 @@ ipcMain.handle('mihomo:set-config', async (e, cfg) => {
 
   const prevState = state.mihomo ? { ...state.mihomo } : defaultMihomoConfig();
   const prevEnabled = !!prevState.enabled;
+  // 只接受页面真正需要修改的字段 (2026-11-22 审查 M2): 内核路径只能经"指定内核"对话框设置,
+  // 端口分配表只由主进程维护, 订阅源走各自的接口; 其余字段一律忽略
+  const safeCfg = {};
+  if (typeof cfg.enabled === 'boolean') safeCfg.enabled = cfg.enabled;
+  if (typeof cfg.strictIsolation === 'boolean') safeCfg.strictIsolation = cfg.strictIsolation;
+  const autoUpd = parseInt(cfg.autoUpdateInterval, 10);
+  if (autoUpd >= 1 && autoUpd <= 720) safeCfg.autoUpdateInterval = autoUpd;
+  const basePort = parseInt(cfg.basePort, 10);
+  if (basePort >= 1024 && basePort <= 65000) safeCfg.basePort = basePort;
   state.mihomo = {
     ...defaultMihomoConfig(),
     ...prevState,
-    ...cfg,
+    ...safeCfg,
+    portByProfile: prevState.portByProfile || {},
   };
+  if (typeof safeCfg.strictIsolation !== 'undefined') state.mihomo.strictIsolation = safeCfg.strictIsolation === true;
+  if (safeCfg.basePort !== undefined && safeCfg.basePort !== prevState.basePort) {
+    // 起始端口改了: 按当前账号顺序重新固定一遍
+    state.mihomo.portByProfile = {};
+    for (const p of state.profiles || []) ensureProfilePort(p.id);
+  }
 
   const mm = getMihomoManager();
   if (state.mihomo.enabled) {
@@ -3566,107 +2902,24 @@ ipcMain.handle('account:set-proxy-queue', async (e, payload) => {
   return { ok: true, profile: targetProf };
 });
 
-// ==================== 配置与多账号备份/导出/导入 ====================
-async function handleConfigExport(parentWin, opts = {}) {
-  const targetWin = (parentWin && !parentWin.isDestroyed()) ? parentWin : (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
-  const now = new Date();
-  const dateStr = now.toISOString().slice(0, 10);
-  const saveOpts = {
-    title: '导出所有账号与代理配置备份 (包含免登录会话)',
-    defaultPath: `muse-backup-${dateStr}.json`,
-    filters: [
-      { name: 'JSON 配置文件 (*.json)', extensions: ['json'] },
-      { name: '所有文件 (*.*)', extensions: ['*'] },
-    ],
-  };
-  const res = targetWin
-    ? await dialog.showSaveDialog(targetWin, saveOpts)
-    : await dialog.showSaveDialog(saveOpts);
-
-  if (res.canceled || !res.filePath) {
-    return { canceled: true };
-  }
-
-  const includeSessions = opts.includeSessions !== false;
-  const profileSessions = {};
-
-  if (includeSessions && Array.isArray(state.profiles)) {
-    // 导出前强制将会话持久化落盘
-    try {
-      await flushAllSessions();
-    } catch (_) {}
-
-    for (const p of state.profiles) {
-      if (!p || !p.id) continue;
-      try {
-        const ses = session.fromPartition(partitionFor(p.id));
-        if (ses && ses.cookies) {
-          const cookies = await ses.cookies.get({});
-          profileSessions[p.id] = (cookies || []).map((c) => ({
-            name: c.name,
-            value: c.value,
-            domain: c.domain,
-            path: c.path || '/',
-            secure: !!c.secure,
-            httpOnly: !!c.httpOnly,
-            expirationDate: c.expirationDate,
-            sameSite: c.sameSite,
-          }));
-        }
-      } catch (err) {
-        console.warn(`[ConfigExport] Failed to export cookies for profile ${p.id}:`, err);
-      }
-    }
-  }
-
-  const sessionProfileCount = Object.keys(profileSessions).length;
-
-  const backupData = {
-    _meta: {
-      app: 'Muse',
-      version: app.getVersion(),
-      exportedAt: now.toISOString(),
-      profileCount: (state.profiles || []).length,
-      includesAuthSessions: includeSessions,
-      sessionProfileCount: sessionProfileCount,
-    },
-    profiles: state.profiles || [],
-    activeProfileId: state.activeProfileId,
-    sessions: profileSessions,
-    accountGroups: state.accountGroups || ['默认群组'],
-    mihomoSources: (state.mihomo && state.mihomo.sources) || [],
-    mihomo: state.mihomo || defaultMihomoConfig(),
-    proxy: state.proxy || defaultProxy(),
-    feishu: state.feishu || defaultFeishuConfig(),
-    theme: state.theme || 'dark',
-    locale: state.locale || 'zh-CN',
-    ui: state.ui || {},
-  };
-
-  fs.writeFileSync(res.filePath, JSON.stringify(backupData, null, 2), 'utf8');
-  return {
-    ok: true,
-    canceled: false,
-    filePath: res.filePath,
-    profileCount: (state.profiles || []).length,
-    sessionCount: sessionProfileCount,
-    sourceCount: backupData.mihomoSources.length,
-  };
-}
-
-async function importConfigFromFile(filePath) {
+async function importConfigFromFile(filePath, parentWin = null) {
   try {
-    if (!filePath || typeof filePath !== 'string' || !fs.existsSync(filePath)) {
-      return { ok: false, error: '指定备份文件不存在' };
-    }
+    // 读取、校验大小、解析与解密在 src/backup.js (2026-11-22 main.js 拆分 第 5 步)
+    const read = await backupService.readBackupFile(filePath, parentWin);
+    if (!read.parsed) return read.result;
+    const { parsed, wasEncrypted } = read;
 
-    const content = fs.readFileSync(filePath, 'utf8');
-    const parsed = JSON.parse(content);
-    if (!parsed || typeof parsed !== 'object') {
-      return { ok: false, error: '无效的 JSON 配置文件' };
-    }
-
-    const importedProfiles = Array.isArray(parsed.profiles) ? parsed.profiles : [];
+    // 账号 id 只接受安全字符并去重 (审查 H2)
+    const seenIds = new Set();
+    let skippedProfiles = 0;
+    const importedProfiles = (Array.isArray(parsed.profiles) ? parsed.profiles : []).filter((p) => {
+      if (!p || typeof p !== 'object' || typeof p.id !== 'string' || !SAFE_ID_RE.test(p.id) || seenIds.has(p.id)) {
+        skippedProfiles++;
+        return false;
+      }
+      seenIds.add(p.id);
+      return true;
+    });
     if (importedProfiles.length === 0) {
       return { ok: false, error: '文件中未检测到有效的 profiles 账号列表' };
     }
@@ -3681,62 +2934,57 @@ async function importConfigFromFile(filePath) {
       console.warn('[Config] Failed to create pre-import backup:', bakErr);
     }
 
+    // 审查 M6: 记下导入前的账号与当前窗口所属账号, 导入后据此收尾
+    const previousIds = new Set((state.profiles || []).map((p) => p && p.id).filter(Boolean));
+    let mainWinProfileId = null;
+    for (const [pid, w] of profileWindows) if (w === mainWindow) mainWinProfileId = pid;
+
     // 1. 恢复 profiles
     state.profiles = importedProfiles;
 
     // 2. 恢复 accountGroups
-    if (Array.isArray(parsed.accountGroups) && parsed.accountGroups.length > 0) {
-      state.accountGroups = parsed.accountGroups;
+    if (Array.isArray(parsed.accountGroups)) {
+      const groups = parsed.accountGroups
+        .filter((g) => typeof g === 'string' && g.trim() && g.length <= 64)
+        .map((g) => g.trim());
+      if (groups.length > 0) state.accountGroups = groups;
     }
 
-    // 3. 恢复 mihomo 配置与 sources (兼容 mihomoSources 与 mihomo)
-    const importedSources = Array.isArray(parsed.mihomoSources)
-      ? parsed.mihomoSources
-      : (parsed.mihomo && Array.isArray(parsed.mihomo.sources) ? parsed.mihomo.sources : null);
-
-    if (parsed.mihomo && typeof parsed.mihomo === 'object') {
-      state.mihomo = {
-        ...defaultMihomoConfig(),
-        ...state.mihomo,
-        ...parsed.mihomo,
-        sources: importedSources || (state.mihomo && state.mihomo.sources) || [],
-      };
-    } else if (importedSources) {
-      if (!state.mihomo) state.mihomo = defaultMihomoConfig();
-      state.mihomo.sources = importedSources;
-    }
+    // 3. Mihomo: 只接受开关、轮询间隔、严格隔离与订阅源; 内核路径与端口保留本机值
+    const localMihomo = { ...defaultMihomoConfig(), ...(state.mihomo || {}) };
+    const rawMihomo = (parsed.mihomo && typeof parsed.mihomo === 'object') ? parsed.mihomo : {};
+    const importedSources = pickImportedSources(
+      Array.isArray(parsed.mihomoSources) ? parsed.mihomoSources : rawMihomo.sources,
+      localMihomo.sources
+    );
+    state.mihomo = localMihomo;
+    if (typeof rawMihomo.enabled === 'boolean') state.mihomo.enabled = rawMihomo.enabled;
+    if (typeof rawMihomo.strictIsolation === 'boolean') state.mihomo.strictIsolation = rawMihomo.strictIsolation;
+    const autoUpd = parseInt(rawMihomo.autoUpdateInterval, 10);
+    if (autoUpd >= 1 && autoUpd <= 720) state.mihomo.autoUpdateInterval = autoUpd;
+    if (importedSources) state.mihomo.sources = importedSources;
 
     // 若 profiles 包含使用 mihomo 代理模式的账号或包含 sources，自动确保 mihomo 开关就绪
     const hasMihomoProfile = importedProfiles.some((p) => p && p.proxyMode === 'mihomo');
-    if ((hasMihomoProfile || (importedSources && importedSources.length > 0)) && state.mihomo) {
+    if (hasMihomoProfile || (importedSources && importedSources.length > 0)) {
       state.mihomo.enabled = true;
     }
 
     // 4. 恢复全局 proxy
-    if (parsed.proxy && typeof parsed.proxy === 'object') {
-      state.proxy = { ...defaultProxy(), ...parsed.proxy };
-    }
+    const pickedProxy = pickImportedProxy(parsed.proxy);
+    if (pickedProxy) state.proxy = { ...defaultProxy(), ...(state.proxy || {}), ...pickedProxy };
 
-    // 5. 恢复飞书多维表格同步配置
+    // 5. 恢复飞书多维表格同步配置 (不导入本机 CLI 路径)
     if (parsed.feishu && typeof parsed.feishu === 'object') {
-      state.feishu = {
-        ...defaultFeishuConfig(),
-        ...parsed.feishu,
-        fieldMap: {
-          ...defaultFeishuConfig().fieldMap,
-          ...((parsed.feishu && parsed.feishu.fieldMap) || {}),
-        },
-      };
-      if (state.feishu.autoSync) {
-        setupFeishuAutoSync(state.feishu, () => state.profiles, () => {
-          saveState();
-          buildTrayMenu();
-          broadcastAccountChange();
-        });
-      }
+      state.feishu = pickImportedFeishu(parsed.feishu, state.feishu);
+      setupFeishuAutoSync(state.feishu, () => state.profiles, () => {
+        saveState();
+        buildTrayMenu();
+        broadcastAccountChange();
+      });
     }
 
-    // 6. 恢复外观与语言偏好（若存在）
+    // 6. 恢复外观与语言偏好（若存在）; ui 只接受已知字段且类型一致
     if (typeof parsed.theme === 'string' && ['dark', 'light'].includes(parsed.theme)) {
       state.theme = parsed.theme;
     }
@@ -3744,7 +2992,12 @@ async function importConfigFromFile(filePath) {
       state.locale = parsed.locale;
     }
     if (parsed.ui && typeof parsed.ui === 'object') {
-      state.ui = { ...(state.ui || {}), ...parsed.ui };
+      const defUi = defaultState().ui || {};
+      const nextUi = { ...(state.ui || {}) };
+      for (const [k, v] of Object.entries(parsed.ui)) {
+        if (Object.prototype.hasOwnProperty.call(defUi, k) && typeof v === typeof defUi[k]) nextUi[k] = v;
+      }
+      state.ui = nextUi;
     }
 
     // 7. 恢复或校验 activeProfileId
@@ -3754,34 +3007,56 @@ async function importConfigFromFile(filePath) {
       state.activeProfileId = state.profiles[0] ? state.profiles[0].id : 'default';
     }
 
-    state = sanitizeAndMergeState(state);
+    state = replaceState(sanitizeAndMergeState(state));
+    // 导入新增的账号立即挂上权限拦截与下载处理 (审查 M1)
+    for (const p of state.profiles) ensureSessionHandlers(p.id);
+    pruneProfilePorts();
+    for (const p of state.profiles) ensureProfilePort(p.id);
     saveState();
 
-    // 7. 恢复各账号会话 Cookie (跨机免登录恢复)
+    // 8. 审查 M6: 导入后不再存在的账号, 关闭其窗口、弹窗与快捷窗口。
+    // 其会话数据目录保留在磁盘上 (重新导入旧备份时可恢复), 不自动删除。
+    const currentIds = new Set(state.profiles.map((p) => p.id));
+    const removedIds = [...previousIds].filter((id) => !currentIds.has(id));
+    for (const id of removedIds) {
+      closeChildWindows(id);
+      const w = profileWindows.get(id);
+      if (w && !w.isDestroyed()) {
+        w.removeAllListeners('close');
+        w.close();
+      }
+      profileWindows.delete(id);
+      if (w) pendingWindowNav.delete(w);
+    }
+    if (quickWindowProfileId && !currentIds.has(quickWindowProfileId)) destroyQuickWindow();
+
+    // 9. 恢复各账号会话 Cookie: 只写入导入后仍存在的账号, 并校验每条 Cookie
     let restoredSessionCount = 0;
     let totalCookiesInjected = 0;
     if (parsed.sessions && typeof parsed.sessions === 'object') {
       for (const [profId, cookies] of Object.entries(parsed.sessions)) {
-        if (!Array.isArray(cookies) || cookies.length === 0) continue;
+        if (!currentIds.has(profId) || !Array.isArray(cookies) || cookies.length === 0) continue;
         try {
           const ses = session.fromPartition(partitionFor(profId));
-          for (const c of cookies) {
-            if (!c || !c.name || typeof c.value !== 'string') continue;
+          for (const c of cookies.slice(0, 5000)) {
+            if (!c || typeof c.name !== 'string' || !c.name || c.name.length > 4096) continue;
+            if (typeof c.value !== 'string' || c.value.length > 16384) continue;
+            const domain = String(c.domain || '');
+            if (!COOKIE_DOMAIN_RE.test(domain)) continue;
+            const cookiePath = typeof c.path === 'string' && c.path.startsWith('/') ? c.path : '/';
             try {
               const protocol = c.secure ? 'https' : 'http';
-              const cleanDomain = String(c.domain || '').replace(/^\./, '');
-              if (!cleanDomain) continue;
-              const url = `${protocol}://${cleanDomain}${c.path || '/'}`;
+              const url = `${protocol}://${domain.replace(/^\./, '')}${cookiePath}`;
               await ses.cookies.set({
                 url,
                 name: c.name,
                 value: c.value,
-                domain: c.domain,
-                path: c.path || '/',
+                domain,
+                path: cookiePath,
                 secure: !!c.secure,
                 httpOnly: !!c.httpOnly,
-                expirationDate: c.expirationDate,
-                sameSite: c.sameSite || 'unspecified',
+                expirationDate: typeof c.expirationDate === 'number' ? c.expirationDate : undefined,
+                sameSite: COOKIE_SAMESITE.includes(c.sameSite) ? c.sameSite : 'unspecified',
               });
               totalCookiesInjected++;
             } catch (_) {}
@@ -3794,7 +3069,7 @@ async function importConfigFromFile(filePath) {
       }
     }
 
-    // 8. 重新聚合节点池并热载 Mihomo 内核 (合并各订阅源及本地 YAML 节点)
+    // 10. 重新聚合节点池并热载 Mihomo 内核 (合并各订阅源及本地 YAML 节点)
     try {
       if (state.mihomo && Array.isArray(state.mihomo.sources) && state.mihomo.sources.length > 0) {
         await refreshMihomoMergedProxiesAndReload(true);
@@ -3803,7 +3078,7 @@ async function importConfigFromFile(filePath) {
       console.warn('[Config] Error refreshing mihomo proxies after import:', reloadErr);
     }
 
-    // 9. 重新应用各账号代理
+    // 11. 重新应用各账号代理
     for (const prof of state.profiles) {
       try {
         const ses = session.fromPartition(partitionFor(prof.id));
@@ -3815,7 +3090,16 @@ async function importConfigFromFile(filePath) {
     broadcastAccountChange();
     broadcastThemeChange();
 
-    // 如果恢复了登录凭据且主窗口已打开，重新加载主窗口使登录态直接呈现
+    // 12. 让前台窗口与导入后的活动账号一致 (此前可能仍显示旧账号的窗口)
+    const targetId = state.activeProfileId;
+    if (!mainWindow || mainWindow.isDestroyed() || removedIds.includes(mainWinProfileId)) {
+      mainWindow = getOrCreateProfileWindow(targetId);
+      showWindowSafely(mainWindow);
+    } else if (mainWinProfileId && mainWinProfileId !== targetId) {
+      // switchAccount 在"目标即活动账号且窗口可见"时会直接返回, 先把活动账号还原成当前窗口所属账号
+      state.activeProfileId = mainWinProfileId;
+      switchAccount(targetId);
+    }
     if (restoredSessionCount > 0 && mainWindow && !mainWindow.isDestroyed()) {
       try {
         mainWindow.loadURL(currentSite().url);
@@ -3826,7 +3110,10 @@ async function importConfigFromFile(filePath) {
       ok: true,
       canceled: false,
       filePath,
+      encrypted: wasEncrypted,
       profileCount: state.profiles.length,
+      skippedProfiles,
+      removedProfiles: removedIds.length,
       restoredSessionCount,
       totalCookiesInjected,
       sourceCount: (state.mihomo && state.mihomo.sources && state.mihomo.sources.length) || 0,
@@ -3856,7 +3143,7 @@ async function handleConfigImport(parentWin) {
     return { canceled: true };
   }
 
-  return await importConfigFromFile(res.filePaths[0]);
+  return await importConfigFromFile(res.filePaths[0], targetWin);
 }
 
 ipcMain.handle('config:export', async (e, opts) => {
@@ -3905,10 +3192,14 @@ ipcMain.handle('ui-settings-get', (e) => {
 ipcMain.handle('ui-settings-set', (e, newUI) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
   if (newUI && typeof newUI === 'object') {
+    const webrtcChanged = Object.prototype.hasOwnProperty.call(newUI, 'webrtcProtection');
     state.ui = { ...(state.ui || {}), ...newUI };
+    if (webrtcChanged) state.ui.webrtcProtection = newUI.webrtcProtection !== false;
     saveState();
     buildTrayMenu();
     broadcastUISettingsChange();
+    // 对已打开的页面立即生效 (新建的 WebRTC 连接起作用; 已建立的通话需重新发起)
+    if (webrtcChanged) for (const wc of webContents.getAllWebContents()) applyWebRTCPolicy(wc);
     return { ok: true, ui: state.ui };
   }
   return { ok: false, error: 'Invalid UI settings' };
@@ -4023,14 +3314,13 @@ ipcMain.handle('locale-set', (e, newLocale) => {
   return { ok: false, error: 'Invalid locale' };
 });
 
-// Floating "Export chat" button in the page asks the main process to export.
-ipcMain.on('muse-export-request', (e) => { if (!denyUntrusted(e)) exportChat(); });
-
 // 处理页面请求用系统默认浏览器打开外部链接
 ipcMain.on('open-external-url', (e, rawUrl) => {
   if (typeof rawUrl !== 'string') return;
   // 安全校验：发送者必须属于本应用纳管窗口
   const senderWin = BrowserWindow.fromWebContents(e.sender);
+  // 子弹窗不在名单内 (审查 L4): 授权弹窗用空 preload、账号页面窗口无 preload, 都不会发此 IPC;
+  // 放进名单只会让第三方页面多一条唤起系统浏览器的通道
   const owned = [mainWindow, quickWindow, hotkeyWindow, lockWindow, ...profileWindows.values()];
   const isOwned = (senderWin && owned.includes(senderWin)) ||
                   owned.some((w) => w && !w.isDestroyed() && (w.webContents === e.sender || w.webContents.id === e.sender.id));
@@ -4040,6 +3330,14 @@ ipcMain.on('open-external-url', (e, rawUrl) => {
   }
 
   let trimmed = rawUrl.trim().replace(/[，。；、？！）》」"',;!]+$/, '');
+  // 站内分享/文档/附件、Meta 账户页面: 用发起方所属账号的登录态在应用内打开
+  if (isProfileScopedUrl(trimmed)) {
+    const owner = findProfileForWebContents(e.sender);
+    if (owner && owner.win) {
+      openUrlForProfile(owner.win, owner.profileId, trimmed);
+      return;
+    }
+  }
   const target = extractExternalTargetUrl(trimmed) || trimmed;
   // 严格白名单协议：仅放行普通网页外链（http/https/mailto），杜绝 file: 或危险 scheme
   if (typeof target === 'string' && (target.startsWith('http://') || target.startsWith('https://') || target.startsWith('mailto:'))) {
@@ -4058,15 +3356,187 @@ ipcMain.handle('connector-open-muse', (e) => {
 
 ipcMain.handle('google-session-reset', async (e) => {
   if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
-  const curSes = session.fromPartition(partitionFor(state.activeProfileId));
+  // 优先清发起请求的窗口所属账号; 设置页等非账号窗口回退到活动账号 (审查 L2)
+  const owner = findProfileForWebContents(e.sender);
+  const targetId = (owner && owner.profileId) || state.activeProfileId;
+  const curSes = session.fromPartition(partitionFor(targetId));
   const r1 = await clearGoogleAuthSession(curSes);
   return { ok: r1 };
+});
+
+// ---- 出口 IP 检测与独立出口分配 (2026-11-22) -------------------------------------
+// 计算逻辑在 src/exit-isolation.js, 网络实测在 src/exit-probe.js。
+let lastNodeProbe = null; // { at, results } 仅保存在内存, 用于生成分配方案
+let lastIsolationPlan = null; // { at, plan }
+let exitProbeRunning = false;
+const NODE_PROBE_MAX_AGE_MS = 30 * 60 * 1000;
+
+// 参与出口分配的账号: 显式选了 mihomo, 或跟随全局且全局开启了 Mihomo
+function isMihomoRoutedProfile(p) {
+  if (!p) return false;
+  if (p.proxyMode === 'mihomo') return true;
+  return (!p.proxyMode || p.proxyMode === 'inherit') && !!(state.mihomo && state.mihomo.enabled);
+}
+
+// 检测所有账号的当前出口 (设置页手动检测与定期自动检测共用)
+async function runAccountExitCheck() {
+  if (exitProbeRunning) return { ok: false, busy: true, error: '正在检测中，请稍候' };
+  exitProbeRunning = true;
+  try {
+    const profiles = (state.profiles || []).slice();
+    const results = await mapLimit(profiles, 4, async (p) => {
+      const r = await checkSessionExit(session.fromPartition(partitionFor(p.id)));
+      return { id: p.id, name: p.name || p.id, mode: p.proxyMode || 'inherit', viaMihomo: isMihomoRoutedProfile(p), ...r };
+    });
+    const marked = markSharedExits(results);
+    const okOnes = marked.filter((r) => r.ok);
+    return {
+      ok: true,
+      results: marked,
+      summary: {
+        accounts: marked.length,
+        reachable: okOnes.length,
+        distinctIps: new Set(okOnes.map((r) => r.ip)).size,
+        sharing: okOnes.filter((r) => r.sharedWith.length > 0).length,
+      },
+    };
+  } finally {
+    exitProbeRunning = false;
+  }
+}
+
+// ---- 定期自动检测 (实现在 src/exit-monitor.js) ----------------------------------
+// 启动 2 分钟后首次检测, 之后按设置的间隔; 只在出现新问题时通知, 点击通知打开设置页。
+const exitMonitor = createExitMonitor({
+  getState: () => state,
+  saveState: saveStateDebounced,
+  runCheck: runAccountExitCheck,
+  notify,
+  onOpen: () => openHotkeySettings('tab-mihomo'),
+});
+
+ipcMain.handle('exit:check-accounts', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  const r = await runAccountExitCheck();
+  // 手动检测的结果也计入监控记录 (不通知): 用户已经看到的问题, 之后不会再重复提醒
+  if (r && r.ok) exitMonitor.record(r.results, { silent: true });
+  return r;
+});
+
+ipcMain.handle('exit:monitor-get', (e) => (denyUntrusted(e) ? undefined : exitMonitor.getConfig()));
+
+ipcMain.handle('exit:monitor-set', (e, patch) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!patch || typeof patch !== 'object') return { ok: false, error: 'Invalid settings' };
+  return { ok: true, monitor: exitMonitor.update(patch) };
+});
+
+ipcMain.handle('exit:probe-nodes', async (e) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (exitProbeRunning) return { ok: false, error: '正在检测中，请稍候' };
+  const nodes = (state.mihomo && Array.isArray(state.mihomo.cachedProxies)) ? state.mihomo.cachedProxies : [];
+  if (!nodes.length) return { ok: false, error: '节点池为空，请先同步订阅' };
+  exitProbeRunning = true;
+  const sender = e.sender;
+  try {
+    const res = await probeNodeExits({
+      nodes,
+      dataDir: path.join(app.getPath('userData'), 'mihomo-probe'),
+      binPath: state.mihomo && state.mihomo.customBinPath,
+      controllerPort: ((state.mihomo && state.mihomo.controllerPort) || 19090) + 100,
+      onProgress: (done, total) => {
+        try { if (!sender.isDestroyed()) sender.send('exit:progress', { done, total }); } catch (_) {}
+      },
+    });
+    if (!res.ok) return res;
+    lastNodeProbe = { at: Date.now(), results: res.results };
+    lastIsolationPlan = null;
+    const groups = buildExitGroups(res.results);
+    return {
+      ok: true,
+      results: res.results,
+      summary: {
+        nodes: res.results.length,
+        usable: res.results.filter((r) => r.ok).length,
+        exitIps: groups.size,
+        eligibleAccounts: (state.profiles || []).filter(isMihomoRoutedProfile).length,
+      },
+    };
+  } finally {
+    exitProbeRunning = false;
+  }
+});
+
+ipcMain.handle('exit:plan', (e, opts) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!lastNodeProbe || Date.now() - lastNodeProbe.at > NODE_PROBE_MAX_AGE_MS) {
+    return { ok: false, error: '请先测试全部节点的出口 IP（结果 30 分钟内有效）' };
+  }
+  const accounts = (state.profiles || []).filter(isMihomoRoutedProfile).map((p) => ({
+    id: p.id,
+    name: p.name || p.id,
+    proxyQueue: Array.isArray(p.proxyQueue) ? p.proxyQueue : [],
+  }));
+  if (!accounts.length) return { ok: false, error: '没有使用 Mihomo 的账号' };
+  const backups = Math.max(0, Math.min(5, parseInt(opts && opts.backupsPerAccount, 10) || 2));
+  const plan = planIsolation({ accounts, nodeResults: lastNodeProbe.results, backupsPerAccount: backups });
+  lastIsolationPlan = { at: Date.now(), plan };
+  return { ok: true, plan };
+});
+
+ipcMain.handle('exit:apply', async (e, opts) => {
+  if (denyUntrusted(e)) return { ok: false, error: 'untrusted sender' };
+  if (!lastIsolationPlan || Date.now() - lastIsolationPlan.at > NODE_PROBE_MAX_AGE_MS) {
+    return { ok: false, error: '方案已过期，请重新生成' };
+  }
+  const pool = new Set(((state.mihomo && state.mihomo.cachedProxies) || []).map((n) => n && n.name));
+  const changedIds = [];
+  for (const a of lastIsolationPlan.plan.assignments) {
+    const prof = (state.profiles || []).find((p) => p.id === a.id);
+    if (!prof || !a.changed) continue;
+    // 生成方案后节点池可能已更新: 只写入仍然存在的节点
+    const queue = a.queue.filter((n) => pool.has(n));
+    if (!queue.length) continue;
+    prof.proxyQueue = queue;
+    prof.proxyStrategy = 'fallback'; // 始终用队列里第一个可用节点, 出口稳定
+    changedIds.push(prof.id);
+  }
+  const enableStrict = !!(opts && opts.enableStrict);
+  if (enableStrict && state.mihomo) state.mihomo.strictIsolation = true;
+  saveState();
+
+  const mm = getMihomoManager();
+  if (state.mihomo && state.mihomo.enabled && mm && mm.isRunning) {
+    const r = await mm.reload(state.profiles, state.mihomo.cachedProxies);
+    if (!r || !r.ok) return { ok: false, error: '已保存，但 Mihomo 重载失败: ' + ((r && r.error) || '未知错误') };
+  }
+  await applyProxySettings();
+  // 断开已有连接并刷新页面, 让新出口立即生效 (隐藏窗口等下次显示时再刷新)
+  for (const id of changedIds) {
+    const ses = session.fromPartition(partitionFor(id));
+    if (typeof ses.closeAllConnections === 'function') { try { await ses.closeAllConnections(); } catch (_) {} }
+    const w = profileWindows.get(id);
+    if (w && !w.isDestroyed()) {
+      if (w.isVisible()) w.webContents.reload();
+      else markWindowNavPending(w, 'reload');
+    }
+  }
+  // 这些账号的出口是有意更换的, 清掉旧记录, 避免下次定期检测报"出口变化"
+  if (state.exitMonitor && state.exitMonitor.exits) {
+    for (const id of changedIds) delete state.exitMonitor.exits[id];
+    saveStateDebounced();
+  }
+  // 正在进行中的定期检测是改动前发起的, 结果作废, 避免下一次误报"出口变化" (审查 L5)
+  exitMonitor.invalidate();
+  lastIsolationPlan = null;
+  broadcastAccountChange();
+  return { ok: true, changed: changedIds.length, strictIsolation: !!(state.mihomo && state.mihomo.strictIsolation) };
 });
 
 // 下载文件交互与目录打开 IPC
 ipcMain.handle('download:open-folder', (e, filePath) => {
   if (denyUntrusted(e)) return false;
-  if (filePath && typeof filePath === 'string' && fs.existsSync(filePath)) {
+  if (isKnownDownload(filePath) && fs.existsSync(filePath)) {
     shell.showItemInFolder(filePath);
     return true;
   }
@@ -4075,7 +3545,7 @@ ipcMain.handle('download:open-folder', (e, filePath) => {
 
 ipcMain.handle('download:open-file', async (e, filePath) => {
   if (denyUntrusted(e)) return false;
-  if (filePath && typeof filePath === 'string' && fs.existsSync(filePath)) {
+  if (isKnownDownload(filePath) && fs.existsSync(filePath)) {
     await shell.openPath(filePath);
     return true;
   }
@@ -4086,6 +3556,10 @@ ipcMain.handle('download:open-file', async (e, filePath) => {
 // Electron shows no context menu on its own, so links can only be clicked
 // (navigating to them) rather than saved. This adds Save link/image as,
 // copy link, and the standard edit items, plus real download handling.
+// 本次运行中实际完成下载的文件路径 (审查 L1): download:open-* 只放行这些路径
+const completedDownloads = new Set();
+const isKnownDownload = (p) => typeof p === 'string' && completedDownloads.has(path.resolve(p));
+
 function setupDownloadHandler(profileId) {
   const ses = session.fromPartition(partitionFor(profileId));
   ses.removeAllListeners('will-download');
@@ -4099,6 +3573,7 @@ function setupDownloadHandler(profileId) {
       const savePath = item.getSavePath();
       const fileSize = item.getTotalBytes();
       const isSuccess = downloadState === 'completed';
+      if (isSuccess && savePath) completedDownloads.add(path.resolve(savePath));
       const isForeground = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized();
 
       if (isForeground) {
@@ -4318,314 +3793,6 @@ function scrapeChatViaPreload(win, timeoutMs = 30000) {
     ipcMain.on('muse-export:result', onResult);
     wc.send('muse-export:scrape');
   });
-}
-
-// ---- portable self-update -----------------------------------------------------
-// electron-updater doesn't support the portable target, so the portable build
-// updates itself: check the GitHub releases feed, download the new portable
-// exe in the background, and swap it in on restart via a tiny detached
-// PowerShell helper. A .bak of the previous version is kept beside the exe.
-const UPDATE_REPO = 'xusofty-cyber/muse-ai-Desktop';
-
-function cmpVersions(a, b) {
-  const pa = String(a).split('.').map(Number);
-  const pb = String(b).split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] || 0) - (pb[i] || 0);
-    if (d !== 0) return d > 0 ? 1 : -1;
-  }
-  return 0;
-}
-
-let isCheckingUpdate = false;
-
-// 应用内自更新只适用于 Windows 便携版: 它替换的是 PORTABLE_EXECUTABLE_FILE
-// 指向的单文件。此前无门控三平台都跑, Linux/mac 会下载 Windows exe 再调
-// 不存在的 powershell; NSIS 安装版则会被便携版 exe 原地替换造成版本错位。
-function isPortableWindowsBuild() {
-  return process.platform === 'win32' && !!process.env.PORTABLE_EXECUTABLE_FILE;
-}
-
-async function checkForUpdates(manual) {
-  if (!isPortableWindowsBuild()) {
-    if (manual) {
-      const { response } = await dialog.showMessageBox({
-        type: 'info',
-        title: '检查版本更新',
-        message: '当前安装方式不支持应用内自动更新。',
-        detail: '请前往 GitHub Releases 页面下载与您系统匹配的最新安装包。',
-        buttons: ['前往 GitHub Releases', '取消'],
-      });
-      if (response === 0) shell.openExternal(`https://github.com/${UPDATE_REPO}/releases/latest`);
-    }
-    return;
-  }
-  if (isCheckingUpdate) {
-    if (manual) {
-      dialog.showMessageBox({
-        type: 'info',
-        title: '检查更新',
-        message: '正在检查版本更新，请稍候...',
-      });
-    }
-    return;
-  }
-  isCheckingUpdate = true;
-
-  try {
-    const fetchFunc = (typeof net !== 'undefined' && net.fetch) ? net.fetch : fetch;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    const res = await fetchFunc(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
-      headers: { 'User-Agent': 'muse-windows', Accept: 'application/vnd.github+json' },
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`GitHub API HTTP ${res.status}`);
-    // 超时必须覆盖正文读取 (v1.5.16, 评审 P2): 旧实现响应头一到就 clearTimeout,
-    // 正文滴流能让检查永久挂起且 isCheckingUpdate 永远为 true, 后续检查全灭
-    const rel = await res.json();
-    clearTimeout(timeoutId);
-    const latest = String(rel.tag_name || rel.name || '').replace(/^v/i, '');
-    const current = app.getVersion();
-
-    if (!latest || cmpVersions(latest, current) <= 0) {
-      if (manual) {
-        dialog.showMessageBox({
-          type: 'info',
-          title: '检查版本更新',
-          message: `当前已是最新版本 (v${current})`,
-          detail: '暂无可用更新。',
-          buttons: ['确定'],
-        });
-      }
-      return;
-    }
-
-    const releaseUrl = rel.html_url || `https://github.com/${UPDATE_REPO}/releases/latest`;
-    const asset = (rel.assets || []).find((a) => /^Muse-Portable-.*\.exe$/i.test(a.name || ''));
-
-    if (manual) {
-      const releaseNotes = (rel.body || '').trim();
-      const detailMsg = releaseNotes ? `\n\n更新日志：\n${releaseNotes.slice(0, 300)}${releaseNotes.length > 300 ? '...' : ''}` : '';
-      const buttons = asset ? ['前往 GitHub 下载', '后台下载便携版', '稍后再说'] : ['前往 GitHub 下载', '稍后再说'];
-      
-      const { response } = await dialog.showMessageBox({
-        type: 'info',
-        title: '发现新版本',
-        message: `发现新版本 v${latest} (当前版本 v${current})`,
-        detail: `有可用的新版本发布，建议及时更新。${detailMsg}`,
-        buttons,
-        defaultId: 0,
-        cancelId: buttons.length - 1,
-      });
-
-      if (response === 0) {
-        shell.openExternal(releaseUrl);
-        return;
-      } else if (response === 1 && asset) {
-        // 继续在后台下载便携版
-      } else {
-        return;
-      }
-    }
-
-    if (!asset) {
-      if (manual) {
-        dialog.showMessageBox({
-          type: 'warning',
-          title: '更新提醒',
-          message: `v${latest} 已发布，但未找到便携单文件 (Portable)。`,
-          detail: '建议前往 GitHub Releases 页面下载安装包。',
-          buttons: ['前往 GitHub', '取消'],
-        }).then(({ response }) => {
-          if (response === 0) shell.openExternal(releaseUrl);
-        });
-      }
-      return;
-    }
-
-    if (pendingUpdate && pendingUpdate.version === latest) {
-      if (manual) {
-        const { response } = await dialog.showMessageBox({
-          type: 'question',
-          title: '更新已就绪',
-          message: `Muse v${latest} 安装文件已下载完成。`,
-          detail: '是否立即重启应用以完成更新？',
-          buttons: ['立即重启更新', '稍后手动重启'],
-          defaultId: 0,
-        });
-        if (response === 0) {
-          installUpdateAndRestart();
-        }
-      }
-      return;
-    }
-
-    notify('正在下载更新', `Muse v${latest} 正在后台下载中...`);
-    // 真实性校验前置 (v1.5.14): GitHub API 为每个资产提供 sha256 digest,
-    // 缺失一律中止, 绝不进入待安装状态
-    const expectedDigest = String(asset.digest || '').replace(/^sha256:/i, '').toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(expectedDigest)) throw new Error('发布资产缺少 SHA-256 摘要, 已中止更新');
-    // 流式下载 (v1.5.16, 评审 P2): 旧实现整包读入内存 (低配机峰值约两倍包体)
-    // 且只有总时长上限。改为边下边落盘边算哈希, 超时改为 60 秒空闲超时
-    // (持续有数据就一直下, 断流一分钟才放弃)
-    const dlController = new AbortController();
-    const dl = await fetchFunc(asset.browser_download_url, {
-      headers: { 'User-Agent': 'muse-windows' },
-      signal: dlController.signal,
-    });
-    if (!dl.ok) throw new Error(`下载失败 HTTP ${dl.status}`);
-    // 文件名只取 basename, 防止资产名中的路径成分越出临时目录
-    const dest = path.join(app.getPath('temp'), path.basename(String(asset.name || 'Muse-Portable.exe')));
-    const hash = require('crypto').createHash('sha256');
-    const outStream = fs.createWriteStream(dest);
-    let received = 0;
-    let headBuf = Buffer.alloc(0);
-    let idleTimer = setTimeout(() => dlController.abort(), 60000);
-    try {
-      const reader = dl.body.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        clearTimeout(idleTimer);
-        idleTimer = setTimeout(() => dlController.abort(), 60000);
-        const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
-        if (headBuf.length < 2) headBuf = Buffer.concat([headBuf, chunk.subarray(0, 2 - headBuf.length)]);
-        hash.update(chunk);
-        received += chunk.length;
-        if (!outStream.write(chunk)) await new Promise((r) => outStream.once('drain', r));
-      }
-      clearTimeout(idleTimer);
-      await new Promise((resolve, reject) => outStream.end((err) => (err ? reject(err) : resolve())));
-    } catch (dlErr) {
-      clearTimeout(idleTimer);
-      try { outStream.destroy(); } catch {}
-      try { fs.unlinkSync(dest); } catch {}
-      throw dlErr;
-    }
-    if (received < 1024 || headBuf[0] !== 0x4d || headBuf[1] !== 0x5a) {
-      try { fs.unlinkSync(dest); } catch {}
-      throw new Error('下载的文件不是合法的 Windows 可执行程序');
-    }
-    if (hash.digest('hex') !== expectedDigest) {
-      try { fs.unlinkSync(dest); } catch {}
-      throw new Error('更新文件 SHA-256 校验不通过, 已中止更新');
-    }
-    pendingUpdate = { version: latest, filePath: dest };
-    updateDownloaded = true;
-    buildTrayMenu();
-
-    if (manual) {
-      const { response } = await dialog.showMessageBox({
-        type: 'question',
-        title: '更新已就绪',
-        message: `Muse v${latest} 下载完成！`,
-        detail: '是否立即重启应用以完成更新？',
-        buttons: ['立即重启', '稍后再说'],
-        defaultId: 0,
-      });
-      if (response === 0) {
-        installUpdateAndRestart();
-      }
-    } else {
-      notify('更新已就绪', `Muse v${latest} 已下载完成，点击托盘菜单重启以安装。`, () => installUpdateAndRestart());
-    }
-  } catch (e) {
-    const errMsg = String((e && e.message) || e);
-    console.warn('[UpdateCheck] Failed:', errMsg);
-    if (manual) {
-      dialog.showMessageBox({
-        type: 'error',
-        title: '检查更新失败',
-        message: '无法连接到更新服务器或网络连接超时。',
-        detail: `错误详情: ${errMsg}\n\n是否直接前往 GitHub Releases 页面查看并下载最新版本？`,
-        buttons: ['前往 GitHub 查看', '取消'],
-        defaultId: 0,
-      }).then(({ response }) => {
-        if (response === 0) {
-          shell.openExternal(`https://github.com/${UPDATE_REPO}/releases`);
-        }
-      });
-    }
-  } finally {
-    isCheckingUpdate = false;
-  }
-}
-
-function buildUpdateScript(currentExe, newExe) {
-  const q = (s) => s.replace(/'/g, "''");
-  return [
-    `$pidToWait = ${process.pid}`,
-    `$current = '${q(currentExe)}'`,
-    `$new = '${q(newExe)}'`,
-    `try { Wait-Process -Id $pidToWait -ErrorAction Stop } catch {}`,
-    `try {`,
-    `  Copy-Item -LiteralPath $current -Destination ($current + '.bak') -Force`,
-    `  Move-Item -LiteralPath $new -Destination $current -Force`,
-    `  Start-Process -FilePath $current`,
-    `} catch {}`,
-  ].join('\r\n');
-}
-
-function canWriteBesideExe() {
-  try {
-    const probe = path.join(path.dirname(process.execPath), '.muse-write-test');
-    fs.writeFileSync(probe, 'x');
-    fs.unlinkSync(probe);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function installUpdateAndRestart() {
-  if (!pendingUpdate) return;
-  if (!isPortableWindowsBuild()) return;
-  if (!canWriteBesideExe()) {
-    dialog.showMessageBox({
-      type: 'warning',
-      title: '无法自动替换',
-      message: '当前应用程序目录没有写入权限（可能属于只读或安装版目录）。',
-      detail: '建议前往 GitHub Releases 页面下载安装包覆盖安装。',
-      buttons: ['前往 GitHub', '取消'],
-    }).then(({ response }) => {
-      if (response === 0) {
-        shell.openExternal(`https://github.com/${UPDATE_REPO}/releases`);
-      }
-    });
-    return;
-  }
-  const scriptPath = path.join(app.getPath('temp'), 'muse-update.ps1');
-  try {
-    fs.writeFileSync(scriptPath, buildUpdateScript(process.execPath, pendingUpdate.filePath));
-  } catch (e) {
-    dialog.showErrorBox('更新失败', '无法写入更新执行脚本: ' + String((e && e.message) || e));
-    return;
-  }
-  try {
-    const child = require('child_process').spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
-      detached: true, stdio: 'ignore',
-    });
-    // 未监听的 error 事件会以异常抛进主进程 (如 powershell 不存在时), 必须接住
-    child.on('error', (err) => {
-      dialog.showErrorBox('更新失败', String((err && err.message) || err));
-    });
-    child.unref();
-  } catch (e) {
-    dialog.showErrorBox('更新失败', String((e && e.message) || e));
-    return;
-  }
-  app.quitting = true;
-  app.quit();
-}
-
-function setupAutoUpdate() {
-  // 仅 Windows 便携版有应用内自更新; 其他平台/安装形态不启动后台检查,
-  // 手动检查走 checkForUpdates 内的 Releases 页引导。
-  if (!isPortableWindowsBuild()) return;
-  setTimeout(() => checkForUpdates(false), 30_000);
-  setInterval(() => checkForUpdates(false), 6 * 3600_000);
 }
 
 // ---- tray -----------------------------------------------------------------
@@ -4848,7 +4015,7 @@ function buildTrayMenu() {
           click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
         },
         { label: t.checkUpdates, click: () => checkForUpdates(true) },
-        ...(updateDownloaded
+        ...(isUpdateDownloaded()
           ? [{ label: t.restartInstall, click: installUpdateAndRestart }]
           : []),
       ],
@@ -4922,12 +4089,9 @@ app.whenReady().then(async () => {
   createMainWindow();
   createTray();
   registerHotkeys();
-  state.profiles.forEach((p) => {
-    setupDownloadHandler(p.id);
-    setupPermissions(p.id);
-    setupSessionPersistence(p.id);
-  });
+  state.profiles.forEach((p) => ensureSessionHandlers(p.id));
   setupAutoUpdate();
+  exitMonitor.start(); // 定期出口检测 (未开启时不做任何事)
   startAutoLockTimer();
   if (state.feishu && state.feishu.enabled && state.feishu.autoSync) {
     setupFeishuAutoSync(state.feishu, () => state.profiles, () => {
@@ -4971,8 +4135,9 @@ app.on('window-all-closed', () => {
 
 let isFlushingOnQuit = false;
 app.on('before-quit', async (e) => {
-  if (mihomoManager) {
-    try { mihomoManager.stop(); } catch (_) {}
+  const runningMihomo = proxyController.peekMihomoManager();
+  if (runningMihomo) {
+    try { runningMihomo.stop(); } catch (_) {}
   }
   if (!isFlushingOnQuit) {
     e.preventDefault();
@@ -4986,16 +4151,19 @@ app.on('before-quit', async (e) => {
 });
 
 app.on('will-quit', () => {
-  if (mihomoManager) {
-    try { mihomoManager.stop(); } catch (_) {}
+  exitMonitor.stop();
+  const runningMihomo = proxyController.peekMihomoManager();
+  if (runningMihomo) {
+    try { runningMihomo.stop(); } catch (_) {}
   }
   if (autoLockTimer) clearInterval(autoLockTimer);
   globalShortcut.unregisterAll();
 });
 
 process.on('exit', () => {
-  if (mihomoManager) {
-    try { mihomoManager.stop(); } catch (_) {}
+  const runningMihomo = proxyController.peekMihomoManager();
+  if (runningMihomo) {
+    try { runningMihomo.stop(); } catch (_) {}
   }
 });
 
