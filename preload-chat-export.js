@@ -1439,9 +1439,15 @@ function injectExportButton() {}
     style.id = 'acct-dock-styles';
     style.textContent = `
       #acct-dock {
-        position: fixed;
-        bottom: 12px;
-        left: 50%;
+        /* 位置全部写死并加 !important (2026-11-22): 网站打开大面板/弹窗时, 其样式会给 body 末尾的
+           div 加 top:50% 等定位, 此前只写了 bottom, 账号栏因此被挤到屏幕中间 */
+        position: fixed !important;
+        top: auto !important;
+        right: auto !important;
+        bottom: 12px !important;
+        left: 50% !important;
+        margin: 0 !important;
+        float: none !important;
         transform: translateX(-50%) translateY(0);
         max-width: calc(100vw - 32px);
         box-sizing: border-box;
@@ -3880,8 +3886,10 @@ function injectExportButton() {}
   }
 
   function renderDock() {
-    const parent = document.body;
-    if (!parent) return;
+    // 挂在 <html> 下而不是 <body> 下 (2026-11-22): 网站给 body 加 transform / filter / 高度限制时,
+    // body 的子元素会以 body 为定位基准, fixed 的账号栏就不再贴着窗口底部
+    const parent = document.documentElement;
+    if (!parent || !document.body) return;
     const t = getT();
 
     if (!dockContainer) {
@@ -4278,6 +4286,25 @@ function injectExportButton() {}
     dockContainer.appendChild(list);
 
     // 账号列表横向位置保护：杜绝 scrollIntoView 导致整条 dock 偏移或左侧账号隐藏
+    // 位置自检: 若账号栏没贴着窗口底部, 在开发者工具控制台留下诊断信息, 便于定位是哪条样式影响了它
+    requestAnimationFrame(() => {
+      try {
+        if (!dockContainer || !dockContainer.isConnected || dockContainer.classList.contains('collapsed')) return;
+        const r = dockContainer.getBoundingClientRect();
+        if (r.height > 0 && window.innerHeight - r.bottom > 60) {
+          const cs = getComputedStyle(dockContainer);
+          let cb = dockContainer.parentElement, chain = [];
+          for (let el = dockContainer.parentElement; el; el = el.parentElement) {
+            const st = getComputedStyle(el);
+            if (st.transform !== 'none' || st.filter !== 'none' || st.backdropFilter !== 'none' || st.perspective !== 'none' || /paint|layout|strict|content/.test(st.contain || '')) {
+              chain.push(`${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}.${String(el.className || '').slice(0, 60)}`);
+            }
+          }
+          console.warn('[Dock] 账号栏位置异常', { top: cs.top, bottom: cs.bottom, transform: cs.transform, parent: cb && cb.tagName, rectBottom: r.bottom, viewport: window.innerHeight, containingBlockAncestors: chain });
+        }
+      } catch {}
+    });
+
     // 列表最多只能滚到最后一个账号的右边缘, 任何来源 (滚轮、浏览器自身调整、悬停放大) 都不能滚进右侧空白
     const maxListScroll = () => {
       const last = list.lastElementChild;
