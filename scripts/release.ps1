@@ -1,7 +1,14 @@
 ﻿# Muse 发版脚本
-# 用法: powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Version 1.5.33
+# 用法: powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Version 1.5.34 [-Files "a.js,b.js"] [-Message "提交说明"]
+#   -Files   本次改动的代码文件, 逗号分隔 (默认 preload-chat-export.js); 版本号文件和发布说明会自动加入
+#   -Message 提交说明的正文 (默认取 docs/RELEASE-v<版本>.md 的第一条要点)
 # 步骤: 检查 -> npm test -> 只暂存指定文件 -> 确认后提交 -> 确认提交成功且版本号正确 -> 推送 main -> 在该提交上打标签并推送
-param([Parameter(Mandatory=$true)][string]$Version)
+# 构建在 GitHub Actions 上进行, 本地只跑测试和 git 操作
+param(
+  [Parameter(Mandatory=$true)][string]$Version,
+  [string]$Files = 'preload-chat-export.js',
+  [string]$Message = ''
+)
 
 $tag = "v$Version"
 Set-Location (Split-Path -Parent $PSScriptRoot)
@@ -11,15 +18,11 @@ function Step($msg) { Write-Host "`n== $msg ==" -ForegroundColor Cyan }
 function Ask($msg) { $a = Read-Host "$msg (y/N)"; if ($a -ne 'y') { Write-Host '已取消，没有做后续操作。'; exit 0 } }
 
 # 本次要提交的文件 (不要用 git add -A: 仓库里有大量不该提交的未跟踪文件)
-$files = @(
-  'preload-chat-export.js',
-  'package.json',
-  'package-lock.json',
-  'docs/CHANGES-2026-11-22.md',
-  'docs/RELEASE-v1.5.32.md',
-  "docs/RELEASE-$tag.md",
-  'scripts/release.ps1'
-)
+$base = @('package.json', 'package-lock.json', "docs/RELEASE-$tag.md")
+$extra = $Files -split '[,;\s]+' | Where-Object { $_ } | ForEach-Object { $_ -replace '\\', '/' }
+# 有改动的说明文档和发版脚本本身也一并提交
+$docs = @(git diff --name-only -- docs scripts/release.ps1) + @(git ls-files --others --exclude-standard -- "docs/RELEASE-$tag.md")
+$files = @($base + $extra + $docs | Where-Object { $_ } | Select-Object -Unique)
 
 Step '1/7 检查'
 $branch = (git rev-parse --abbrev-ref HEAD).Trim()
@@ -51,7 +54,11 @@ Write-Host "`n将提交以下文件:"; $staged | ForEach-Object { Write-Host "  
 Step '4/7 提交'
 Ask "提交为 `"$tag`"?"
 $before = (git rev-parse HEAD).Trim()
-git commit -m "$tag" -m "修复: 新建旁聊发消息后账号栏跑到屏幕中间 (账号栏改挂到 <html> 下, 位置样式 !important)" -m "补交 docs/RELEASE-v1.5.32.md; 新增通用发版脚本 scripts/release.ps1"
+if (-not $Message) {
+  $first = Get-Content "docs/RELEASE-$tag.md" -Encoding UTF8 | Where-Object { $_ -match '^\s*-\s+' } | Select-Object -First 1
+  $Message = if ($first) { ($first -replace '^\s*-\s+', '' -replace '\*\*', '').Trim() } else { $tag }
+}
+git commit -m "$tag" -m "$Message"
 if ($LASTEXITCODE -ne 0) { Fail 'git commit 失败' }
 $head = (git rev-parse HEAD).Trim()
 if ($head -eq $before) { Fail '提交没有生成，HEAD 没变' }

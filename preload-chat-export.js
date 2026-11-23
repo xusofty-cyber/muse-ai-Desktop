@@ -1287,6 +1287,25 @@ function injectExportButton() {}
     }
   }
 
+  // 账号栏实际占用的底部空间 = 账号栏高度 + 10px (一行时账号栏高 52px, 正好是原来的固定值 62px; 两行约 92px)
+  let _dockSpaceObserver = null;
+  function updateDockSpace() {
+    try {
+      if (!dockContainer || !dockContainer.isConnected) return;
+      const h = dockContainer.offsetHeight;
+      if (!h) return;
+      const space = Math.max(62, Math.round(h + 10));
+      const root = document.documentElement;
+      if (root.style.getPropertyValue('--muse-dock-space') !== space + 'px') {
+        root.style.setProperty('--muse-dock-space', space + 'px');
+      }
+      if (!_dockSpaceObserver && typeof ResizeObserver === 'function') {
+        _dockSpaceObserver = new ResizeObserver(() => updateDockSpace());
+        _dockSpaceObserver.observe(dockContainer);
+      }
+    } catch {}
+  }
+
   function updateComposerOffset(pinned) {
     try {
       const inputEl = document.querySelector('textarea, [contenteditable="true"], div[role="textbox"]');
@@ -1306,7 +1325,7 @@ function injectExportButton() {}
 
       if (fixedBottomParent) {
         if (pinned) {
-          fixedBottomParent.style.transform = 'translateY(-62px)';
+          fixedBottomParent.style.transform = 'translateY(calc(-1 * var(--muse-dock-space, 62px)))';
           fixedBottomParent.style.transition = 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)';
         } else {
           fixedBottomParent.style.transform = '';
@@ -1488,11 +1507,12 @@ function injectExportButton() {}
         transform: translateX(-50%) translateY(0);
         opacity: 1;
       }
-      /* 当底部多账号栏固定 (Pinned) 时，主界面向上避让 62px，确保输入框与交互区完全不被遮挡 */
+      /* 当底部多账号栏固定 (Pinned) 时，主界面向上避让，确保输入框与交互区完全不被遮挡。
+         避让高度跟随账号栏实际高度 (--muse-dock-space, 由脚本测量; 一行 62px, 两行约 92px) (2026-11-23) */
       html.muse-dock-pinned,
       html.muse-dock-pinned body {
-        height: calc(100vh - 62px) !important;
-        max-height: calc(100vh - 62px) !important;
+        height: calc(100vh - var(--muse-dock-space, 62px)) !important;
+        max-height: calc(100vh - var(--muse-dock-space, 62px)) !important;
         transition: height 0.25s cubic-bezier(0.16, 1, 0.3, 1);
       }
       html.muse-dock-pinned #root,
@@ -1584,10 +1604,16 @@ function injectExportButton() {}
         align-items: center;
         /* 账号间距收紧 (2026-11-22): 原 36px 格子 + 8px 间距 = 每个账号 44px; 现 34px + 3px = 37px,
            同样宽度可多放约 19% 的账号。外环与头像本身尺寸不变 */
-        gap: 3px;
+        /* 账号多时自动换行, 最多两行 (2026-11-23): 行距 6px 给当前账号下方的指示条留位置;
+           超过两行时在列表内上下滚动 (滚轮一次滚一行), 并显示一条细滚动条提示还有更多 */
+        flex-wrap: wrap;
+        align-content: flex-start;
+        gap: 6px 3px;
         max-width: calc(100vw - 180px);
-        overflow-x: auto;
-        overflow-y: hidden;
+        max-height: 82px; /* 2 × 34px + 6px 行距 + 上下各 4px 内边距 */
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
         padding: 4px 3px;
         scrollbar-width: none !important;
         -ms-overflow-style: none !important;
@@ -1794,6 +1820,29 @@ function injectExportButton() {}
       }
       /* 列表里的悬浮提示被列表的滚动裁剪区挡住, 本来就看不见 (显示的是原生 title 提示),
          但仍参与排版, 会把列表可滚动宽度撑大约半个提示框, 导致可以滚进右侧空白 (2026-11-22) */
+      .acct-dock-list.has-more {
+        scrollbar-width: thin !important;
+        scrollbar-color: rgba(255, 255, 255, 0.28) transparent !important;
+      }
+      .acct-dock-list.has-more::-webkit-scrollbar {
+        display: block !important;
+        width: 4px !important;
+      }
+      .acct-dock-list.has-more::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.28);
+        border-radius: 2px;
+      }
+      [data-ui-theme="light"] .acct-dock-list.has-more {
+        scrollbar-width: thin !important;
+        scrollbar-color: rgba(0, 0, 0, 0.25) transparent !important;
+      }
+      [data-ui-theme="light"] .acct-dock-list.has-more::-webkit-scrollbar {
+        display: block !important;
+        width: 4px !important;
+      }
+      [data-ui-theme="light"] .acct-dock-list.has-more::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.25);
+      }
       .acct-dock-list .acct-dock-tooltip {
         display: none !important;
       }
@@ -4012,12 +4061,13 @@ function injectExportButton() {}
     const list = document.createElement('div');
     list.className = 'acct-dock-list';
 
-    // 鼠标滚轮平滑横向滚动支持
+    // 鼠标滚轮: 超过两行时一次滚一行 (34px 格子 + 6px 行距); 两行以内不拦截
     list.addEventListener('wheel', (e) => {
-      if (e.deltaY !== 0) {
-        e.preventDefault();
-        list.scrollLeft = Math.min(list.scrollLeft + e.deltaY, maxListScroll());
-      }
+      if (e.deltaY === 0 || list.scrollHeight <= list.clientHeight + 1) return;
+      e.preventDefault();
+      const ROW = 40;
+      const target = Math.round((list.scrollTop + Math.sign(e.deltaY) * ROW) / ROW) * ROW;
+      list.scrollTop = Math.max(0, Math.min(target, list.scrollHeight - list.clientHeight));
     }, { passive: false });
 
     // 保底至少渲染一个当前账号徽章
@@ -4305,39 +4355,29 @@ function injectExportButton() {}
       } catch {}
     });
 
-    // 列表最多只能滚到最后一个账号的右边缘, 任何来源 (滚轮、浏览器自身调整、悬停放大) 都不能滚进右侧空白
-    const maxListScroll = () => {
-      const last = list.lastElementChild;
-      if (!last) return 0;
-      const padRight = parseFloat(getComputedStyle(list).paddingRight) || 0;
-      return Math.max(0, last.offsetLeft + last.offsetWidth + padRight - list.clientWidth);
-    };
-    const clampListScroll = () => {
-      const max = maxListScroll();
-      if (list.scrollLeft > max + 1) list.scrollLeft = max;
-    };
-    list.addEventListener('scroll', clampListScroll, { passive: true });
-
+    // 换行后不再横向滚动 (2026-11-23): 列表最多两行, 再多时在列表内上下滚动
     requestAnimationFrame(() => {
       if (!list || !list.isConnected) return;
-      if (list.scrollWidth <= list.clientWidth) {
-        list.scrollLeft = 0;
-        return;
-      }
-      const activeEl = list.querySelector('.acct-dock-item.active');
-      if (activeEl) {
-        // 用屏幕坐标比较, 不受定位参照和悬停缩放影响 (此前 offsetLeft 相对整条 dock,
-        // 多算了左侧按钮区的宽度, 当前账号靠右时会多滚一段, 账号整体左移、右侧空出一块)
-        const margin = 4;
-        const lr = list.getBoundingClientRect();
-        const ar = activeEl.getBoundingClientRect();
-        if (ar.left < lr.left + margin) {
-          list.scrollLeft -= (lr.left + margin) - ar.left;
-        } else if (ar.right > lr.right - margin) {
-          list.scrollLeft += ar.right - (lr.right - margin);
+      list.scrollLeft = 0;
+      const overflow = list.scrollHeight > list.clientHeight + 1;
+      list.classList.toggle('has-more', overflow);
+      if (overflow) {
+        const activeEl = list.querySelector('.acct-dock-item.active');
+        if (activeEl) {
+          // 用屏幕坐标比较, 不受悬停缩放影响; 把当前账号所在的行滚进可见区
+          const margin = 4;
+          const lr = list.getBoundingClientRect();
+          const ar = activeEl.getBoundingClientRect();
+          if (ar.top < lr.top + margin) {
+            list.scrollTop -= (lr.top + margin) - ar.top;
+          } else if (ar.bottom > lr.bottom - margin) {
+            list.scrollTop += ar.bottom - (lr.bottom - margin);
+          }
         }
+      } else {
+        list.scrollTop = 0;
       }
-      clampListScroll();
+      updateDockSpace();
     });
 
     // 右侧垂直分割线

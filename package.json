@@ -122,5 +122,5 @@
     "test:mihomo": "node test/test-embedded-mihomo.js",
     "test": "npm run check:links && npm run test:mihomo"
   },
-  "version": "1.5.33"
+  "version": "1.5.34"
 }
